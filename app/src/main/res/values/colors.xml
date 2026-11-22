@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 跨文件约定 §9.3：支出红 / 收入绿 / 转账灰 -->
+    <color name="expense_red">#F44336</color>
+    <color name="income_green">#4CAF50</color>
+    <color name="transfer_gray">#9E9E9E</color>
+    <color name="error_red">#E53935</color>
+    <color name="primary">#2962FF</color>
+    <color name="primary_dark">#0039CB</color>
+    <color name="primary_light">#768FFF</color>
+    <color name="background">#FAFAFD</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#1A1C1E</color>
+    <color name="ic_launcher_background">#2962FF</color>
+</resources>

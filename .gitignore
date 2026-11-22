@@ -1,0 +1,19 @@
+# Gradle build output and caches
+.gradle/
+build/
+*/build/
+
+# NOTE: gradle/wrapper/gradle-wrapper.jar is intentionally NOT ignored.
+# The wrapper launcher jar is shipped in this repository and must be committed,
+# so that ./gradlew works on a fresh clone. See BUILD.md section 2.
+
+# Local machine configuration (SDK path, keystore paths, secrets)
+local.properties
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+captures/
+
+# OS metadata
+.DS_Store

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_quick_add"
+        android:shortcutId="quick_add_bill"
+        android:shortcutLongLabel="@string/shortcut_quick_add_long"
+        android:shortcutShortLabel="@string/shortcut_quick_add_short">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetClass="com.azu.bookkeeper.MainActivity"
+            android:targetPackage="com.azu.bookkeeper">
+            <extra
+                android:name="com.azu.bookkeeper.extra.QUICK_ADD"
+                android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

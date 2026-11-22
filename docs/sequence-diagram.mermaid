@@ -1,0 +1,54 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant PAY as 支付App
+    participant ACC as PaymentAccessibilityService
+    participant NL as PaymentNotificationListenerService
+    participant CC as CaptureCoordinator
+    participant MP as ScreenCaptureManager
+    participant OCR as OcrEngine+FieldExtractor
+    participant RE as ClassificationRuleEngine
+    participant CF as ConfidenceCalculator
+    participant VC as VerificationController
+    participant DD as DuplicateDetector
+    participant Repo as BillRepository
+    participant UI as UI 弹窗
+
+    U->>PAY: 完成付款
+    PAY-->>ACC: WINDOW_CONTENT_CHANGED(支付结果页)
+    PAY-->>NL: 支付成功通知
+    alt 无障碍已授权且命中完成态关键词
+        ACC->>ACC: 1.5s去抖 + 节点文本抽取
+        ACC->>CC: CaptureEvent(ACCESSIBILITY_TEXT, 文本)
+    else 通知使用权已授权
+        NL->>NL: 包名+关键词过滤 + 正则解析
+        NL->>CC: CaptureEvent(NOTIFICATION, 文本)
+    end
+    opt 截屏备选已开启且已授权
+        CC->>MP: capture()
+        MP-->>CC: 加密截图路径
+    end
+    CC->>OCR: 预处理 + OCR + 字段抽取
+    OCR-->>CC: OcrResult(amountFen, merchant, billTime, rawText, ocrConfidence)
+    CC->>RE: classify(merchant, rawText)
+    RE-->>CC: categoryId/accountId + ruleHit
+    CC->>CF: calculate(result, fields, ruleHit)
+    CF-->>CC: finalScore
+    CC->>DD: isDuplicate(buildKey)
+    alt 重复（双路捕获同一笔）
+        DD-->>CC: true → 丢弃，markConsumed
+    else 字段齐全且 finalScore >= 阈值
+        CC->>Repo: addWithBalanceTx(auto_capture, auto_passed)
+        Repo-->>UI: 余额/列表刷新
+    else 字段缺失或 finalScore < 阈值
+        CC->>VC: requestVerify(candidate)
+        alt App 前台
+            VC->>UI: Compose Dialog
+        else 后台且悬浮窗授权
+            VC->>UI: SYSTEM_ALERT_WINDOW 悬浮窗
+        else 锁屏 / 无悬浮窗
+            VC->>UI: 高优先级通知(锁屏可见)
+        end
+        UI-->>VC: 用户确认 / 改写
+        VC->>Repo: addWithBalanceTx(verify=user_confirmed/corrected)
+    end

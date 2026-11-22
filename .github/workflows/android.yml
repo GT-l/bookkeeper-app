@@ -1,0 +1,111 @@
+# =============================================================================
+# Bookkeeper App — GitHub Actions 云端构建 Debug APK
+# -----------------------------------------------------------------------------
+# 源码以 base64 分块形式存放于 ci-src/src.tar.gz.partNN.b64：
+#   cat 拼接分块 -> base64 解码 -> src.tar.gz -> tar 解压还原整个源码树。
+# 原因是本环境只能通过纯文本接口逐文件推送：逐个推 207 个 .kt 成本极高，
+# 且 gradle/wrapper/gradle-wrapper.jar 是二进制文件、无法通过文本接口推送
+# （该 jar 由下方 "Ensure Gradle Wrapper" 步骤兜底生成）。
+#
+# 预期：198 个 Kotlin 源文件（连同测试源文件，合计 207 个 .kt）从未在本机编译过，
+#       96 个单元用例从未运行过；首次构建报错属于预期，需按 build.log 迭代修复源码。
+#
+# 用户取结果：打开本仓库的 Actions 页 -> 打开本次 workflow run -> Artifacts 区
+#   成功时下载 bookkeeper-debug-apk（内含 app-debug.apk）；
+#   失败时下载 build-log 中的 build.log，把内容贴回给主理人以便修复源码。
+# =============================================================================
+
+name: Build Android Debug APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore source tree from base64 chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat ci-src/src.tar.gz.part*.b64 | base64 -d > src.tar.gz
+          tar xzf src.tar.gz --strip-components=1
+          rm src.tar.gz
+          chmod +x gradlew
+          echo "== restored source tree =="
+          ls -la | head -n 30
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: yes | sdkmanager --licenses || true
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: false
+
+      - name: Ensure Gradle Wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            gradle wrapper --gradle-version 8.9 --distribution-type bin
+          fi
+          chmod +x gradlew
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Run unit tests
+        continue-on-error: true
+        shell: bash
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookkeeper-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore

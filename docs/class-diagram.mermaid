@@ -1,0 +1,248 @@
+classDiagram
+direction TB
+
+class BookEntity {
+  +Long bookId
+  +String name
+  +String icon
+  +String description
+  +Long createdAt
+  +Boolean isDefault
+  +Int status
+}
+class BillEntity {
+  +Long billId
+  +Long bookId
+  +Int billType
+  +Long amountFen
+  +Long categoryId
+  +String tagIdsJson
+  +Long accountFrom
+  +Long accountTo
+  +Long billTime
+  +String remark
+  +String imagePathsJson
+  +Int cycleType
+  +Long cycleEndTime
+  +Int source
+  +Int captureType
+  +String captureImagePath
+  +Float ocrConfidence
+  +String ocrRawText
+  +Int verifyStatus
+  +Long createAt
+  +Long updateAt
+}
+class CategoryEntity {
+  +Long categoryId
+  +Long bookId
+  +Int kind
+  +String name
+  +Long parentId
+  +String icon
+  +Int sortOrder
+}
+class TagEntity {
+  +Long tagId
+  +Long bookId
+  +String name
+}
+class BillTagCrossRef {
+  +Long billId
+  +Long tagId
+}
+class AccountEntity {
+  +Long accountId
+  +Long bookId
+  +String name
+  +Int type
+  +Long initialBalanceFen
+  +String icon
+  +String remark
+  +Boolean enabled
+}
+class BudgetEntity {
+  +Long budgetId
+  +Long bookId
+  +Int month
+  +Long totalLimitFen
+  +String categoryLimitsJson
+}
+class ImportTemplateEntity {
+  +Long templateId
+  +String name
+  +String sourceKey
+  +String mappingJson
+  +Int flags
+}
+class ImportTaskEntity {
+  +Long taskId
+  +Long templateId
+  +String filePath
+  +Int status
+  +Int totalRows
+  +Int successRows
+  +Int failedRows
+  +String reportPath
+}
+class CategoryRuleEntity {
+  +Long ruleId
+  +String keyword
+  +Long categoryId
+  +Int priority
+  +Boolean enabled
+}
+class CaptureEventEntity {
+  +Long eventId
+  +Int captureType
+  +String rawText
+  +String imagePath
+  +Float ocrConfidence
+  +Long billTime
+  +Int status
+  +Long createdAt
+}
+class BillImageEntity {
+  +Long imageId
+  +Long billId
+  +String encryptedPath
+}
+
+BookEntity "1" --> "0..*" BillEntity
+BookEntity "1" --> "0..*" CategoryEntity
+BookEntity "1" --> "0..*" TagEntity
+BookEntity "1" --> "0..*" AccountEntity
+BookEntity "1" --> "0..*" BudgetEntity
+CategoryEntity "1" --> "0..*" BillEntity
+AccountEntity "1" --> "0..*" BillEntity
+BillEntity "0..*" --> "0..*" TagEntity : BillTagCrossRef
+BillEntity "1" --> "0..*" BillImageEntity
+ImportTemplateEntity "1" --> "0..*" ImportTaskEntity
+
+class BillDao {
+  <<interface>>
+  +observeByBook(bookId) Flow
+  +queryPaged(filter, page) List
+  +findByTimeRange(bookId, start, end) List
+  +insert(bill) Long
+  +update(bill) Unit
+  +delete(billId) Unit
+  +findDuplicate(key) BillEntity
+  +sumByCategory(bookId, start, end) List
+}
+class AccountDao {
+  <<interface>>
+  +observeAll(bookId) Flow
+  +updateBalance(accountId, deltaFen) Unit
+}
+class RuleDao {
+  <<interface>>
+  +observeAllRules() Flow
+  +match(keyword) List
+}
+class CaptureDao {
+  <<interface>>
+  +insert(event) Long
+  +markConsumed(eventId) Unit
+}
+BillDao ..> BillEntity
+AccountDao ..> AccountEntity
+RuleDao ..> CategoryRuleEntity
+CaptureDao ..> CaptureEventEntity
+
+class BillRepository {
+  <<interface>>
+  +observeBills(bookId) Flow
+  +addBill(bill) Result
+  +updateBill(bill) Result
+  +deleteBill(billId) Result
+  +bulkInsert(bills) Result
+  +findDuplicate(key) BillEntity
+}
+class BillRepositoryImpl {
+  -BillDao billDao
+  -AccountDao accountDao
+  +addBill(bill) Result
+  +addWithBalanceTx(bill) Result
+}
+BillRepositoryImpl ..|> BillRepository
+BillRepositoryImpl --> BillDao
+BillRepositoryImpl --> AccountDao
+
+class CaptureEvent {
+  +captureType
+  +rawText
+  +imagePath
+  +billTime
+  +packageName
+}
+class OcrEngine {
+  -TextRecognizer recognizer
+  +recognize(bitmap) OcrResult
+  +recognizeFromFile(path) OcrResult
+}
+class OcrResult {
+  +text
+  +blocks
+  +confidence
+}
+class FieldExtractor {
+  +extractAmount(text) Long
+  +extractMerchant(text) String
+  +extractTime(text) Long
+}
+class ConfidenceCalculator {
+  +calculate(result, fields, ruleHit) Float
+}
+class ClassificationRuleEngine {
+  -List~KeywordRule~ rules
+  +classify(merchant, rawText) MatchResult
+  +reload() Unit
+}
+class DuplicateDetector {
+  +buildKey(candidate) String
+  +isDuplicate(key) Boolean
+}
+class CaptureCoordinator {
+  -OcrEngine ocr
+  -FieldExtractor extractor
+  -ConfidenceCalculator confidence
+  -ClassificationRuleEngine classifier
+  -DuplicateDetector dedup
+  -BillRepository repo
+  +onCapture(event) Unit
+}
+class VerificationController {
+  +requests: SharedFlow
+  +requestVerify(candidate) Unit
+  +submitDecision(decision) Unit
+}
+class PaymentAccessibilityService {
+  +onAccessibilityEvent(event) Unit
+}
+class PaymentNotificationListenerService {
+  +onNotificationPosted(sbn) Unit
+}
+class ScreenCaptureManager {
+  +requestPermission() Intent
+  +capture() File
+  +release() Unit
+}
+class AutoCaptureForegroundService {
+  +onStartCommand(intent, flags, id) Int
+}
+
+PaymentAccessibilityService --> CaptureCoordinator
+PaymentNotificationListenerService --> CaptureCoordinator
+ScreenCaptureManager --> CaptureCoordinator
+AutoCaptureForegroundService --> CaptureCoordinator
+CaptureCoordinator --> OcrEngine
+CaptureCoordinator --> FieldExtractor
+CaptureCoordinator --> ConfidenceCalculator
+CaptureCoordinator --> ClassificationRuleEngine
+CaptureCoordinator --> DuplicateDetector
+CaptureCoordinator --> BillRepository
+CaptureCoordinator --> VerificationController
+CaptureCoordinator --> CaptureEventEntity
+OcrEngine --> OcrResult
+ClassificationRuleEngine --> CategoryRuleEntity

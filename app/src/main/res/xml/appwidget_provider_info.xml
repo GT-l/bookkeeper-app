@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- initialLayout 为系统占位；运行时由 Glance（QuickCaptureWidget）覆盖 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/appwidget_description"
+    android:initialLayout="@layout/widget_loading"
+    android:minHeight="110dp"
+    android:minWidth="160dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

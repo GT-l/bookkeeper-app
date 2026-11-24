@@ -1,14 +1,12 @@
 # =============================================================================
 # Bookkeeper App — GitHub Actions 云端构建 Debug APK
 # -----------------------------------------------------------------------------
-# 源码以 base64 分块形式存放于 ci-src/src.tar.gz.partNN.b64：
-#   cat 拼接分块 -> base64 解码 -> src.tar.gz -> tar 解压还原整个源码树。
-# 原因是本环境只能通过纯文本接口逐文件推送：逐个推 207 个 .kt 成本极高，
-# 且 gradle/wrapper/gradle-wrapper.jar 是二进制文件、无法通过文本接口推送
-# （该 jar 由下方 "Ensure Gradle Wrapper" 步骤兜底生成）。
-#
-# 预期：198 个 Kotlin 源文件（连同测试源文件，合计 207 个 .kt）从未在本机编译过，
-#       96 个单元用例从未运行过；首次构建报错属于预期，需按 build.log 迭代修复源码。
+# 源码由 git checkout 直接提供：全部 Kotlin 源文件、Gradle 脚本以及
+# gradle/wrapper/gradle-wrapper.jar 均已随 git 推送到 main 分支。
+# 修改源码后 push 即生效；不要再使用 ci-src 下的 base64 分块解压覆盖源码，
+# 否则新提交的修复会被旧分块还原掉，导致 build.log 与磁盘源码不一致。
+# "Verify checked-out sources" 步骤会打印实际参与编译的 KSP 版本与
+# @HiltWorker 处理器声明，便于从日志直接确认源码来源。
 #
 # 用户取结果：打开本仓库的 Actions 页 -> 打开本次 workflow run -> Artifacts 区
 #   成功时下载 bookkeeper-debug-apk（内含 app-debug.apk）；
@@ -34,16 +32,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore source tree from base64 chunks
+      - name: Verify checked-out sources
         shell: bash
         run: |
           set -euo pipefail
-          cat ci-src/src.tar.gz.part*.b64 | base64 -d > src.tar.gz
-          tar xzf src.tar.gz --strip-components=1
-          rm src.tar.gz
+          # checkout 出的 gradlew 显式补可执行位，避免 core.fileMode 差异导致权限丢失
           chmod +x gradlew
-          echo "== restored source tree =="
+          echo "== source tree from git checkout =="
           ls -la | head -n 30
+          echo "== KSP version actually used by this build =="
+          grep -n '^ksp = "' gradle/libs.versions.toml
+          echo "== HiltWorker KSP processor declaration =="
+          grep -nE 'androidx[-.]hilt[-.]compiler' gradle/libs.versions.toml app/build.gradle.kts
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -93,6 +93,51 @@ jobs:
           name: bookkeeper-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Prepare release asset
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-asset
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "release-asset/bookkeeper-debug.apk"
+          echo "== release asset =="
+          ls -lh release-asset/
+
+      - name: Create GitHub Release with APK
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-debug
+          name: Bookkeeper v1.0.0 (Debug APK)
+          body: |
+            ## Bookkeeper 个人记账 App — Debug APK
+
+            由 GitHub Actions 从源码自动构建（commit `${{ github.sha }}`）。
+
+            ### 下载安装
+            下载下方 `bookkeeper-debug.apk`，Android 8.0+ 可直接安装：
+            ```bash
+            adb install -r bookkeeper-debug.apk
+            ```
+
+            ### 功能
+            手动记账、四路自动捕获（读屏/通知/银行短信/截屏OCR）、CSV/XLSX 导入、7 类统计报表、预算、资产账户、多账本。
+
+            ### 能力边界（如实说明）
+            标准 Android 沙盒内做不到：强杀后无条件自启、锁屏界面自动付款、iOS 后台能力、抖音免密支付的真无感实时检测。详见仓库 README。
+
+            ### 构建信息
+            - 分支：`${{ github.ref_name }}`
+            - Commit：`${{ github.sha }}`
+            - 构建时间：`${{ github.event.repository.updated_at }}`
+            - Debug 签名，个人自用
+          files: release-asset/bookkeeper-debug.apk
+          overwrite_files: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build log
         if: always()

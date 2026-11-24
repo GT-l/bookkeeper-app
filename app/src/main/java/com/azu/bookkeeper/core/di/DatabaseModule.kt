@@ -21,8 +21,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.security.SecureRandom
 import javax.inject.Singleton
 
@@ -37,8 +36,9 @@ object DatabaseModule {
      */
     @Provides
     @Singleton
-    fun provideSupportFactory(@ApplicationContext context: Context): SupportFactory {
-        SQLiteDatabase.loadLibs(context)
+    fun provideSupportFactory(@ApplicationContext context: Context): SupportOpenHelperFactory {
+        // sqlcipher-android 4.x 已移除 SQLiteDatabase.loadLibs，必须显式加载 native 库
+        System.loadLibrary("sqlcipher")
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -55,14 +55,14 @@ object DatabaseModule {
             prefs.edit().putString(Constants.DATABASE_KEY_ENTRY, value).apply()
             value
         }
-        return SupportFactory(Base64.decode(encoded, Base64.NO_WRAP))
+        return SupportOpenHelperFactory(Base64.decode(encoded, Base64.NO_WRAP))
     }
 
     @Provides
     @Singleton
     fun provideDatabase(
         @ApplicationContext context: Context,
-        factory: SupportFactory
+        factory: SupportOpenHelperFactory
     ): BookkeeperDatabase = Room.databaseBuilder(
         context,
         BookkeeperDatabase::class.java,

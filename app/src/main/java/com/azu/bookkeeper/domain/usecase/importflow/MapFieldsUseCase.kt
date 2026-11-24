@@ -57,11 +57,16 @@ class MapFieldsUseCase @Inject constructor() {
         var bestKey = ImportPresets.CUSTOM_KEY
         var bestScore = 0
         ImportPresets.ALL.forEach { preset ->
-            val score: Int = preset.aliases.values.flatten().sumOf { alias: String ->
-                if (normalized.any { it == alias.lowercase() }) 3
-                else if (normalized.any { it.contains(alias.lowercase()) }) 1
-                else 0
-            }
+            val score: Int = preset.aliases.values.flatten()
+                .map { alias: String ->
+                    val hit: Int = when {
+                        normalized.any { it == alias.lowercase() } -> 3
+                        normalized.any { it.contains(alias.lowercase()) } -> 1
+                        else -> 0
+                    }
+                    hit
+                }
+                .sum()
             if (score > bestScore) {
                 bestScore = score
                 bestKey = preset.sourceKey

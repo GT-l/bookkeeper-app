@@ -2,6 +2,8 @@ package com.azu.bookkeeper.domain.usecase.stats
 
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
+import com.azu.bookkeeper.core.getOrDefault
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.CategoryAmount
 import com.azu.bookkeeper.domain.model.StatisticsBundle
@@ -40,7 +42,7 @@ class GetStatisticsUseCase @Inject constructor(
         val transferFen = bills.filter { it.billType == BillType.TRANSFER }.sumOf { it.amountFen }
 
         val month = DateTimeUtils.monthKey(startMillis)
-        val budget = budgetRepository.findByBookAndMonth(bookId, month).getOrDefault(null)
+        val budget = budgetRepository.findByBookAndMonth(bookId, month).getOrNull()
         val summary = StatisticsSummary(
             incomeFen = incomeFen,
             expenseFen = expenseFen,

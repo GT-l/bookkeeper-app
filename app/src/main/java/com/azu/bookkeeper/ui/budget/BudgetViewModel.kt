@@ -6,6 +6,7 @@ import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.getOrDefault
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.Budget
 import com.azu.bookkeeper.domain.model.Category

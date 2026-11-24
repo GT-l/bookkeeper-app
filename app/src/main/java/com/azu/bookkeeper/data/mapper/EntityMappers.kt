@@ -31,6 +31,7 @@ import com.azu.bookkeeper.domain.model.ImportTaskStatus
 import com.azu.bookkeeper.domain.model.ImportTemplate
 import com.azu.bookkeeper.domain.model.Tag
 import com.azu.bookkeeper.domain.model.VerifyStatus
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /** Room Entity ↔ Domain Model 单向映射（Entity 绝不越过 Data 层）。 */

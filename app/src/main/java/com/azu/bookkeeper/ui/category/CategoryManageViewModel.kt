@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.getOrDefault
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.Category
 import com.azu.bookkeeper.domain.model.CategoryKind
 import com.azu.bookkeeper.domain.model.Book

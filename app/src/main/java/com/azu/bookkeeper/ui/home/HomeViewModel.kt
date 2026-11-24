@@ -2,6 +2,7 @@ package com.azu.bookkeeper.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.Bill
 import com.azu.bookkeeper.domain.model.Book

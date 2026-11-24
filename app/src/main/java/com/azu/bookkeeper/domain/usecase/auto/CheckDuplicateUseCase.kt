@@ -11,5 +11,5 @@ class CheckDuplicateUseCase @Inject constructor(
     suspend operator fun invoke(candidate: CaptureCandidate, toleranceSec: Long = 0L): Boolean =
         detector.isDuplicateWithTolerance(candidate, toleranceSec)
 
-    operator fun buildKey(candidate: CaptureCandidate): String = detector.buildKey(candidate)
+    fun buildKey(candidate: CaptureCandidate): String = detector.buildKey(candidate)
 }

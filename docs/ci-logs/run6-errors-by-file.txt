@@ -1,0 +1,281 @@
+
+### com/azu/bookkeeper/data/local/file/XlsxDataSource.kt  [39 errors]
+  L17: Unresolved reference 'openxml4j'.
+  L18: Unresolved reference 'ss'.
+  L19: Unresolved reference 'ss'.
+  L20: Unresolved reference 'ss'.
+  L21: Unresolved reference 'ss'.
+  L22: Unresolved reference 'ss'.
+  L23: Unresolved reference 'xssf'.
+  L24: Unresolved reference 'xssf'.
+  L65: Unresolved reference 'OPCPackage'.
+  L65: Unresolved reference 'XSSFWorkbook'.
+  L68: Unresolved reference 'DataFormatter'.
+  L70: Unresolved reference 'rowIterator'.
+  L72: Unresolved reference 'hasNext'.
+  L73: Unresolved reference 'next'.
+  L124: Unresolved reference 'OPCPackage'.
+  L124: Unresolved reference 'XSSFWorkbook'.
+  L127: Unresolved reference 'DataFormatter'.
+  L129: Unresolved reference 'rowIterator'.
+  L131: Unresolved reference 'hasNext'.
+  L132: Unresolved reference 'next'.
+  L161: Unresolved reference 'SXSSFWorkbook'.
+  L179: Unresolved reference 'Row'.
+  L180: Unresolved reference 'DataFormatter'.
+  L181: Unresolved reference 'ss'.
+  L183: Unresolved reference 'lastCellNum'.
+  L185: Unresolved reference 'Cell'.
+  L185: Unresolved reference 'getCell'.
+  L188: Cannot infer type for this parameter. Please specify it explicitly.
+  L188: Cannot infer type for this parameter. Please specify it explicitly.
+  L188: Unresolved reference 'CellType'.
+  L188: Unresolved reference 'cellType'.
+  L189: Unresolved reference 'formatCellValue'.
+  L190: Cannot infer type for this parameter. Please specify it explicitly.
+  L190: Unresolved reference 'formatCellValue'.
+  L191: Unresolved reference 'CellType'.
+  L191: Unresolved reference 'DateUtil'.
+  L191: Unresolved reference 'cellType'.
+  L192: Unresolved reference 'dateCellValue'.
+  L193: Unresolved reference 'formatCellValue'.
+
+### com/azu/bookkeeper/ui/bill/BillEditViewModel.kt  [39 errors]
+  L105: Unresolved reference 'getOrNull'.
+  L106: Unresolved reference 'bookId'.
+  L110: Unresolved reference 'getOrNull'.
+  L115: Unresolved reference 'billType'.
+  L123: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L123: Unresolved reference 'billId'.
+  L124: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L125: Argument type mismatch: actual type is 'kotlin.collections.List<com.azu.bookkeeper.domain.model.Account>', but 'kotlin.collections
+  L126: Argument type mismatch: actual type is 'kotlin.collections.List<com.azu.bookkeeper.domain.model.Tag>', but 'kotlin.collections.Lis
+  L127: Argument type mismatch: actual type is 'kotlin.collections.List<com.azu.bookkeeper.domain.model.Category>', but 'kotlin.collection
+  L128: Argument type mismatch: actual type is 'com.azu.bookkeeper.domain.model.BillType', but 'com.azu.bookkeeper.domain.model.BillType' 
+  L128: Unresolved reference 'billType'.
+  L129: Argument type mismatch: actual type is 'K', but 'kotlin.String' was expected.
+  L129: Argument type mismatch: actual type is 'R?', but 'K?' was expected.
+  L129: Cannot infer type for this parameter. Please specify it explicitly.
+  L129: Cannot infer type for this parameter. Please specify it explicitly.
+  L129: Unresolved reference 'amountFen'.
+  L130: Argument type mismatch: actual type is 'kotlin.String', but 'K' was expected.
+  L131: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L131: Unresolved reference 'categoryId'.
+  L132: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L132: Unresolved reference 'accountFrom'.
+  L134: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L134: Unresolved reference 'accountTo'.
+  L135: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L135: Unresolved reference 'billTime'.
+  L136: Argument type mismatch: actual type is 'kotlin.String', but 'kotlin.String' was expected.
+  L136: Unresolved reference 'remark'.
+  L137: Argument type mismatch: actual type is 'kotlin.collections.List<T>', but 'kotlin.collections.List<kotlin.Long>' was expected.
+  L137: Cannot infer type for this parameter. Please specify it explicitly.
+  L137: Unresolved reference 'tagIds'.
+  L138: Argument type mismatch: actual type is 'kotlin.collections.List<T>', but 'kotlin.collections.List<kotlin.String>' was expected.
+  L138: Cannot infer type for this parameter. Please specify it explicitly.
+  L138: Unresolved reference 'imagePaths'.
+  L139: Argument type mismatch: actual type is 'com.azu.bookkeeper.domain.model.CycleType', but 'com.azu.bookkeeper.domain.model.CycleType
+  L139: Unresolved reference 'cycleType'.
+  L140: Argument type mismatch: actual type is 'com.azu.bookkeeper.domain.model.BillSource', but 'com.azu.bookkeeper.domain.model.BillSour
+  L140: Unresolved reference 'source'.
+  L141: Argument type mismatch: actual type is 'kotlin.Long?', but 'kotlin.Long?' was expected.
+
+### com/azu/bookkeeper/ui/importflow/step/ConfirmStep.kt  [22 errors]
+  L26: Type 'androidx.compose.runtime.State<com.azu.bookkeeper.ui.importflow.ImportViewModel.UiState>' has no method 'getValue(Nothing?, 
+  L46: Unresolved reference 'expenseRows'.
+  L46: Unresolved reference 'incomeRows'.
+  L46: Unresolved reference 'successRows'.
+  L46: Unresolved reference 'transferRows'.
+  L47: Unresolved reference 'createdAccounts'.
+  L47: Unresolved reference 'createdCategories'.
+  L48: Unresolved reference 'duplicateRows'.
+  L48: Unresolved reference 'failedRows'.
+  L48: Unresolved reference 'skippedRows'.
+  L49: Unresolved reference 'createdCategories'.
+  L50: Unresolved reference 'createdCategories'.
+  L52: Unresolved reference 'createdAccounts'.
+  L53: Unresolved reference 'createdAccounts'.
+  L55: Unresolved reference 'reportPath'.
+  L57: Unresolved reference 'reportPath'.
+  L73: @Composable invocations can only happen from the context of a @Composable function
+  L73: Cannot infer type for this parameter. Please specify it explicitly.
+  L73: Cannot infer type for this parameter. Please specify it explicitly.
+  L74: Cannot infer type for this parameter. Please specify it explicitly.
+  L74: Cannot infer type for this parameter. Please specify it explicitly.
+  L74: Unresolved reference 'userMessage'.
+
+### com/azu/bookkeeper/domain/usecase/stats/GetStatisticsUseCase.kt  [20 errors]
+  L36: Cannot infer type for this parameter. Please specify it explicitly.
+  L36: Unresolved reference 'getOrDefault'.
+  L36: Unresolved reference 'it'.
+  L36: Unresolved reference 'not' for operator '!'.
+  L38: Overload resolution ambiguity between candidates:
+  L38: Overload resolution ambiguity between candidates:
+  L38: Unresolved reference 'amountFen'.
+  L38: Unresolved reference 'it'.
+  L38: Unresolved reference 'it'.
+  L39: Overload resolution ambiguity between candidates:
+  L39: Overload resolution ambiguity between candidates:
+  L39: Unresolved reference 'amountFen'.
+  L39: Unresolved reference 'it'.
+  L39: Unresolved reference 'it'.
+  L40: Overload resolution ambiguity between candidates:
+  L40: Overload resolution ambiguity between candidates:
+  L40: Unresolved reference 'amountFen'.
+  L40: Unresolved reference 'it'.
+  L40: Unresolved reference 'it'.
+  L43: Unresolved reference 'getOrDefault'.
+
+### com/azu/bookkeeper/ui/budget/BudgetViewModel.kt  [17 errors]
+  L61: Unresolved reference 'getOrNull'.
+  L69: Unresolved reference 'getOrNull'.
+  L78: Argument type mismatch: actual type is 'kotlin.collections.List<com.azu.bookkeeper.domain.model.Category>', but 'kotlin.collection
+  L79: Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Long' was expected.
+  L80: Argument type mismatch: actual type is 'K', but 'kotlin.String' was expected.
+  L80: Argument type mismatch: actual type is 'R?', but 'K?' was expected.
+  L80: Argument type mismatch: actual type is 'kotlin.String', but 'K' was expected.
+  L80: Cannot infer type for this parameter. Please specify it explicitly.
+  L80: Cannot infer type for this parameter. Please specify it explicitly.
+  L81: Argument type mismatch: actual type is 'it(kotlin.collections.Map<K#2 (type parameter of fun <K, V, R> Map<out K, V>.mapValues(tra
+  L81: Cannot infer type for this parameter. Please specify it explicitly.
+  L81: Cannot infer type for this parameter. Please specify it explicitly.
+  L81: Inapplicable candidate(s): fun <K, V> Map.Entry<K, V>.component1(): K
+  L81: Inapplicable candidate(s): fun <K, V> Map.Entry<K, V>.component2(): V
+  L82: Argument type mismatch: actual type is 'V', but 'kotlin.Long' was expected.
+  L82: Argument type mismatch: actual type is 'kotlin.Boolean', but 'kotlin.Boolean' was expected.
+  L83: Cannot infer type for this parameter. Please specify it explicitly.
+
+### com/azu/bookkeeper/data/local/db/Converters.kt  [12 errors]
+  L12: Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.Long>', but 'kotlinx.serialization.SerializationStrategy<T>
+  L12: Cannot infer type for this parameter. Please specify it explicitly.
+  L12: No value passed for parameter 'value'.
+  L20: Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.String>', but 'kotlinx.serialization.SerializationStrategy<
+  L20: Cannot infer type for this parameter. Please specify it explicitly.
+  L20: No value passed for parameter 'value'.
+  L28: Argument type mismatch: actual type is 'kotlin.collections.Map<kotlin.Long, kotlin.Long>', but 'kotlinx.serialization.Serializatio
+  L28: Cannot infer type for this parameter. Please specify it explicitly.
+  L28: No value passed for parameter 'value'.
+  L36: Argument type mismatch: actual type is 'kotlin.collections.Map<kotlin.String, kotlin.String>', but 'kotlinx.serialization.Serializ
+  L36: Cannot infer type for this parameter. Please specify it explicitly.
+  L36: No value passed for parameter 'value'.
+
+### com/azu/bookkeeper/data/mapper/EntityMappers.kt  [12 errors]
+  L103: Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.Long>', but 'kotlinx.serialization.SerializationStrategy<T>
+  L103: Cannot infer type for this parameter. Please specify it explicitly.
+  L103: No value passed for parameter 'value'.
+  L108: Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.String>', but 'kotlinx.serialization.SerializationStrategy<
+  L108: Cannot infer type for this parameter. Please specify it explicitly.
+  L108: No value passed for parameter 'value'.
+  L190: Argument type mismatch: actual type is 'kotlin.collections.Map<kotlin.Long, kotlin.Long>', but 'kotlinx.serialization.Serializatio
+  L190: Cannot infer type for this parameter. Please specify it explicitly.
+  L190: No value passed for parameter 'value'.
+  L206: Argument type mismatch: actual type is 'kotlin.collections.Map<kotlin.String, kotlin.String>', but 'kotlinx.serialization.Serializ
+  L206: Cannot infer type for this parameter. Please specify it explicitly.
+  L206: No value passed for parameter 'value'.
+
+### com/azu/bookkeeper/data/repository/SettingsRepositoryImpl.kt  [12 errors]
+  L17: Return type of 'setDefaultBookId' is not a subtype of the return type of the overridden member 'suspend fun setDefaultBookId(value
+  L21: Return type of 'setDefaultAccountId' is not a subtype of the return type of the overridden member 'suspend fun setDefaultAccountId
+  L25: Return type of 'setDefaultExpenseCategoryId' is not a subtype of the return type of the overridden member 'suspend fun setDefaultE
+  L30: Return type of 'setDefaultIncomeCategoryId' is not a subtype of the return type of the overridden member 'suspend fun setDefaultIn
+  L35: Return type of 'setCurrency' is not a subtype of the return type of the overridden member 'suspend fun setCurrency(value: String):
+  L39: Return type of 'setDateFormat' is not a subtype of the return type of the overridden member 'suspend fun setDateFormat(value: Stri
+  L43: Return type of 'setWeekStartDay' is not a subtype of the return type of the overridden member 'suspend fun setWeekStartDay(value: 
+  L47: Return type of 'setAppLockEnabled' is not a subtype of the return type of the overridden member 'suspend fun setAppLockEnabled(val
+  L51: Return type of 'setAppLockPin' is not a subtype of the return type of the overridden member 'suspend fun setAppLockPin(value: Stri
+  L55: Return type of 'setLastUnlockAt' is not a subtype of the return type of the overridden member 'suspend fun setLastUnlockAt(value: 
+  L59: Return type of 'setAutoBackupEnabled' is not a subtype of the return type of the overridden member 'suspend fun setAutoBackupEnabl
+  L64: Return type of 'setLastBackupAt' is not a subtype of the return type of the overridden member 'suspend fun setLastBackupAt(value: 
+
+### com/azu/bookkeeper/ui/account/AccountEditViewModel.kt  [11 errors]
+  L54: Unresolved reference 'getOrNull'.
+  L55: Unresolved reference 'getOrNull'.
+  L59: Unresolved reference 'accountId'.
+  L60: Unresolved reference 'bookId'.
+  L61: Unresolved reference 'name'.
+  L62: Unresolved reference 'type'.
+  L63: Unresolved reference 'initialBalanceFen'.
+  L64: Unresolved reference 'balanceFen'.
+  L65: Unresolved reference 'icon'.
+  L66: Unresolved reference 'remark'.
+  L67: Unresolved reference 'enabled'.
+
+### com/azu/bookkeeper/automation/ocr/OcrEngine.kt  [4 errors]
+  L43: Cannot infer type for this parameter. Please specify it explicitly.
+  L43: Cannot infer type for this parameter. Please specify it explicitly.
+  L43: Overload resolution ambiguity between candidates:
+  L43: Unresolved reference 'confidence'.
+
+### com/azu/bookkeeper/ui/widget/QuickCaptureWidget.kt  [4 errors]
+  L18: Unresolved reference 'Text'.
+  L130: Unresolved reference 'Text'.
+  L139: Unresolved reference 'Text'.
+  L143: Unresolved reference 'Text'.
+
+### com/azu/bookkeeper/data/repository/BackupRepositoryImpl.kt  [3 errors]
+  L94: Argument type mismatch: actual type is 'com.azu.bookkeeper.data.repository.BackupPayload', but 'kotlinx.serialization.Serializatio
+  L94: Cannot infer type for this parameter. Please specify it explicitly.
+  L94: No value passed for parameter 'value'.
+
+### com/azu/bookkeeper/ui/bill/BillEditScreen.kt  [3 errors]
+  L32: Unresolved reference 'rememberLauncherForActivityResult'.
+  L64: Unresolved reference 'rememberLauncherForActivityResult'.
+  L66: Cannot infer type for this parameter. Please specify it explicitly.
+
+### com/azu/bookkeeper/ui/navigation/Screen.kt  [3 errors]
+  L43: Argument type mismatch: actual type is 'com.azu.bookkeeper.domain.model.BillQuickPrefill', but 'kotlinx.serialization.Serializatio
+  L43: Cannot infer type for this parameter. Please specify it explicitly.
+  L43: No value passed for parameter 'value'.
+
+### com/azu/bookkeeper/ui/stats/StatisticsViewModel.kt  [3 errors]
+  L121: Suspend function 'suspend fun load(): Unit' should be called only from a coroutine or another suspend function.
+  L126: Suspend function 'suspend fun load(): Unit' should be called only from a coroutine or another suspend function.
+  L131: Suspend function 'suspend fun load(): Unit' should be called only from a coroutine or another suspend function.
+
+### com/azu/bookkeeper/automation/service/AutoCaptureForegroundService.kt  [2 errors]
+  L85: 'onStopped' overrides nothing.
+  L87: Unresolved reference 'onStopped'.
+
+### com/azu/bookkeeper/automation/service/ScreenCaptureManager.kt  [2 errors]
+  L53: 'onStopped' overrides nothing.
+  L115: No value passed for parameter 'p7'.
+
+### com/azu/bookkeeper/domain/usecase/importflow/MapFieldsUseCase.kt  [2 errors]
+  L60: Overload resolution ambiguity between candidates:
+  L65: 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+
+### com/azu/bookkeeper/worker/AutoBackupWorker.kt  [2 errors]
+  L27: 'when' expression must be exhaustive. Add the 'Loading', 'is Success' branches or an 'else' branch.
+  L33: Unresolved reference 'Loading'.
+
+### com/azu/bookkeeper/worker/RecurringBillWorker.kt  [2 errors]
+  L47: 'when' expression must be exhaustive. Add the 'Loading', 'is Success' branches or an 'else' branch.
+  L57: Unresolved reference 'Loading'.
+
+### com/azu/bookkeeper/BookkeeperApp.kt  [1 errors]
+  L47: Unresolved reference 'BuildConfig'.
+
+### com/azu/bookkeeper/core/DateTimeUtils.kt  [1 errors]
+  L132: Unresolved reference 'DateTimeException'.
+
+### com/azu/bookkeeper/data/repository/CategoryRepositoryImpl.kt  [1 errors]
+  L57: Unresolved reference 'countBills'.
+
+### com/azu/bookkeeper/domain/usecase/auto/CheckDuplicateUseCase.kt  [1 errors]
+  L14: 'operator' modifier is not applicable to function: illegal function name.
+
+### com/azu/bookkeeper/ui/account/AccountListViewModel.kt  [1 errors]
+  L49: Unresolved reference 'getOrNull'.
+
+### com/azu/bookkeeper/ui/category/CategoryManageViewModel.kt  [1 errors]
+  L52: Unresolved reference 'getOrNull'.
+
+### com/azu/bookkeeper/ui/category/TagManageViewModel.kt  [1 errors]
+  L44: Unresolved reference 'getOrNull'.
+
+### com/azu/bookkeeper/ui/home/HomeViewModel.kt  [1 errors]
+  L72: Unresolved reference 'getOrNull'.
+
+### com/azu/bookkeeper/ui/navigation/AppNavHost.kt  [1 errors]
+  L72: This material API is experimental and is likely to change or to be removed in the future.

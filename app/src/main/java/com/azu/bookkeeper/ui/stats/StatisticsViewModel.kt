@@ -118,17 +118,17 @@ class StatisticsViewModel @Inject constructor(
             else -> StatsGranularity.DAY
         }
         _uiState.update { it.copy(range = range, granularity = granularity, drill = null, drillBills = emptyList()) }
-        load()
+        viewModelScope.launch { load() }
     }
 
     fun setCustomRange(startMillis: Long, endMillis: Long) {
         _uiState.update { it.withCustomRange(startMillis, endMillis).copy(drill = null, drillBills = emptyList()) }
-        load()
+        viewModelScope.launch { load() }
     }
 
     fun setGranularity(granularity: StatsGranularity) {
         _uiState.update { it.copy(granularity = granularity) }
-        load()
+        viewModelScope.launch { load() }
     }
 
     fun setTrendMode(mode: TrendMode) = _uiState.update { it.copy(trendMode = mode) }

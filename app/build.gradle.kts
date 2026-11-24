@@ -39,6 +39,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -85,7 +86,8 @@ dependencies {
 
     // 文件 / 识别 / 图表 / 日志
     implementation(libs.kotlin.csv.jvm)
-    implementation(libs.poi.ooxml.lite)
+    // XLSX 读写需要完整 XSSF API；lite 版缺失 XSSFWorkbook/SXSSFWorkbook/OPCPackage 等类
+    implementation(libs.poi.ooxml)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mpandroidchart)
     implementation(libs.timber)

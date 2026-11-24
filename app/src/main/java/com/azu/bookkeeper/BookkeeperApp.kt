@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.azu.bookkeeper.BuildConfig
 import com.azu.bookkeeper.automation.classify.SeedRuleInitializer
 import com.azu.bookkeeper.automation.service.ServiceRestartWorker
 import com.azu.bookkeeper.worker.NotificationWorker

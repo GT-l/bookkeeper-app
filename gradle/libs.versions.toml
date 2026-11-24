@@ -67,7 +67,10 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkit" }
 mpandroidchart = { module = "com.github.PhilJay:MPAndroidChart", version.ref = "mpandroidchart" }
 kotlin-csv-jvm = { module = "com.github.doyaaaaaken:kotlin-csv-jvm", version.ref = "kotlinCsv" }
-poi-ooxml-lite = { group = "org.apache.poi", name = "poi-ooxml-lite", version.ref = "poi" }
+# 完整 XSSF API（XSSFWorkbook / SXSSFWorkbook / OPCPackage / DataFormatter 等）只在
+# poi-ooxml 中；poi-ooxml-lite 仅含精简 schema，无法解析这些类。poi-ooxml 已把
+# poi 与 poi-ooxml-lite 作为传递依赖，故这里只保留完整 artifact，避免两者并存冲突。
+poi-ooxml = { group = "org.apache.poi", name = "poi-ooxml", version.ref = "poi" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }

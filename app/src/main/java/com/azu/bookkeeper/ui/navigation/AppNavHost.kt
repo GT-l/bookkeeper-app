@@ -1,5 +1,6 @@
 package com.azu.bookkeeper.ui.navigation
 
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -29,6 +30,7 @@ import com.azu.bookkeeper.ui.unlock.AppLockScreen
  * Import / Statistics / Export / Backup / AutomationSettings 已由 T4/T5/T7 落地，无占位。
  * BillEdit 的可选 quickPrefill JSON 由 Screen.billEdit(...) 生成，ViewModel 从 SavedStateHandle 读取。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavHost(
     navController: NavHostController,

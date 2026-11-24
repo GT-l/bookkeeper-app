@@ -1,5 +1,6 @@
 package com.azu.bookkeeper.core
 
+import java.time.DateTimeException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -129,7 +130,7 @@ object DateTimeUtils {
         Instant.from(DateTimeFormatter.ISO_INSTANT.parse(iso)).toEpochMilli()
     } catch (_: DateTimeParseException) {
         null
-    } catch (_: java.time.format.DateTimeException) {
+    } catch (_: DateTimeException) {
         null
     }
 

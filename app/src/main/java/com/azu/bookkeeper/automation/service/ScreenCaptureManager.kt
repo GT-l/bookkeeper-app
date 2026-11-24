@@ -23,7 +23,7 @@ import javax.inject.Singleton
 /**
  * MediaProjection 截屏备选（主架构 §5.2 / AC-5）：
  * 用户授权后在 FGS 中拿投影实例，抓一帧 → 加密落盘 → 交 OCR。
- * Android 14+ 每次会话需重授权；onStopped 回调释放投影并清空引用，自动降级读屏/通知路。
+ * Android 14+ 每次会话需重授权；onStop 回调释放投影并清空引用，自动降级读屏/通知路。
  */
 @Singleton
 class ScreenCaptureManager @Inject constructor(
@@ -44,13 +44,13 @@ class ScreenCaptureManager @Inject constructor(
     /** 系统授权弹窗 intent（明确告知将捕获屏幕内容）。 */
     fun createCaptureIntent(): Intent = projectionManager.createScreenCaptureIntent()
 
-    /** 用户授权后建立投影会话；onStopped 在授权失效时回调，供 UI 降级提示。 */
+    /** 用户授权后建立投影会话；onStop 在授权失效时回调，供 UI 降级提示。 */
     fun startSession(resultCode: Int, data: Intent, onStopped: () -> Unit): Boolean = try {
         release()
         onSessionStopped = onStopped
         projection = projectionManager.getMediaProjection(resultCode, data).also { mediaProjection ->
             val callback = object : MediaProjection.Callback() {
-                override fun onStopped() {
+                override fun onStop() {
                     // 授权会话失效：释放并清空引用，避免泄漏与后续崩溃
                     release()
                     onSessionStopped?.invoke()
@@ -112,7 +112,7 @@ class ScreenCaptureManager @Inject constructor(
         } else {
             @Suppress("DEPRECATION")
             mediaProjection.createVirtualDisplay(
-                "bookkeeper_capture", width, height, density, flags, surface, null
+                "bookkeeper_capture", width, height, density, flags, surface, null, null
             )
         }
     }

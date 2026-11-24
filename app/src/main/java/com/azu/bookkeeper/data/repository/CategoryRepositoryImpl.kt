@@ -54,7 +54,7 @@ class CategoryRepositoryImpl @Inject constructor(
     override suspend fun delete(categoryId: Long, migrateToCategoryId: Long): Result<Boolean> =
         safeResult {
             withContext(ioDispatcher) {
-                val bound = billDao.countBills(categoryId) > 0
+                val bound = categoryDao.countBills(categoryId) > 0
                 if (bound && migrateToCategoryId == 0L) {
                     false
                 } else {

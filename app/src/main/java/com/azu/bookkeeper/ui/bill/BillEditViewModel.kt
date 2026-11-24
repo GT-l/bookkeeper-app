@@ -8,6 +8,7 @@ import com.azu.bookkeeper.automation.verify.VerificationController
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.map
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.Bill
 import com.azu.bookkeeper.domain.model.BillSource

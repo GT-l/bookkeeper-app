@@ -54,7 +54,7 @@ class RecurringBillWorker @AssistedInject constructor(
                     )) {
                         is Result.Success -> created++
                         is Result.Error -> Unit
-                        Result.Loading -> Unit
+                        else -> Unit
                     }
                 }
             }

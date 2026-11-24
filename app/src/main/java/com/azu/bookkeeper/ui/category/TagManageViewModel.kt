@@ -3,6 +3,7 @@ package com.azu.bookkeeper.ui.category
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.core.Result
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.Tag
 import com.azu.bookkeeper.domain.repository.BookRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository

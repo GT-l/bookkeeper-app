@@ -1,6 +1,7 @@
 package com.azu.bookkeeper.data.local.db
 
 import androidx.room.TypeConverter
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /** Room 复杂类型转换器（JSON ↔ 集合 / Map）；必须是可实例化的类，不能用 object。 */

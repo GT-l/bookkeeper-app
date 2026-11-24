@@ -2,6 +2,7 @@ package com.azu.bookkeeper.ui.navigation
 
 import android.net.Uri
 import com.azu.bookkeeper.domain.model.BillQuickPrefill
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /** 所有路由集中定义（sealed class），参数占位符与常量统一在此维护。 */

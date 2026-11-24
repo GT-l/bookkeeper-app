@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.azu.bookkeeper.core.di.IoDispatcher
@@ -37,10 +38,12 @@ class OcrEngine @Inject constructor(
             val image = InputImage.fromBitmap(bitmap, 0)
             val text = Tasks.await(recognizer.process(image))
             val blocks = text.textBlocks
-            val confidence = if (blocks.isEmpty()) {
+            // ML Kit 的 TextBlock 不暴露置信度，取各 Line 的置信度均值（范围 0~1）。
+            val lines = blocks.flatMap { block: Text.TextBlock -> block.lines }
+            val confidence = if (lines.isEmpty()) {
                 0f
             } else {
-                blocks.map { it.confidence }.average().toFloat().coerceIn(0f, 1f)
+                lines.map { line: Text.Line -> line.confidence }.average().toFloat().coerceIn(0f, 1f)
             }
             OcrResult(rawText = text.text, confidence = confidence, blockCount = blocks.size)
         }.getOrDefault(OcrResult(rawText = "", confidence = 0f, blockCount = 0))

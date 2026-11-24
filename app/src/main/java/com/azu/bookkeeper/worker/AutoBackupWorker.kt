@@ -30,7 +30,7 @@ class AutoBackupWorker @AssistedInject constructor(
                 WorkResult.success()
             }
             is Result.Error -> WorkResult.retry()
-            Result.Loading -> WorkResult.retry()
+            else -> WorkResult.retry()
         }
     }
 

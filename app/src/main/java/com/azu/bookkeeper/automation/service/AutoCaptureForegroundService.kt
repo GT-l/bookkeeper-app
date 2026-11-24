@@ -27,7 +27,7 @@ import javax.inject.Inject
 /**
  * 自动化常驻前台服务（主架构 §5.4）：
  * API 34+ 使用 specialUse 类型（mediaProjection 授权时由 ScreenCaptureManager 临时切换）；
- * onStopped/销毁时将 service_running 置 false 完成降级，供 WorkManager 探活恢复。
+ * 销毁（onDestroy）时将 service_running 置 false 完成降级，供 WorkManager 探活恢复。
  */
 @AndroidEntryPoint
 class AutoCaptureForegroundService : Service() {
@@ -79,12 +79,6 @@ class AutoCaptureForegroundService : Service() {
             automationSettings.setServiceRunning(false)
         }
         super.onDestroy()
-    }
-
-    /** API 31+ 服务被系统停止时同样降级状态。 */
-    override fun onStopped() {
-        scope.launch { automationSettings.setServiceRunning(false) }
-        super.onStopped()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

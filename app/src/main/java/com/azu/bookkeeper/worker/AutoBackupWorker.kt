@@ -3,6 +3,7 @@ package com.azu.bookkeeper.worker
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker.Result as WorkResult
 import androidx.work.WorkerParameters
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
@@ -21,15 +22,15 @@ class AutoBackupWorker @AssistedInject constructor(
     private val settings: SettingsRepository
 ) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): androidx.work.Result {
-        if (!settings.autoBackupEnabled.first()) return androidx.work.Result.success()
+    override suspend fun doWork(): WorkResult {
+        if (!settings.autoBackupEnabled.first()) return WorkResult.success()
         return when (val result = backupUseCase()) {
             is Result.Success -> {
                 settings.setLastBackupAt(DateTimeUtils.nowMillis())
-                androidx.work.Result.success()
+                WorkResult.success()
             }
-            is Result.Error -> androidx.work.Result.retry()
-            Result.Loading -> androidx.work.Result.retry()
+            is Result.Error -> WorkResult.retry()
+            Result.Loading -> WorkResult.retry()
         }
     }
 

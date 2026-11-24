@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker.Result as WorkResult
 import androidx.work.WorkerParameters
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Constants
@@ -35,10 +36,10 @@ class NotificationWorker @AssistedInject constructor(
     private val settings: SettingsRepository
 ) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): androidx.work.Result {
+    override suspend fun doWork(): WorkResult {
         val bookId = settings.defaultBookId.first().takeIf { it > 0L }
             ?: bookRepository.findDefault().getOrNull()?.bookId
-            ?: return androidx.work.Result.success()
+            ?: return WorkResult.success()
         val now = DateTimeUtils.nowMillis()
         val start = DateTimeUtils.startOfMonth(now)
         val end = DateTimeUtils.endOfMonth(now)
@@ -61,7 +62,7 @@ class NotificationWorker @AssistedInject constructor(
                 notificationId = 2002
             )
         }
-        return androidx.work.Result.success()
+        return WorkResult.success()
     }
 
     private fun showNotification(title: String, text: String, channel: String, notificationId: Int) {

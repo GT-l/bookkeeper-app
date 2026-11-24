@@ -3,6 +3,7 @@ package com.azu.bookkeeper.automation.service
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker.Result as WorkResult
 import androidx.work.WorkerParameters
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
@@ -21,14 +22,14 @@ class ServiceRestartWorker @AssistedInject constructor(
     private val automationSettings: AutomationSettingsDataStore
 ) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): androidx.work.Result {
+    override suspend fun doWork(): WorkResult {
         val enabled = automationSettings.enabled.first()
         val running = automationSettings.serviceRunning.first()
         if (enabled && !running) {
             AutoCaptureForegroundService.start(applicationContext)
         }
         // 统一返回 success：探活本身失败不重试，避免系统在 Doze 下反复唤醒
-        return androidx.work.Result.success()
+        return WorkResult.success()
     }
 
     companion object {

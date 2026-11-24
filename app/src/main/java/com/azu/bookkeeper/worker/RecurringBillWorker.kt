@@ -3,6 +3,7 @@ package com.azu.bookkeeper.worker
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker.Result as WorkResult
 import androidx.work.WorkerParameters
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
@@ -26,10 +27,10 @@ class RecurringBillWorker @AssistedInject constructor(
     private val settings: SettingsRepository
 ) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): androidx.work.Result {
+    override suspend fun doWork(): WorkResult {
         val bookId = settings.defaultBookId.first().takeIf { it > 0L }
             ?: bookRepository.findDefault().getOrNull()?.bookId
-            ?: return androidx.work.Result.success()
+            ?: return WorkResult.success()
         val now = DateTimeUtils.nowMillis()
         val dayStart = DateTimeUtils.startOfDay(now)
         val dayEnd = DateTimeUtils.endOfDay(now)
@@ -57,7 +58,7 @@ class RecurringBillWorker @AssistedInject constructor(
                     }
                 }
             }
-        return androidx.work.Result.success()
+        return WorkResult.success()
     }
 
     /** 从模板时间推进到 [dayStart]~[dayEnd] 窗口内的下一次发生时间。 */

@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.step
+package com.azu.bookkeeper.ui.importflow.step
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
@@ -27,8 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.azu.bookkeeper.core.Money
-import com.azu.bookkeeper.ui.import.ImportViewModel
-import com.azu.bookkeeper.ui.import.component.BillPreviewRow
+import com.azu.bookkeeper.ui.importflow.ImportViewModel
+import com.azu.bookkeeper.ui.importflow.component.BillPreviewRow
 import com.azu.bookkeeper.ui.theme.ErrorRed
 import com.azu.bookkeeper.ui.theme.ExpenseRed
 import com.azu.bookkeeper.ui.theme.IncomeGreen

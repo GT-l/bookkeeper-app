@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.step
+package com.azu.bookkeeper.ui.importflow.step
 
 import android.content.Context
 import android.content.Intent
@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.azu.bookkeeper.ui.import.ImportViewModel
+import com.azu.bookkeeper.ui.importflow.ImportViewModel
 import com.azu.bookkeeper.ui.theme.ErrorRed
 import java.io.File
 

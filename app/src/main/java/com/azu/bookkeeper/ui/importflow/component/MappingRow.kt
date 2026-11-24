@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.component
+package com.azu.bookkeeper.ui.importflow.component
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding

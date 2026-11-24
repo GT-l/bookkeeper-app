@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.domain.usecase.import
+package com.azu.bookkeeper.domain.usecase.importflow
 
 import com.azu.bookkeeper.domain.model.FieldMapping
 import com.azu.bookkeeper.domain.model.ImportField

@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.component
+package com.azu.bookkeeper.ui.importflow.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column

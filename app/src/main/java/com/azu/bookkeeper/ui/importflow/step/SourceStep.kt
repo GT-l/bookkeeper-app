@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.step
+package com.azu.bookkeeper.ui.importflow.step
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,8 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.azu.bookkeeper.domain.model.ImportPresets
 import com.azu.bookkeeper.ui.common.ConfirmDialog
-import com.azu.bookkeeper.ui.import.ImportViewModel
-import com.azu.bookkeeper.ui.import.template.PresetTemplates
+import com.azu.bookkeeper.ui.importflow.ImportViewModel
+import com.azu.bookkeeper.ui.importflow.template.PresetTemplates
 
 /** 步骤 1：预设模板 / 自定义来源，并管理已保存的自定义模板。 */
 @Composable

@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.step
+package com.azu.bookkeeper.ui.importflow.step
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,7 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.azu.bookkeeper.ui.import.ImportViewModel
+import com.azu.bookkeeper.ui.importflow.ImportViewModel
 import com.azu.bookkeeper.ui.theme.ErrorRed
 
 /** 步骤 2：选择 ≤10MB 的 CSV/XLSX，展示表头与前 10 行，字符集可手动切换。 */

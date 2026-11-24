@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.template
+package com.azu.bookkeeper.ui.importflow.template
 
 import com.azu.bookkeeper.domain.model.ImportPresets
 

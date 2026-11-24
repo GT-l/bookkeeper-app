@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import.step
+package com.azu.bookkeeper.ui.importflow.step
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.azu.bookkeeper.domain.model.ImportField
-import com.azu.bookkeeper.ui.import.ImportViewModel
-import com.azu.bookkeeper.ui.import.component.MappingRow
+import com.azu.bookkeeper.ui.importflow.ImportViewModel
+import com.azu.bookkeeper.ui.importflow.component.MappingRow
 import com.azu.bookkeeper.ui.theme.ErrorRed
 
 /** 步骤 3：自动映射 + 手动下拉映射 + 收支/转账/去重/分类账户策略。 */

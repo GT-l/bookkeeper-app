@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import
+package com.azu.bookkeeper.ui.importflow
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,11 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.azu.bookkeeper.ui.import.step.ConfirmStep
-import com.azu.bookkeeper.ui.import.step.MappingStep
-import com.azu.bookkeeper.ui.import.step.PreviewStep
-import com.azu.bookkeeper.ui.import.step.SourceStep
-import com.azu.bookkeeper.ui.import.step.UploadStep
+import com.azu.bookkeeper.ui.importflow.step.ConfirmStep
+import com.azu.bookkeeper.ui.importflow.step.MappingStep
+import com.azu.bookkeeper.ui.importflow.step.PreviewStep
+import com.azu.bookkeeper.ui.importflow.step.SourceStep
+import com.azu.bookkeeper.ui.importflow.step.UploadStep
 
 /** 导入向导外壳：固定 5 步 + 步骤条 + 上一步/下一步（最后一步在 ConfirmStep 内）。 */
 @OptIn(ExperimentalMaterial3Api::class)

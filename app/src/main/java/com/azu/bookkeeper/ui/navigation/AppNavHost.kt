@@ -17,7 +17,7 @@ import com.azu.bookkeeper.ui.category.CategoryManageScreen
 import com.azu.bookkeeper.ui.category.TagManageScreen
 import com.azu.bookkeeper.ui.export.ExportScreen
 import com.azu.bookkeeper.ui.home.HomeScreen
-import com.azu.bookkeeper.ui.import.ImportWizardScreen
+import com.azu.bookkeeper.ui.importflow.ImportWizardScreen
 import com.azu.bookkeeper.ui.search.SearchScreen
 import com.azu.bookkeeper.ui.stats.StatisticsScreen
 import com.azu.bookkeeper.ui.settings.AutomationSettingsScreen

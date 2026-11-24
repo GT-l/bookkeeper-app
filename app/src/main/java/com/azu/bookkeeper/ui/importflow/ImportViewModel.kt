@@ -1,4 +1,4 @@
-package com.azu.bookkeeper.ui.import
+package com.azu.bookkeeper.ui.importflow
 
 import android.content.Context
 import android.net.Uri
@@ -32,11 +32,11 @@ import com.azu.bookkeeper.domain.repository.BookRepository
 import com.azu.bookkeeper.domain.repository.CategoryRepository
 import com.azu.bookkeeper.domain.repository.ImportRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository
-import com.azu.bookkeeper.domain.usecase.import.CommitImportInput
-import com.azu.bookkeeper.domain.usecase.import.CommitImportUseCase
-import com.azu.bookkeeper.domain.usecase.import.MapFieldsUseCase
-import com.azu.bookkeeper.domain.usecase.import.ParseFileUseCase
-import com.azu.bookkeeper.domain.usecase.import.PreviewImportUseCase
+import com.azu.bookkeeper.domain.usecase.importflow.CommitImportInput
+import com.azu.bookkeeper.domain.usecase.importflow.CommitImportUseCase
+import com.azu.bookkeeper.domain.usecase.importflow.MapFieldsUseCase
+import com.azu.bookkeeper.domain.usecase.importflow.ParseFileUseCase
+import com.azu.bookkeeper.domain.usecase.importflow.PreviewImportUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow

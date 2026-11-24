@@ -115,7 +115,7 @@ sdk.dir=C:/Users/<你的用户名>/AppData/Local/Android/Sdk
 | Android Gradle Plugin | 8.5.2 | `gradle/libs.versions.toml` 中 `agp` |
 | Kotlin | 2.0.21 | `kotlin.android` / `kotlin.serialization` |
 | Compose Compiler | Kotlin 2.0 内置插件 `org.jetbrains.kotlin.plugin.compose`（`kotlin.compose` alias） | 随 Kotlin 版本发布，不再单独指定 `composeCompilerVersion` |
-| KSP | 2.0.21-1.0.25 | 必须与 Kotlin 2.0.21 匹配；负责 Hilt 与 Room 注解处理 |
+| KSP | 2.0.21-1.0.28 | 必须与 Kotlin 2.0.21 匹配；负责 Hilt 与 Room 注解处理。1.0.25 存在 Java 符号解析 NPE（Hilt 2.51.x 生成类），已升至 1.0.28 |
 | Hilt | 2.51.1 | `hilt.android` + `hilt.android.compiler` |
 | Compose BOM | 2024.09.02 | Material3 / ui / tooling |
 | Room | 2.6.1 | `room-runtime` / `room-ktx` / `room-compiler` |
@@ -286,7 +286,7 @@ jobs:
 ### 4.2 首次构建最可能出问题的点（按排查优先级）
 
 1. **compileSdk 35 与本机已装 platform 版本不匹配**：只装了 Platform 34（或更低）会在配置阶段直接报 `Failed to find Platform SDK with path: android-35`。先按 §1.2 装 `platforms;android-35` + Build-Tools 35.x，再谈代码问题。
-2. **KSP 注解处理**：KSP `2.0.21-1.0.25` 必须与 Kotlin `2.0.21` 严格匹配；Hilt `hilt.android.compiler`、Room `room-compiler`、Glance 等通过 `ksp(...)` 声明。常见报错：`KSP version mismatch`、生成类找不到、`@HiltAndroidApp` / `@AndroidEntryPoint` / `@Inject` / `@Dao` / `@Database` 的 import 或参数写法不对、`ksp` 产物未被 sourceSet 收录。
+2. **KSP 注解处理**：KSP `2.0.21-1.0.28` 必须与 Kotlin `2.0.21` 严格匹配；Hilt `hilt.android.compiler`、`androidx.hilt:hilt-compiler`（`@HiltWorker` 处理器）、Room `room-compiler`、Glance 等通过 `ksp(...)` 声明。常见报错：`KSP version mismatch`、生成类找不到、`@HiltAndroidApp` / `@AndroidEntryPoint` / `@Inject` / `@Dao` / `@Database` 的 import 或参数写法不对、`ksp` 产物未被 sourceSet 收录。**注意**：KSP `2.0.21-1.0.25` 在解析 Hilt 2.51.x 生成的 Java 类时会抛 `ClassDescriptor` NPE，导致 109 条 `error.NonExistentClass` 级联失败，已升至 1.0.28（见 `docs/ci-logs/run-45408787851-build.log`）。
 3. **Room schema 导出与数据库定义**：`@Database` 的 `entities` / `version` / `exportSchema` 与实际 Entity / DAO / TypeConverter / Migration 是否一致；`exportSchema = true` 时未配置 `schemaDirectory` 会报警告或错误；Room 与 SQLCipher（`SupportFactory` / `SQLiteDatabaseHook`）的接入方式在 2.6.1 下可能已变。
 4. **Compose compiler 与 Kotlin 版本匹配**：Kotlin 2.0 起 Compose compiler 随 Kotlin 发布，必须使用 `org.jetbrains.kotlin.plugin.compose`（本工程用 `kotlin.compose` alias），不再使用旧的 `androidx.compose.compiler:compiler` 手动版本声明；Compose BOM `2024.09.02` 与 Material3 API（`Scaffold`、`NavigationBar`、`remember...` 等）签名需逐个核对。若同时出现 `composeOptions { kotlinCompilerExtensionVersion = ... }` 与新版插件会冲突。
 5. **Glance（桌面小组件）**：`glance-appwidget 1.1.0` / `glance-material3 1.1.0` 的 API（`GlanceAppWidget`、`provideGlance`、`GlanceModifier`、`GlanceTheme`、尺寸模式）与常见示例不同版本差异较大，最容易出现 unresolved reference。

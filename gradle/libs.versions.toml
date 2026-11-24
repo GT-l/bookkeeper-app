@@ -1,7 +1,12 @@
 [versions]
 agp = "8.5.2"
 kotlin = "2.0.21"
-ksp = "2.0.21-1.0.25"
+# Kotlin 2.0.21 必须与同前缀的 KSP 配对。1.0.25 在处理 Hilt 2.51.x 生成的 Java
+# 符号（*_HiltModules.BindsModule 的超级接口）时存在 Java 类型解析 NPE
+# （ResolverImpl.resolveJavaType -> ClassDescriptor 强转失败），后续 109 个
+# error.NonExistentClass 均为该 NPE 的连锁。1.0.26 起修复了一批 Java source
+# 解析缺陷，1.0.28 是 Kotlin 2.0.21 + Hilt 2.51.1 社区/官方示例的验证组合。
+ksp = "2.0.21-1.0.28"
 hilt = "2.51.1"
 androidxHilt = "1.2.0"
 composeBom = "2024.09.02"
@@ -44,6 +49,10 @@ androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "l
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "androidxHilt" }
 androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "androidxHilt" }
+# @HiltWorker 的 KSP 处理器：与 hilt-work 1.2.0 同版本，负责生成 WorkerFactory
+# 所需的 assisted factory 绑定；只有 com.google 的 hilt-android-compiler 时
+# HiltWorkerFactory 在 Dagger 图中无绑定。
+androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "androidxHilt" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-android-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }

@@ -67,6 +67,8 @@ dependencies {
     ksp(libs.hilt.android.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.hilt.work)
+    // @HiltWorker 的注解处理器（KSP），与 androidx.hilt.work 同为 1.2.0
+    ksp(libs.androidx.hilt.compiler)
 
     // 数据
     implementation(libs.androidx.room.runtime)

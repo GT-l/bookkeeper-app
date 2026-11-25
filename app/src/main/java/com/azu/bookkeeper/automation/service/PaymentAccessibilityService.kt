@@ -1,5 +1,6 @@
 package com.azu.bookkeeper.automation.service
 
+import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.FingerprintGestureController
 import android.app.NotificationChannel
@@ -73,6 +74,8 @@ class PaymentAccessibilityService : AccessibilityService() {
     // ---- 手势相关状态 ----
     private var fingerprintController: FingerprintGestureController? = null
     private var fingerprintCallback: FingerprintGestureController.FingerprintGestureCallback? = null
+    private var accessibilityButtonController: AccessibilityButtonController? = null
+    private var accessibilityButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
     private var shakeListener: SensorEventListener? = null
     private var lastTriggerAt = 0L
 
@@ -85,6 +88,7 @@ class PaymentAccessibilityService : AccessibilityService() {
             }
         }
         setupFingerprintGestures()
+        setupAccessibilityButton()
         setupShakeDetection()
     }
 
@@ -116,9 +120,25 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** 系统导航栏的无障碍按钮（部分 ROM 提供）。 */
-    override fun onAccessibilityButtonClicked() {
-        if (QuickGestureCache.code == QuickGestureCodes.ACCESSIBILITY_BUTTON) triggerQuickAdd()
+    /** 系统导航栏的无障碍按钮（部分 ROM 提供）：通过官方 Controller 回调，不是 Service 方法。 */
+    private fun setupAccessibilityButton() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val controller = runCatching { accessibilityButtonController }.getOrNull() ?: return
+        accessibilityButtonController = controller
+        val callback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
+            override fun onClicked(controller: AccessibilityButtonController) {
+                if (QuickGestureCache.code == QuickGestureCodes.ACCESSIBILITY_BUTTON) {
+                    triggerQuickAdd()
+                }
+            }
+
+            override fun onAvailabilityChanged(
+                controller: AccessibilityButtonController,
+                available: Boolean
+            ) = Unit
+        }
+        accessibilityButtonCallback = callback
+        runCatching { controller.registerAccessibilityButtonCallback(callback, mainHandler) }
     }
 
     /** 指纹传感器四向滑动：不需要触摸探索模式，不影响正常点击/滑动。 */
@@ -220,6 +240,9 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         runCatching {
             fingerprintCallback?.let { fingerprintController?.unregisterFingerprintGestureCallback(it) }
+            accessibilityButtonCallback?.let {
+                accessibilityButtonController?.unregisterAccessibilityButtonCallback(it)
+            }
             shakeListener?.let {
                 (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.unregisterListener(it)
             }

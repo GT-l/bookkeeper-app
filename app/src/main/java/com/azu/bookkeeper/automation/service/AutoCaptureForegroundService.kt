@@ -165,7 +165,7 @@ class AutoCaptureForegroundService : Service() {
             runCatching {
                 val payload = collectPayload(applicationContext)
                 NotificationManagerCompat.from(this@AutoCaptureForegroundService)
-                    .notify(Constants.FOREGROUND_SERVICE_ID, buildNotificationFor(this, payload))
+                    .notify(Constants.FOREGROUND_SERVICE_ID, buildNotificationFor(this@AutoCaptureForegroundService, payload))
             }.onFailure { Timber.w(it, "refresh fgs notification failed") }
         }
     }

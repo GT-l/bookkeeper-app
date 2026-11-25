@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import com.azu.bookkeeper.MainActivity
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.core.QuickGestureCache

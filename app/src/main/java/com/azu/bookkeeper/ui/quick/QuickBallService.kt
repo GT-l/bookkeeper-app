@@ -276,9 +276,9 @@ class QuickBallService : Service() {
             openForm()
             return
         }
-        val launched = captureTrigger.trigger(scope) { text, duration ->
+        val launched = captureTrigger.trigger(scope, { text, duration ->
             toastOnMain(text, duration)
-        }
+        })
         if (!launched) {
             // MediaProjection 授权只在 MainActivity 的设置/授权流程里能发起，
             // Service 无法可靠拉起系统授权弹窗（且后台启动受限），降级为直接打开记一笔表单。

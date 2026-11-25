@@ -1,6 +1,9 @@
 package com.azu.bookkeeper.ui.common
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,10 +26,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.azu.bookkeeper.core.AppError
 
@@ -38,18 +46,21 @@ fun SoftCard(
 ) {
     Card(
         modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 4.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp, pressedElevation = 6.dp),
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
         content = content
     )
 }
 
-/** 主按钮：大圆角 + 柔和抬升，禁用态使用主色容器色而非灰块。 */
+/**
+ * 主按钮：糖果渐变（粉 → 深粉）+ 胶囊圆角 + 按下回弹，禁用态退回浅粉容器色。
+ * 用 interactionSource 手动做按压缩放，无需额外动画库。
+ */
 @Composable
 fun CutePrimaryButton(
     onClick: () -> Unit,
@@ -57,19 +68,33 @@ fun CutePrimaryButton(
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = if (pressed && enabled) 0.95f else 1f
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .background(
+                brush = Brush.horizontalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.secondary
+                    )
+                ),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+            ),
         enabled = enabled,
-        shape = MaterialTheme.shapes.medium,
+        interactionSource = interaction,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
+            containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onPrimary,
             disabledContainerColor = MaterialTheme.colorScheme.primaryContainer,
             disabledContentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 0.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 0.dp),
+        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
         content = content
     )
 }
@@ -86,13 +111,14 @@ fun CuteOutlinedButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
         colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
             contentColor = MaterialTheme.colorScheme.primary,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         ),
-        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
+        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
         content = content
     )
 }
@@ -135,6 +161,11 @@ fun LoadingIndicator(modifier: Modifier = Modifier) {
 fun EmptyState(message: String, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         SoftCard(modifier = Modifier.padding(24.dp)) {
+            Text(
+                text = "🐷",
+                fontSize = 36.sp,
+                modifier = Modifier.padding(start = 20.dp, top = 16.dp)
+            )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,

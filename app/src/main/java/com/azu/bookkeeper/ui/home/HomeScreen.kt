@@ -72,7 +72,7 @@ fun HomeScreen(
                 title = {
                     Button(
                         onClick = { bookMenuExpanded = true },
-                        shape = MaterialTheme.shapes.small,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer

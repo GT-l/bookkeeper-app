@@ -3,6 +3,8 @@ package com.azu.bookkeeper.ui.theme
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -18,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.azu.bookkeeper.ui.common.CuteBackdrop
 
 /** 浅色：奶油白底 + 纯白卡片 + 草莓粉主色 + 薰衣草紫/薄荷青点缀。 */
 private val LightColors = lightColorScheme(
@@ -33,7 +36,7 @@ private val LightColors = lightColorScheme(
     onTertiary = Color.White,
     tertiaryContainer = MintContainer,
     onTertiaryContainer = Color(0xFF08483B),
-    background = LightBackground,
+    background = Color.Transparent,
     onBackground = LightOnSurface,
     surface = LightSurface,
     onSurface = LightOnSurface,
@@ -63,7 +66,7 @@ private val DarkColors = darkColorScheme(
     onTertiary = Color(0xFF0A3B31),
     tertiaryContainer = DarkTertiaryContainer,
     onTertiaryContainer = Color(0xFFCFF6EA),
-    background = DarkBackground,
+    background = Color.Transparent,
     onBackground = DarkOnSurface,
     surface = DarkSurface,
     onSurface = DarkOnSurface,
@@ -105,8 +108,10 @@ fun BookkeeperTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
-            window.statusBarColor = colorScheme.background.toArgb()
-            window.navigationBarColor = colorScheme.background.toArgb()
+            val windowBg = if (darkTheme) DarkBackground else LightBackground
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(windowBg.toArgb()))
+            window.statusBarColor = windowBg.toArgb()
+            window.navigationBarColor = windowBg.toArgb()
             val controller = WindowCompat.getInsetsController(window, view)
             // 浅色主题状态栏/导航栏图标用深色，深色主题用浅色，保证可读性。
             controller.isAppearanceLightStatusBars = !darkTheme
@@ -116,7 +121,12 @@ fun BookkeeperTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AppTypography,
-        shapes = AppShapes,
-        content = content
-    )
+        shapes = AppShapes
+    ) {
+        // 全局可爱风贴纸背景：所有页面共享，内容层在上，不拦截任何点击
+        Box(Modifier.fillMaxSize()) {
+            CuteBackdrop(dark = darkTheme)
+            Box(Modifier.fillMaxSize()) { content() }
+        }
+    }
 }

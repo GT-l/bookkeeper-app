@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
+import com.azu.bookkeeper.ui.quick.ShakeQuickAddService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,8 +39,9 @@ class QuickGestureViewModel @Inject constructor(
         val accessibilityGranted: Boolean = false,
         val message: String? = null
     ) {
+        /** 只有指纹手势依赖读屏服务；摇一摇走独立前台服务，不需要无障碍。 */
         val needsAccessibility: Boolean
-            get() = selected != QuickGestureCodes.OFF && !accessibilityGranted
+            get() = QuickGestureCodes.isFingerprint(selected) && !accessibilityGranted
     }
 
     private val _uiState = MutableStateFlow(UiState(options = buildOptions()))
@@ -47,7 +49,16 @@ class QuickGestureViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            _uiState.update { it.copy(selected = automation.quickGesture.first()) }
+            val stored = automation.quickGesture.first()
+            val selected = if (stored in QuickGestureCodes.ALL) {
+                stored
+            } else {
+                // 旧版「无障碍按钮」选项已移除，迁移为关闭
+                automation.setQuickGesture(QuickGestureCodes.OFF)
+                QuickGestureCodes.OFF
+            }
+            _uiState.update { it.copy(selected = selected) }
+            if (selected == QuickGestureCodes.SHAKE) ShakeQuickAddService.start(context)
         }
     }
 
@@ -82,11 +93,7 @@ class QuickGestureViewModel @Inject constructor(
             ),
             Option(
                 QuickGestureCodes.SHAKE, "摇一摇",
-                "摇动手机立刻打开记一笔", accelerometer
-            ),
-            Option(
-                QuickGestureCodes.ACCESSIBILITY_BUTTON, "无障碍按钮",
-                "点系统导航栏上的无障碍按钮", true
+                "摇动手机立刻打开记一笔（独立运行，无需无障碍）", accelerometer
             )
         )
     }
@@ -108,6 +115,12 @@ class QuickGestureViewModel @Inject constructor(
             return@launch
         }
         automation.setQuickGesture(code)
+        // 摇一摇由独立前台服务负责；其他手势（含关闭）都停掉它
+        if (code == QuickGestureCodes.SHAKE) {
+            ShakeQuickAddService.start(context)
+        } else {
+            ShakeQuickAddService.stop(context)
+        }
         refreshPermission()
         _uiState.update {
             it.copy(

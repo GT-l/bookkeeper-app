@@ -1,15 +1,10 @@
 package com.azu.bookkeeper.automation.service
 
-import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.FingerprintGestureController
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -48,8 +43,9 @@ import javax.inject.Inject
  * 仅对白名单包名、完成态关键词触发；1.5s 去抖 + eventId 幂等避免连发重复抓取。
  * 抖音包名作为强信号打 businessTag=DOUYIN，但不改 captureType。
  *
- * 同时承载「系统原生手势 → 记一笔」：指纹四向滑动 / 摇一摇 / 无障碍按钮，
- * 用户在设置页自选。不再使用底部悬浮手势条——那条会吞掉其他应用的触摸。
+ * 同时承载「指纹手势 → 记一笔」（指纹传感器四向滑动，需用户开启本服务）。
+ * 摇一摇已迁到独立前台服务 ShakeQuickAddService，不再依赖本服务；
+ * 「无障碍按钮」选项已移除——ColorOS 会把它渲染成系统悬浮球，造成困扰。
  * 所有手势回调只做轻动作，异常一律降级，绝不让无障碍服务崩掉（它崩了读屏也没了）。
  */
 @AndroidEntryPoint
@@ -74,9 +70,6 @@ class PaymentAccessibilityService : AccessibilityService() {
     // ---- 手势相关状态 ----
     private var fingerprintController: FingerprintGestureController? = null
     private var fingerprintCallback: FingerprintGestureController.FingerprintGestureCallback? = null
-    private var accessibilityButtonController: AccessibilityButtonController? = null
-    private var accessibilityButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
-    private var shakeListener: SensorEventListener? = null
     private var lastTriggerAt = 0L
 
     override fun onServiceConnected() {
@@ -88,8 +81,6 @@ class PaymentAccessibilityService : AccessibilityService() {
             }
         }
         setupFingerprintGestures()
-        setupAccessibilityButton()
-        setupShakeDetection()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -120,27 +111,6 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** 系统导航栏的无障碍按钮（部分 ROM 提供）：通过官方 Controller 回调，不是 Service 方法。 */
-    private fun setupAccessibilityButton() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val controller = runCatching { accessibilityButtonController }.getOrNull() ?: return
-        accessibilityButtonController = controller
-        val callback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
-            override fun onClicked(controller: AccessibilityButtonController) {
-                if (QuickGestureCache.code == QuickGestureCodes.ACCESSIBILITY_BUTTON) {
-                    triggerQuickAdd()
-                }
-            }
-
-            override fun onAvailabilityChanged(
-                controller: AccessibilityButtonController,
-                available: Boolean
-            ) = Unit
-        }
-        accessibilityButtonCallback = callback
-        runCatching { controller.registerAccessibilityButtonCallback(callback, mainHandler) }
-    }
-
     /** 指纹传感器四向滑动：不需要触摸探索模式，不影响正常点击/滑动。 */
     private fun setupFingerprintGestures() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -164,33 +134,6 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
         fingerprintCallback = callback
         runCatching { controller.registerFingerprintGestureCallback(callback, mainHandler) }
-    }
-
-    /** 摇一摇：加速度模长超过阈值且冷却 900ms，只在用户选中该手势时生效。 */
-    private fun setupShakeDetection() {
-        val manager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
-        val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
-        val listener = object : SensorEventListener {
-            private var lastShakeAt = 0L
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event == null || QuickGestureCache.code != QuickGestureCodes.SHAKE) return
-                val x = event.values.getOrNull(0) ?: return
-                val y = event.values.getOrNull(1) ?: return
-                val z = event.values.getOrNull(2) ?: return
-                val force = x * x + y * y + z * z
-                val now = System.currentTimeMillis()
-                if (force > 22f * 22f && now - lastShakeAt > 900L) {
-                    lastShakeAt = now
-                    triggerQuickAdd()
-                }
-            }
-
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
-        }
-        shakeListener = listener
-        runCatching {
-            manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
-        }
     }
 
     /**
@@ -240,12 +183,6 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         runCatching {
             fingerprintCallback?.let { fingerprintController?.unregisterFingerprintGestureCallback(it) }
-            accessibilityButtonCallback?.let {
-                accessibilityButtonController?.unregisterAccessibilityButtonCallback(it)
-            }
-            shakeListener?.let {
-                (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.unregisterListener(it)
-            }
         }
         scope.cancel()
         super.onDestroy()

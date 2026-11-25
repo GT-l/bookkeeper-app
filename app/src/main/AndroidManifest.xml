@@ -66,6 +66,16 @@
             android:exported="false"
             android:process=":overlay" />
 
+        <!-- 摇一摇记一笔：独立前台服务，不依赖无障碍服务；常驻通知可一键关闭 -->
+        <service
+            android:name=".ui.quick.ShakeQuickAddService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="shake_quick_add" />
+        </service>
+
         <!-- 通知栏「显示/隐藏悬浮球」：透明中转页，用户点击时才允许启动服务 -->
         <activity
             android:name=".ui.quick.QuickBallToggleActivity"

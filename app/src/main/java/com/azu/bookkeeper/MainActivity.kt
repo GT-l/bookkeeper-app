@@ -15,6 +15,7 @@ import com.azu.bookkeeper.automation.service.AutoCaptureForegroundService
 import com.azu.bookkeeper.automation.verify.VerificationDialogHost
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.core.SafeMode
+import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.repository.SettingsRepository
 import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
@@ -22,6 +23,7 @@ import com.azu.bookkeeper.ui.navigation.AppEntryRouter
 import com.azu.bookkeeper.ui.navigation.AppNavHost
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.quick.QuickBallService
+import com.azu.bookkeeper.ui.quick.ShakeQuickAddService
 import com.azu.bookkeeper.ui.quick.QuickCaptureLauncher
 import com.azu.bookkeeper.ui.theme.BookkeeperTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -135,6 +137,12 @@ class MainActivity : FragmentActivity() {
             }
             runCatching {
                 AutoCaptureForegroundService.ensureRunning(this@MainActivity, automationSettings)
+            }
+            // 摇一摇走独立前台服务：与悬浮层安全模式无关，回到前台时按设置恢复
+            runCatching {
+                if (automationSettings.quickGesture.first() == QuickGestureCodes.SHAKE) {
+                    ShakeQuickAddService.start(this@MainActivity)
+                }
             }
         }
     }

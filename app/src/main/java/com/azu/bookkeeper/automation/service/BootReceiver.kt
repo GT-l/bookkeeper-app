@@ -4,8 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.azu.bookkeeper.automation.permission.PermissionGuide
+import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.ui.quick.QuickBallService
+import com.azu.bookkeeper.ui.quick.ShakeQuickAddService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -65,5 +67,13 @@ class BootReceiver : BroadcastReceiver() {
             }.onFailure { Timber.w(it, "restore quick ball on boot failed") }
         }
 
+        // 摇一摇独立前台服务：开机时按设置恢复（与悬浮层安全模式无关）
+        scope.launch {
+            runCatching {
+                if (automationSettings.quickGesture.first() == QuickGestureCodes.SHAKE) {
+                    ShakeQuickAddService.start(context.applicationContext)
+                }
+            }.onFailure { Timber.w(it, "restore shake quick add on boot failed") }
+        }
     }
 }

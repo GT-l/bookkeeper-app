@@ -55,7 +55,7 @@ fun QuickGestureSettingsScreen(
                 .padding(16.dp)
         ) {
             Text(
-                "选一个系统能识别的手势，触发后立即打开「记一笔」。不会占用底部屏幕，也不影响其他应用。",
+                "选一个手势触发「记一笔」。摇一摇独立运行；指纹手势需开启读屏服务。不会再出现系统悬浮球。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -100,7 +100,7 @@ fun QuickGestureSettingsScreen(
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
-                            "手势需要「读屏服务」在系统中保持开启。它同时负责支付完成页的自动识别。",
+                            "指纹手势需要「读屏服务」在系统中保持开启。摇一摇不用开无障碍。",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Button(

@@ -174,7 +174,7 @@ class AutomationSettingsDataStore @Inject constructor(
     suspend fun setFloatingBallEnabled(value: Boolean) =
         store.edit { it[Keys.FLOATING_BALL_ENABLED] = value }
 
-    /** 用户选择的系统手势（指纹四向 / 摇一摇 / 无障碍按钮），0 表示不启用。 */
+    /** 用户选择的系统手势（指纹四向 / 摇一摇），0 表示不启用。 */
     val quickGesture: Flow<Int> = store.data.map { it[Keys.QUICK_GESTURE] ?: 0 }
 
     suspend fun setQuickGesture(value: Int) {

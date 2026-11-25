@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.core.QuickGestureCodes
+import com.azu.bookkeeper.core.ShakeActions
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.ui.quick.ShakeQuickAddService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,6 +37,7 @@ class QuickGestureViewModel @Inject constructor(
     data class UiState(
         val options: List<Option> = emptyList(),
         val selected: Int = QuickGestureCodes.OFF,
+        val shakeAction: Int = ShakeActions.OPEN_FORM,
         val accessibilityGranted: Boolean = false,
         val message: String? = null
     ) {
@@ -48,6 +50,11 @@ class QuickGestureViewModel @Inject constructor(
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            automation.shakeAction.collect { action ->
+                _uiState.update { it.copy(shakeAction = action) }
+            }
+        }
         viewModelScope.launch {
             val stored = automation.quickGesture.first()
             val selected = if (stored in QuickGestureCodes.ALL) {
@@ -139,6 +146,19 @@ class QuickGestureViewModel @Inject constructor(
             .onFailure {
                 _uiState.update { it.copy(message = "打不开系统设置，请手动进入无障碍设置") }
             }
+    }
+
+    /** 摇一摇命中后是打开表单还是直接识屏，改动即时生效。 */
+    fun setShakeAction(action: Int) = viewModelScope.launch {
+        if (action !in setOf(ShakeActions.OPEN_FORM, ShakeActions.SCREEN_CAPTURE)) return@launch
+        automation.setShakeAction(action)
+        ShakeQuickAddService.refresh(context)
+        _uiState.update {
+            it.copy(
+                shakeAction = action,
+                message = "摇一摇动作：${ShakeActions.label(action)}"
+            )
+        }
     }
 
     fun clearMessage() = _uiState.update { it.copy(message = null) }

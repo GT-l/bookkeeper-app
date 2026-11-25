@@ -39,16 +39,28 @@ class QuickCaptureTrigger @Inject constructor(
     /**
      * 触发一次识屏记账。
      * @param feedback 主线程回调，参数为 (提示文案, Toast 时长)
+     * @param onFailed 识屏最终失败（截屏失败 / 异常 / 识别未完成）时的主线程回调，
+     *                 调用方据此打开记账表单让用户手动输入；低置信度不算失败（已有校对窗）
      * @return true 表示已发起识屏流程；false 表示没有可用截屏会话（调用方可自行降级）
      */
-    fun trigger(scope: CoroutineScope, feedback: (String, Int) -> Unit): Boolean {
+    fun trigger(
+        scope: CoroutineScope,
+        feedback: (String, Int) -> Unit,
+        onFailed: (() -> Unit)? = null
+    ): Boolean {
         if (!screenCaptureManager.hasActiveSession()) {
             return false
         }
         scope.launch {
             runCatching {
                 val path = withContext(ioDispatcher) { screenCaptureManager.capture() }
-                    ?: return@launch feedback("识屏失败，请重新完成授权", Toast.LENGTH_LONG)
+                if (path == null) {
+                    withContext(mainDispatcher) {
+                        feedback("识屏失败，请重新完成授权", Toast.LENGTH_LONG)
+                        onFailed?.invoke()
+                    }
+                    return@launch
+                }
                 val event = CaptureEvent(
                     // eventId 只需保证幂等键唯一；手动触发场景以毫秒时间戳派生即可
                     eventId = System.currentTimeMillis(),
@@ -65,15 +77,20 @@ class QuickCaptureTrigger @Inject constructor(
                 withContext(mainDispatcher) {
                     when (status) {
                         CaptureEventStatus.LOW_CONFIDENCE.code -> feedback("已进入校对", Toast.LENGTH_SHORT)
-                        // PENDING：管线因缺默认账本等原因未走完，事件留待后续处理
-                        CaptureEventStatus.PENDING.code ->
-                            feedback("识别完成，请先在应用内设置默认账本", Toast.LENGTH_LONG)
+                        // PENDING：管线未走完（如缺默认账本），直接让用户手动输入
+                        CaptureEventStatus.PENDING.code -> {
+                            feedback("识别未完成，请手动输入", Toast.LENGTH_LONG)
+                            onFailed?.invoke()
+                        }
                         else -> feedback("已识别并记账", Toast.LENGTH_SHORT)
                     }
                 }
             }.onFailure { e ->
                 Timber.w(e, "overlay screen capture failed")
-                feedback("识屏失败，请稍后再试", Toast.LENGTH_SHORT)
+                withContext(mainDispatcher) {
+                    feedback("识屏失败，请稍后再试", Toast.LENGTH_SHORT)
+                    onFailed?.invoke()
+                }
             }
         }
         return true

@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 摇一摇命中后从后台拉起记账表单（高优先级全屏通知兜底） -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- 指纹手势触发记一笔（系统手势，非指纹解锁；无硬件的机型自动隐藏该选项） -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />

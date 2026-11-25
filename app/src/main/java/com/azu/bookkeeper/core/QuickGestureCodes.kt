@@ -38,6 +38,14 @@ object QuickGestureCodes {
         code in FINGER_UP..FINGER_RIGHT
 }
 
+/** 摇一摇命中后要做什么。 */
+object ShakeActions {
+    const val OPEN_FORM = 0
+    const val SCREEN_CAPTURE = 1
+
+    fun label(action: Int): String = if (action == SCREEN_CAPTURE) "直接识屏" else "打开记一笔"
+}
+
 /**
  * 手势选择的进程内缓存：无障碍服务与设置页都在主进程，写设置后立刻可见，
  * 避免手势回调里做阻塞式 DataStore 读取。服务连接时会用持久化值重新初始化。
@@ -45,4 +53,7 @@ object QuickGestureCodes {
 object QuickGestureCache {
     @Volatile
     var code: Int = QuickGestureCodes.OFF
+
+    @Volatile
+    var shakeAction: Int = ShakeActions.OPEN_FORM
 }

@@ -56,10 +56,16 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var observeBills: ObserveBillsUseCase
 
-    private val quickCaptureEvents = MutableSharedFlow<QuickCaptureRequest>(extraBufferCapacity = 4)
+    /**
+     * replay=1 很关键：热启动时 onNewIntent 可能早于 Compose 的 LaunchedEffect 订阅，
+     * 普通 SharedFlow 会把这次事件丢掉，表现为「点通知/摇一摇后 App 起来了但停在首页」。
+     */
+    private val quickCaptureEvents = MutableSharedFlow<QuickCaptureRequest>(
+        replay = 1, extraBufferCapacity = 4
+    )
 
     /** 普通页面落地（如常驻通知点击 → 自动化设置页）；热启动时转发给 NavHost。 */
-    private val destinationEvents = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    private val destinationEvents = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 4)
 
     /** 悬浮球兜底恢复用；随 Activity 销毁取消，避免泄漏。 */
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

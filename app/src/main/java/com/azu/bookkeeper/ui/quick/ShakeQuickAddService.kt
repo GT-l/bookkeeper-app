@@ -21,36 +21,63 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.QuickGestureCache
+import com.azu.bookkeeper.core.ShakeActions
+import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.model.QuickEntry
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * 摇一摇记一笔：独立前台服务，**不依赖无障碍服务**。
+ * 摇一摇记一笔：独立前台服务，不依赖无障碍服务。
  *
- * 为什么迁出来：上一版把摇一摇放在 PaymentAccessibilityService 里，只要用户没开
- * 读屏服务（或 ColorOS 把无障碍快捷方式显示成系统悬浮球但服务实际未绑定），
- * onServiceConnected 不执行 → 传感器没注册 → 摇一摇完全没反应。
- * 现在由设置页直接启停本服务，常驻通知可见，用户能确认它确实在运行。
+ * 摇一摇命中后的动作由设置页决定（见 ShakeActions）：
+ * - OPEN_FORM：直接打开记账表单；
+ * - SCREEN_CAPTURE：触发识屏管线；识屏失败 / 未授权 / 识别未完成时，
+ *   自动打开记账表单让用户手动输入，绝不只弹个 Toast 就结束。
  *
- * 振动 + Toast 保证每次命中都有明确反馈；拉起表单失败时退化为一条可点开的通知。
+ * 后台拉起 Activity 在部分 ROM（尤其 ColorOS）上会被拦截：第一次能用、之后只响 Toast
+ * 就是这么来的。因此保留两条路：先直接 startActivity；失败时发一条带 full-screen intent
+ * 的高优先级通知，由系统把记账表单推到前台（用户报的「只提醒不跳转」由此修复）。
  */
 class ShakeQuickAddService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val entryPoint by lazy {
+        EntryPointAccessors.fromApplication(applicationContext, ShakeActionEntryPoint::class.java)
+    }
 
     private var sensorManager: SensorManager? = null
     private var listener: SensorEventListener? = null
     private var lastShakeAt = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_REFRESH -> {
+                runCatching {
+                    NotificationManagerCompat.from(this)
+                        .notify(NOTIFICATION_ID, buildNotification())
+                }
+                return START_NOT_STICKY
+            }
         }
         return try {
             ensureChannel()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // API 34+ 声明了 foregroundServiceType 就必须用带 type 的重载，否则抛
-                // MissingForegroundServiceTypeException，服务起不来（ColorOS 15 等机型常见）
                 ServiceCompat.startForeground(
                     this,
                     NOTIFICATION_ID,
@@ -59,6 +86,12 @@ class ShakeQuickAddService : Service() {
                 )
             } else {
                 startForeground(NOTIFICATION_ID, buildNotification())
+            }
+            // 用持久化值回填动作缓存（设置页改动也会同步更新缓存）
+            scope.launch {
+                runCatching {
+                    QuickGestureCache.shakeAction = entryPoint.automationSettings().shakeAction.first()
+                }.onFailure { Timber.w(it, "read shake action failed") }
             }
             registerSensor()
             isRunning = true
@@ -82,8 +115,7 @@ class ShakeQuickAddService : Service() {
                 val x = event.values.getOrNull(0) ?: return
                 val y = event.values.getOrNull(1) ?: return
                 val z = event.values.getOrNull(2) ?: return
-                // 静止时合加速度≈9.8（重力）；摇动会明显超过。24 ≈ 2.4g，
-                // 配合 1.2s 冷却，正常走路/拿放手机不会误触。
+                // 静止时合加速度≈9.8（重力）；24≈2.4g，配合冷却避免走路误触
                 val magnitude = kotlin.math.sqrt(x * x + y * y + z * z)
                 val now = System.currentTimeMillis()
                 if (magnitude > SHAKE_THRESHOLD && now - lastShakeAt > COOLDOWN_MS) {
@@ -99,6 +131,63 @@ class ShakeQuickAddService : Service() {
     }
 
     private fun onShakeDetected() {
+        vibrate()
+        if (QuickGestureCache.shakeAction == ShakeActions.SCREEN_CAPTURE) {
+            triggerScreenCapture()
+        } else {
+            openForm("摇一摇命中，打开记一笔")
+        }
+    }
+
+    /** 摇一摇 → 识屏；任何失败路径都回退到表单让用户手动输入。 */
+    private fun triggerScreenCapture() {
+        val trigger = runCatching { entryPoint.quickCaptureTrigger() }.getOrNull()
+        if (trigger == null) {
+            openForm("识屏组件不可用，已打开记一笔")
+            return
+        }
+        val launched = trigger.trigger(scope, { text, duration ->
+            Toast.makeText(applicationContext, text, duration).show()
+        }, onFailed = {
+            openForm("识屏未完成，请手动输入")
+        })
+        if (!launched) {
+            openForm("未完成识屏授权，请手动输入")
+        }
+    }
+
+    /** 打开记账表单；后台启动被拦时用全屏通知兜底，保证每次都能进来。 */
+    private fun openForm(message: String) {
+        Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+        val request = QuickCaptureRequest(entry = QuickEntry.SYSTEM_GESTURE)
+        val launched = runCatching {
+            startActivity(QuickCaptureLauncher.intent(applicationContext, request))
+        }.isSuccess
+        if (!launched) showFullScreenFallback(request)
+    }
+
+    private fun showFullScreenFallback(request: QuickCaptureRequest) {
+        runCatching {
+            ensureGestureChannel()
+            val pending = QuickCaptureLauncher.pendingIntent(this, request, 2002)
+            NotificationManagerCompat.from(this).notify(2002, buildFullScreenNotification(pending))
+        }.onFailure { Timber.w(it, "full screen fallback failed") }
+    }
+
+    private fun buildFullScreenNotification(pending: PendingIntent): android.app.Notification =
+        NotificationCompat.Builder(this, GESTURE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_quick_add)
+            .setContentTitle("摇一摇已触发")
+            .setContentText("点这里记一笔")
+            .setAutoCancel(true)
+            .setContentIntent(pending)
+            // 高优先级渠道 + 全屏意图，可绕过后台启动 Activity 限制
+            .setFullScreenIntent(pending, true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .build()
+
+    private fun vibrate() {
         runCatching {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -108,35 +197,33 @@ class ShakeQuickAddService : Service() {
                 vibrator?.vibrate(80L)
             }
         }
-        Toast.makeText(applicationContext, "摇一摇命中，打开记一笔", Toast.LENGTH_SHORT).show()
-        val request = QuickCaptureRequest(entry = QuickEntry.SYSTEM_GESTURE)
-        val launched = runCatching {
-            startActivity(QuickCaptureLauncher.intent(applicationContext, request))
-        }.isSuccess
-        if (!launched) runCatching { showFallbackNotification(request) }
-    }
-
-    private fun showFallbackNotification(request: QuickCaptureRequest) {
-        ensureChannel()
-        val notification = NotificationCompat.Builder(this, Constants.CHANNEL_AUTO_CAPTURE)
-            .setSmallIcon(R.drawable.ic_quick_add)
-            .setContentTitle("摇一摇已触发")
-            .setContentText("点这里记一笔")
-            .setAutoCancel(true)
-            .setContentIntent(QuickCaptureLauncher.pendingIntent(this, request, 2002))
-            .build()
-        NotificationManagerCompat.from(this).notify(2002, notification)
     }
 
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        if (manager.getNotificationChannel(Constants.CHANNEL_AUTO_CAPTURE) == null) {
+        val existing = manager.getNotificationChannel(Constants.CHANNEL_AUTO_CAPTURE)
+        if (existing == null) {
             manager.createNotificationChannel(
                 NotificationChannel(
                     Constants.CHANNEL_AUTO_CAPTURE,
                     getString(R.string.notification_channel_auto_capture),
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+            )
+        }
+    }
+
+    /** 全屏意图单独用高重要级渠道，避免把常驻通知渠道也变成响铃/弹窗。 */
+    private fun ensureGestureChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (manager.getNotificationChannel(GESTURE_CHANNEL_ID) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    GESTURE_CHANNEL_ID,
+                    "手势快捷记账",
+                    NotificationManager.IMPORTANCE_HIGH
                 )
             )
         }
@@ -147,8 +234,7 @@ class ShakeQuickAddService : Service() {
         val openSettings = PendingIntent.getActivity(
             this,
             2003,
-            Intent(this, com.azu.bookkeeper.MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             flags
         )
         val stopIntent = PendingIntent.getService(
@@ -157,10 +243,11 @@ class ShakeQuickAddService : Service() {
             Intent(this, ShakeQuickAddService::class.java).setAction(ACTION_STOP),
             flags
         )
+        val action = ShakeActions.label(QuickGestureCache.shakeAction)
         return NotificationCompat.Builder(this, Constants.CHANNEL_AUTO_CAPTURE)
             .setSmallIcon(R.drawable.ic_quick_add)
             .setContentTitle("摇一摇记一笔运行中")
-            .setContentText("摇动手机即可打开记账表单")
+            .setContentText("当前动作：$action · 摇动手机触发")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -174,6 +261,7 @@ class ShakeQuickAddService : Service() {
     override fun onDestroy() {
         runCatching { listener?.let { sensorManager?.unregisterListener(it) } }
         isRunning = false
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -181,7 +269,9 @@ class ShakeQuickAddService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_STOP"
+        const val ACTION_REFRESH = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_REFRESH"
         private const val NOTIFICATION_ID = 1020
+        private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
         private const val SHAKE_THRESHOLD = 24f
         private const val COOLDOWN_MS = 1_200L
 
@@ -200,10 +290,28 @@ class ShakeQuickAddService : Service() {
             }.onFailure { Timber.w(it, "start ShakeQuickAddService failed") }
         }
 
+        /** 动作选择变化后刷新常驻通知文案；服务没在跑时什么也不做。 */
+        fun refresh(context: Context) {
+            if (!isRunning) return
+            runCatching {
+                context.startService(
+                    Intent(context, ShakeQuickAddService::class.java).setAction(ACTION_REFRESH)
+                )
+            }
+        }
+
         fun stop(context: Context) {
             runCatching {
                 context.stopService(Intent(context, ShakeQuickAddService::class.java).setAction(ACTION_STOP))
             }
         }
     }
+}
+
+/** getter 名不能与不同类型冲突：automationSettings() 与 quickCaptureTrigger() 均与已有入口同类型。 */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ShakeActionEntryPoint {
+    fun automationSettings(): AutomationSettingsDataStore
+    fun quickCaptureTrigger(): QuickCaptureTrigger
 }

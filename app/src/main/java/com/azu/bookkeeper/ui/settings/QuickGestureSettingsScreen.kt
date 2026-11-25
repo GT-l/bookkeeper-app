@@ -14,6 +14,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -24,6 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.azu.bookkeeper.core.QuickGestureCodes
+import com.azu.bookkeeper.core.ShakeActions
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -89,6 +92,36 @@ fun QuickGestureSettingsScreen(
                         )
                     }
                 }
+            }
+
+            if (state.selected == QuickGestureCodes.SHAKE) {
+                Text(
+                    "摇一摇触发后：",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    listOf(ShakeActions.OPEN_FORM, ShakeActions.SCREEN_CAPTURE).forEach { action ->
+                        OutlinedButton(
+                            onClick = { viewModel.setShakeAction(action) },
+                            modifier = Modifier.weight(1f).padding(end = 6.dp)
+                        ) {
+                            Text(
+                                ShakeActions.label(action),
+                                color = if (state.shakeAction == action) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "识屏失败或未授权时会自动打开表单，让你手动输入。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             if (state.needsAccessibility) {

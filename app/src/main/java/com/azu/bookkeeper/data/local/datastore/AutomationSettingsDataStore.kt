@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.core.QuickGestureCache
+import com.azu.bookkeeper.core.ShakeActions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -46,6 +47,7 @@ class AutomationSettingsDataStore @Inject constructor(
         val FLOATING_BALL_ENABLED = booleanPreferencesKey("floating_ball_enabled")
         /** 系统手势触发记一笔：取值见 QuickGestureCodes；0=关闭。 */
         val QUICK_GESTURE = intPreferencesKey("quick_gesture")
+        val SHAKE_ACTION = intPreferencesKey("shake_action")
     }
 
     private val store: DataStore<Preferences> get() = context.automationDataStore
@@ -176,6 +178,14 @@ class AutomationSettingsDataStore @Inject constructor(
 
     /** 用户选择的系统手势（指纹四向 / 摇一摇），0 表示不启用。 */
     val quickGesture: Flow<Int> = store.data.map { it[Keys.QUICK_GESTURE] ?: 0 }
+
+    /** 摇一摇触发的动作：0=打开记一笔表单，1=直接识屏。 */
+    val shakeAction: Flow<Int> = store.data.map { it[Keys.SHAKE_ACTION] ?: ShakeActions.OPEN_FORM }
+
+    suspend fun setShakeAction(value: Int) {
+        store.edit { it[Keys.SHAKE_ACTION] = value }
+        QuickGestureCache.shakeAction = value
+    }
 
     suspend fun setQuickGesture(value: Int) {
         store.edit { it[Keys.QUICK_GESTURE] = value }

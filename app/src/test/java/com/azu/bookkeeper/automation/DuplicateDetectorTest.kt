@@ -6,7 +6,6 @@ import com.azu.bookkeeper.domain.model.Bill
 import com.azu.bookkeeper.domain.model.CaptureCandidate
 import com.azu.bookkeeper.domain.model.CaptureType
 import com.azu.bookkeeper.domain.repository.BillRepository
-import io.mockk.any
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking

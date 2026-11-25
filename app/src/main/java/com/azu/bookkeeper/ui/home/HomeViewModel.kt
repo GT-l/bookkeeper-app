@@ -13,6 +13,7 @@ import com.azu.bookkeeper.domain.repository.SettingsRepository
 import com.azu.bookkeeper.domain.usecase.bill.InstantBillCreator
 import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +65,9 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    /** 当前账本的数据订阅任务；切换账本时取消重建，避免跨账本串流。 */
+    private var dataJob: Job? = null
+
     init {
         viewModelScope.launch {
             bookRepository.observeAll().collect { books ->
@@ -78,12 +82,22 @@ class HomeViewModel @Inject constructor(
                         ?: 0L
                 }
                 _uiState.update { it.copy(bookId = resolved, bills = emptyList(), visibleCount = PAGE_SIZE) }
+                dataJob?.cancel()
                 if (resolved > 0L) {
-                    accountRepository.observeAll(resolved).collect { accounts ->
-                        _uiState.update { it.copy(accounts = accounts) }
-                    }
-                    observeBills(resolved).collect { bills ->
-                        _uiState.update { it.copy(bills = bills, message = null) }
+                    // 修复「添加消费后概览/列表不更新」：账户流与账单流必须各自独立协程收集。
+                    // 旧实现把 observeBills().collect 串在 observeAll().collect 之后，
+                    // 而 Flow.collect 永不返回，账单流永远不会被订阅，数据库变更推送全部丢失。
+                    dataJob = launch {
+                        launch {
+                            accountRepository.observeAll(resolved).collect { accounts ->
+                                _uiState.update { it.copy(accounts = accounts) }
+                            }
+                        }
+                        launch {
+                            observeBills(resolved).collect { bills ->
+                                _uiState.update { it.copy(bills = bills, message = null) }
+                            }
+                        }
                     }
                 }
             }

@@ -42,6 +42,7 @@ import androidx.navigation.NavController
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.ui.navigation.Screen
 import kotlin.math.roundToInt
 
 /**
@@ -149,23 +150,23 @@ fun AutomationSettingsScreen(
                     viewModel.setEnabled(enabled)
                 }
             }
-            // 文案把「总开关 / 常驻通知 / 通知权限」三者的因果关系说清楚，避免用户以为只开权限就够了。
             Text(
-                "常驻通知随自动记账总开关出现：开关打开后通知栏会显示「少花点儿 · 自动记账运行中」，点击回到本页。" +
-                    if (state.enabled && !state.notificationGranted) {
-                        "当前未授予通知权限，自动记账仍在运行，但通知栏看不到常驻通知。"
-                    } else {
-                        ""
-                    },
+                "常驻通知随总开关出现。" +
+                    if (state.enabled && !state.notificationGranted) "当前未授予通知权限，通知栏不会显示。" else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             SettingSwitch("悬浮球快捷记账（单击记一笔 / 长按识屏 / 双击收起）", state.floatingBallEnabled) {
                 viewModel.setFloatingBallEnabled(it)
             }
-            SettingSwitch("三指上滑快速记账（三指按住屏幕底部向上滑）", state.threeFingerEnabled) {
-                viewModel.setThreeFingerEnabled(it)
-            }
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.QuickGestureSettings.route) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) { Text("系统手势：指纹 / 摇一摇") }
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.NotificationSettings.route) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) { Text("通知栏显示内容") }
 
             if (state.safeModeActive) {
                 Card(
@@ -177,8 +178,7 @@ fun AutomationSettingsScreen(
                     Column(Modifier.padding(16.dp)) {
                         Text("已进入安全模式", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "上次启动异常退出，悬浮球 / 三指手势已停止自动启动（否则会反复闪退、打不开 App）。" +
-                                "确认机型支持后可在上方手动重新开启；再次异常会自动回到安全模式。",
+                            "悬浮球上次启动异常，已暂停自动启动以保证 App 能打开。可手动重试。",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 6.dp)
                         )
@@ -192,17 +192,9 @@ fun AutomationSettingsScreen(
                 }
             }
             Text(
-                "复用上方「悬浮窗」权限；默认关闭。四个快捷入口：桌面图标、桌面组件、悬浮球、常驻通知。",
+                "快捷入口：桌面图标 / 小组件 / 常驻通知（全机型）；悬浮球与系统手势需按提示授权。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                "按机型选择最稳的入口：① 长按桌面图标「记一笔」— 全机型可用，不占后台；" +
-                    "② 桌面小组件「记一笔」— 全机型；③ 常驻通知里的「记一笔」按钮 — 需通知权限；" +
-                    "④ 悬浮球 / 三指上滑 — 需「显示在其他应用上层」，部分国产 ROM 会拦（若异常会自动进入安全模式）。",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
             )
             Text(
                 "服务状态：${if (state.serviceRunning) "运行中" else "未运行"}",
@@ -226,7 +218,7 @@ fun AutomationSettingsScreen(
             )
             PermissionStatusCard(
                 title = "通知权限",
-                description = "常驻服务通知与校对提醒；未授予时自动记账仍在运行，但通知栏不会出现常驻通知",
+                description = "常驻通知与校对提醒",
                 granted = state.notificationGranted,
                 actionLabel = if (state.notificationGranted) "已开启" else "去开启",
                 onAction = {
@@ -237,7 +229,7 @@ fun AutomationSettingsScreen(
             // 勾选过「不再询问」后运行时弹窗不再出现，保留应用详情作为兜底入口
             if (!state.notificationGranted) {
                 ActionCard(
-                    title = "通知授权弹窗不再出现时，请到应用详情手动开启通知权限",
+                    title = "弹窗不再出现时，到应用详情开启通知",
                     buttonLabel = "应用详情",
                     onClick = viewModel::openAppDetails
                 )
@@ -303,8 +295,7 @@ fun AutomationSettingsScreen(
             Text("短信识别（银行扣款）", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
             // 前置用途说明（PRD 23.3.2）：先讲清用途与隐私边界，再由用户主动触发运行时授权
             Text(
-                "开启后仅在本地识别银行扣款短信的金额 / 时间 / 商户，短信正文不上传、不存原文、不写入备份；" +
-                    "需要「读取短信」与「接收短信」两项权限，可随时关闭，关闭后读屏 / 通知 / 截屏识别继续工作。",
+                "本地识别银行扣款短信，正文不上传、不存原文；需两项短信权限，随时可关。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -317,14 +308,14 @@ fun AutomationSettingsScreen(
             }
             PermissionStatusCard(
                 title = "短信读取权限",
-                description = "仅用于本地识别银行扣款短信：正文不上传、不存原文，可随时关闭；关闭后其他识别方式继续工作",
+                description = "本地识别扣款短信，正文不上传不留存",
                 granted = state.smsPermissionGranted,
                 actionLabel = "去授权",
                 onAction = { smsPermissionLauncher.launch(PermissionGuide.SMS_RUNTIME_PERMISSIONS) }
             )
             // 用户在系统弹窗勾选「不再询问」后运行时申请不再弹出，保留应用详情作为兜底入口
             ActionCard(
-                title = "若授权弹窗不再出现，请到应用详情手动开启短信权限",
+                title = "弹窗不再出现时，到应用详情开启短信权限",
                 buttonLabel = "应用详情",
                 onClick = viewModel::openAppDetails
             )

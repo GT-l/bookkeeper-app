@@ -57,6 +57,24 @@ interface BillDao {
     )
     suspend fun sumExpenseBetween(bookId: Long, startMillis: Long, endMillis: Long): Long
 
+    /** 常驻通知「最近一笔」：区间内最新的一条支出。 */
+    @Query(
+        "SELECT * FROM bills WHERE book_id = :bookId AND bill_type = 0 " +
+            "AND bill_time BETWEEN :startMillis AND :endMillis ORDER BY bill_time DESC LIMIT 1"
+    )
+    suspend fun lastExpenseBetween(
+        bookId: Long,
+        startMillis: Long,
+        endMillis: Long
+    ): BillEntity?
+
+    /** 常驻通知「今日笔数」。 */
+    @Query(
+        "SELECT COUNT(*) FROM bills WHERE book_id = :bookId AND bill_type = 0 " +
+            "AND bill_time BETWEEN :startMillis AND :endMillis"
+    )
+    suspend fun countExpenseBetween(bookId: Long, startMillis: Long, endMillis: Long): Int
+
     /**
      * 全局去重键查询（架构 §4 关键契约）：
      * 账本 + 秒级 bill_time + 金额分 + 转出账户 + 归一化备注。

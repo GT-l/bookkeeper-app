@@ -13,6 +13,7 @@ enum class QuickEntry {
     APP_WIDGET,
     FLOATING_BALL,
     FG_NOTIFICATION,
+    SYSTEM_GESTURE,
     DOUYIN_FALLBACK
 }
 

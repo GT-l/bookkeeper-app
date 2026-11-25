@@ -6,7 +6,6 @@ import android.content.Intent
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.ui.quick.QuickBallService
-import com.azu.bookkeeper.ui.quick.ThreeFingerGestureService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -66,15 +65,5 @@ class BootReceiver : BroadcastReceiver() {
             }.onFailure { Timber.w(it, "restore quick ball on boot failed") }
         }
 
-        // 三指手势条同样开机恢复
-        scope.launch {
-            runCatching {
-                if (safeMode) return@launch
-                if (!automationSettings.threeFingerEnabled.first()) return@launch
-                if (!permissionGuide.canDrawOverlays()) return@launch
-                if (ThreeFingerGestureService.isRunning) return@launch
-                ThreeFingerGestureService.start(context.applicationContext)
-            }.onFailure { Timber.w(it, "restore three-finger gesture on boot failed") }
-        }
     }
 }

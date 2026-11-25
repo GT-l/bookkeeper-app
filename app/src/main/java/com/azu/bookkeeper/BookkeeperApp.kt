@@ -10,6 +10,7 @@ import com.azu.bookkeeper.BuildConfig
 import com.azu.bookkeeper.automation.classify.SeedRuleInitializer
 import com.azu.bookkeeper.automation.service.ServiceRestartWorker
 import com.azu.bookkeeper.core.FirstRunSeeder
+import com.azu.bookkeeper.core.LegacyCleanup
 import com.azu.bookkeeper.worker.NotificationWorker
 import com.azu.bookkeeper.worker.RecurringBillWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -38,6 +39,9 @@ class BookkeeperApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var firstRunSeeder: FirstRunSeeder
+
+    @Inject
+    lateinit var legacyCleanup: LegacyCleanup
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -82,6 +86,8 @@ class BookkeeperApp : Application(), Configuration.Provider {
         // 种子规则依赖 defaultBookId 指向的账本，必须先落账本再注入规则。
         // 失败只记日志不崩溃：用户仍可手动在账本管理页建账本。
         appScope.launch {
+            runCatching { legacyCleanup.runIfNeeded() }
+                .onFailure { Timber.w(it, "legacy cleanup failed") }
             runCatching { firstRunSeeder.ensureSeeded() }
                 .onFailure { Timber.w(it, "first run seed failed") }
             runCatching { seedRuleInitializer.initialize() }

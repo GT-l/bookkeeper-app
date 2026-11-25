@@ -37,6 +37,8 @@ import com.azu.bookkeeper.ui.importflow.ImportWizardScreen
 import com.azu.bookkeeper.ui.search.SearchScreen
 import com.azu.bookkeeper.ui.stats.StatisticsScreen
 import com.azu.bookkeeper.ui.settings.AutomationSettingsScreen
+import com.azu.bookkeeper.ui.settings.NotificationSettingsScreen
+import com.azu.bookkeeper.ui.settings.QuickGestureSettingsScreen
 import com.azu.bookkeeper.ui.settings.SettingsScreen
 import com.azu.bookkeeper.ui.unlock.AppLockScreen
 
@@ -164,6 +166,8 @@ fun AppNavHost(
             composable(Screen.Export.route) { ExportScreen() }
             composable(Screen.Backup.route) { BackupScreen() }
             composable(Screen.AutomationSettings.route) { AutomationSettingsScreen(navController) }
+            composable(Screen.NotificationSettings.route) { NotificationSettingsScreen() }
+            composable(Screen.QuickGestureSettings.route) { QuickGestureSettingsScreen() }
         }
     }
 }

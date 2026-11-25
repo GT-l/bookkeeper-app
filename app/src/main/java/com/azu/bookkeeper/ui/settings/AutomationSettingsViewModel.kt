@@ -14,7 +14,6 @@ import com.azu.bookkeeper.core.SafeMode
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
 import com.azu.bookkeeper.ui.quick.QuickBallService
-import com.azu.bookkeeper.ui.quick.ThreeFingerGestureService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,8 +52,6 @@ class AutomationSettingsViewModel @Inject constructor(
         val smsDedupToleranceSec: Long = Constants.SMS_DEDUP_TOLERANCE_SEC,
         /** T7：悬浮球默认关闭（Q-DY-4），避免强打扰权限默认开启。 */
         val floatingBallEnabled: Boolean = false,
-        /** 三指上滑快速记账（底部手势条），默认关闭。 */
-        val threeFingerEnabled: Boolean = false,
         /** 安全模式：上次启动崩溃过，悬浮层服务暂不自动启动。 */
         val safeModeActive: Boolean = false,
         val batteryWhitelisted: Boolean = false,
@@ -96,11 +93,6 @@ class AutomationSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             automation.floatingBallEnabled.collect { v ->
                 _uiState.update { it.copy(floatingBallEnabled = v) }
-            }
-        }
-        viewModelScope.launch {
-            automation.threeFingerEnabled.collect { v ->
-                _uiState.update { it.copy(threeFingerEnabled = v) }
             }
         }
         refreshPermissions()
@@ -287,45 +279,6 @@ class AutomationSettingsViewModel @Inject constructor(
             if (automation.floatingBallEnabled.first() && !QuickBallService.isRunning) {
                 QuickBallService.start(context)
                 _uiState.update { it.copy(floatingBallEnabled = true, overlayGranted = true) }
-            }
-            if (automation.threeFingerEnabled.first() && !ThreeFingerGestureService.isRunning) {
-                ThreeFingerGestureService.start(context)
-                _uiState.update { it.copy(threeFingerEnabled = true, overlayGranted = true) }
-            }
-        }
-    }
-
-    /**
-     * 三指上滑快速记账开关（底部透明手势条）：先落库用户意图，再拉起/停止服务。
-     */
-    fun setThreeFingerEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            automation.setThreeFingerEnabled(enabled)
-            if (!enabled) {
-                ThreeFingerGestureService.stop(context)
-                _uiState.update {
-                    it.copy(threeFingerEnabled = false, message = "三指上滑记账已关闭")
-                }
-                return@launch
-            }
-            runCatching { SafeMode.clear(context) }
-            _uiState.update { it.copy(safeModeActive = false) }
-            if (!permissionGuide.canDrawOverlays()) {
-                _uiState.update {
-                    it.copy(
-                        threeFingerEnabled = true,
-                        message = "已记录开启：请打开「显示在其他应用上层/悬浮窗」权限，返回本页后手势条会自动出现"
-                    )
-                }
-                openOverlaySettings()
-                return@launch
-            }
-            ThreeFingerGestureService.start(context)
-            _uiState.update {
-                it.copy(
-                    threeFingerEnabled = true,
-                    message = "三指上滑记账已开启：三根手指按住屏幕底部向上滑即触发识屏记账"
-                )
             }
         }
     }

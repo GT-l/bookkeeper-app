@@ -28,6 +28,8 @@ sealed class Screen(val route: String) {
     data object Backup : Screen("backup")
     data object Settings : Screen("settings")
     data object AutomationSettings : Screen("automation_settings")
+    data object NotificationSettings : Screen("notification_settings")
+    data object QuickGestureSettings : Screen("quick_gesture_settings")
 
     companion object {
         const val ARG_BILL_ID = "billId"

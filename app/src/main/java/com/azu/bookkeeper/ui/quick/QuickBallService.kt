@@ -143,6 +143,8 @@ class QuickBallService : Service() {
         var startY = params.y
         var touchX = 0f
         var touchY = 0f
+        var dragged = false
+        val dragSlopPx = (6 * density).toInt()
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -150,19 +152,36 @@ class QuickBallService : Service() {
                     startY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    dragged = false
                     false
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (event.rawX - touchX).toInt()
-                    params.y = startY + (event.rawY - touchY).toInt()
-                    runCatching { windowManager().updateViewLayout(v, params) }
-                    // 不消费事件，抬起时仍能触发 onClick
-                    false
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    if (kotlin.math.abs(dx) > dragSlopPx || kotlin.math.abs(dy) > dragSlopPx) {
+                        dragged = true
+                    }
+                    if (dragged) {
+                        // gravity=TOP|END：x 是「离右边缘的距离」，手指右移要减小 x，
+                        // 否则球会朝手指反方向跑；y 是离顶部距离，与手指同向。
+                        params.x = startX - dx.toInt()
+                        params.y = startY + dy.toInt()
+                        runCatching { windowManager().updateViewLayout(v, params) }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    // 消费掉 UP，避免拖动结束时再触发 onClick 打开表单
+                    dragged
                 }
                 else -> false
             }
         }
         view.setOnClickListener {
+            if (dragged) {
+                dragged = false
+                return@setOnClickListener
+            }
             val pending = pendingSingleTap
             if (pending != null) {
                 // 双击窗口内的第二次点击：取消待执行的单击动作，收起悬浮球
@@ -171,7 +190,7 @@ class QuickBallService : Service() {
                 // 注意：本服务运行在独立进程 :overlay，DataStore 不支持跨进程写，
                 // 因此这里不再回写开关（避免把用户数据写坏）。收起后由用户自行在设置页关闭开关，
                 // 下次回到 App 时 onResume 会按开关状态决定是否恢复。
-                toast("悬浮球已收起，可在 设置→自动化 关闭该开关彻底停用", Toast.LENGTH_SHORT)
+                toast("悬浮球已收起；通知栏「显示悬浮球」可立即恢复", Toast.LENGTH_SHORT)
                 stopSelf()
             } else {
                 // 延迟 DOUBLE_TAP_TIMEOUT_MS 再打开表单，给双击留出判定窗口

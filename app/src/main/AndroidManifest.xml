@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 指纹手势触发记一笔（系统手势，非指纹解锁；无硬件的机型自动隐藏该选项） -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 银行扣款短信捕获（抖音免密支付识别，T6 落地；个人自用需用户主动授权） -->
     <uses-permission android:name="android.permission.READ_SMS" />
@@ -64,11 +66,11 @@
             android:exported="false"
             android:process=":overlay" />
 
-        <!-- 三指上滑快速记账：底部透明手势条，同样复用 SYSTEM_ALERT_WINDOW -->
-        <service
-            android:name=".ui.quick.ThreeFingerGestureService"
+        <!-- 通知栏「显示/隐藏悬浮球」：透明中转页，用户点击时才允许启动服务 -->
+        <activity
+            android:name=".ui.quick.QuickBallToggleActivity"
             android:exported="false"
-            android:process=":overlay" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- T4：导出文件 / 失败明细 CSV / 备份包经 FileProvider 临时授权分享 -->
         <provider

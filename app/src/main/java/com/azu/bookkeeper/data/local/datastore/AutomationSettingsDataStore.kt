@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.QuickGestureCache
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -43,7 +44,8 @@ class AutomationSettingsDataStore @Inject constructor(
         val SMS_DEDUP_TOLERANCE_SEC = intPreferencesKey("sms_dedup_tolerance_sec")
         val DOUYIN_DEFAULT_CATEGORY_ID = longPreferencesKey("douyin_default_category_id")
         val FLOATING_BALL_ENABLED = booleanPreferencesKey("floating_ball_enabled")
-        val THREE_FINGER_ENABLED = booleanPreferencesKey("three_finger_enabled")
+        /** 系统手势触发记一笔：取值见 QuickGestureCodes；0=关闭。 */
+        val QUICK_GESTURE = intPreferencesKey("quick_gesture")
     }
 
     private val store: DataStore<Preferences> get() = context.automationDataStore
@@ -172,12 +174,14 @@ class AutomationSettingsDataStore @Inject constructor(
     suspend fun setFloatingBallEnabled(value: Boolean) =
         store.edit { it[Keys.FLOATING_BALL_ENABLED] = value }
 
-    /** 三指上滑快速记账（底部手势条），默认关闭。 */
-    val threeFingerEnabled: Flow<Boolean> =
-        store.data.map { it[Keys.THREE_FINGER_ENABLED] ?: false }
+    /** 用户选择的系统手势（指纹四向 / 摇一摇 / 无障碍按钮），0 表示不启用。 */
+    val quickGesture: Flow<Int> = store.data.map { it[Keys.QUICK_GESTURE] ?: 0 }
 
-    suspend fun setThreeFingerEnabled(value: Boolean) =
-        store.edit { it[Keys.THREE_FINGER_ENABLED] = value }
+    suspend fun setQuickGesture(value: Int) {
+        store.edit { it[Keys.QUICK_GESTURE] = value }
+        // 辅助功能服务与主进程同进程，缓存同步更新保证手势立即生效（无需等服务重启）
+        QuickGestureCache.code = value
+    }
 
     companion object {
         /** 连续启动失败 3 次后自动关闭自动化开关，彻底停止重试。 */

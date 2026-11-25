@@ -18,7 +18,7 @@ import java.util.Locale
  * 1. 进程在数据库写入中途被系统强杀（如授予悬浮窗权限时 ROM 会 force-stop），
  *    SQLCipher 的 WAL/主库损坏后，首页任何一条 Room 查询都会抛异常，
  *    而 HomeViewModel 的 collect 在协程里未捕获 → 每次启动必崩 → 永远进不去；
- * 2. 悬浮球 / 三指手势这类悬浮层服务在启动阶段崩溃，而 onResume 每次都会把它拉起来
+ * 2. 悬浮球这类悬浮层服务在启动阶段崩溃，而 onResume 每次都会把它拉起来
  *    → 「打开就崩 → 系统重启 → 又拉起 → 又崩」的死循环。
  *
  * 方案（启动哨兵 + 安全模式 + 自愈 + 崩溃留档）：
@@ -84,14 +84,14 @@ object CrashGuard {
             crashed
         }.getOrDefault(false)
         if (overlayCrashed) {
-            runCatching { SafeMode.activate(app, "悬浮球/三指手势启动崩溃") }
+            runCatching { SafeMode.activate(app, "悬浮球启动崩溃") }
             Timber.w("crash guard: overlay process crashed before, safeMode=on")
         }
 
         val previousCrashes = prefs.getInt(KEY_STARTUP_CRASHES, 0)
         if (previousCrashes >= 1) {
             // 上一次启动在稳定窗口内崩溃了 → 判定为启动崩溃循环：
-            // 1) 进入安全模式，停止自动拉起悬浮球/三指手势（否则每次启动都会再崩一次，永远进不去）；
+            // 1) 进入安全模式，停止自动拉起悬浮球（否则每次启动都会再崩一次，永远进不去）；
             // 2) 仅当崩溃堆栈指向数据库时才备份重建库，避免无关崩溃误清用户账单。
             runCatching { SafeMode.activate(app, "上次启动异常退出") }
             val dbRelated = runCatching {

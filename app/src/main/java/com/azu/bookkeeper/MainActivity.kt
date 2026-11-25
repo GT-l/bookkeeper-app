@@ -13,10 +13,8 @@ import androidx.navigation.compose.rememberNavController
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.automation.service.AutoCaptureForegroundService
 import com.azu.bookkeeper.automation.verify.VerificationDialogHost
-import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.core.SafeMode
-import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.repository.SettingsRepository
 import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
@@ -25,7 +23,6 @@ import com.azu.bookkeeper.ui.navigation.AppNavHost
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.quick.QuickBallService
 import com.azu.bookkeeper.ui.quick.QuickCaptureLauncher
-import com.azu.bookkeeper.ui.quick.ThreeFingerGestureService
 import com.azu.bookkeeper.ui.theme.BookkeeperTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -115,8 +112,7 @@ class MainActivity : FragmentActivity() {
     /**
      * 回到前台时兜底恢复：
      * 1) 悬浮球：开关已开 + 已授权 + 球没在跑 → 补拉起；
-     * 2) 三指手势条：同上；
-     * 3) 常驻通知：自动化开关已开时恢复 / 刷新前台服务（见 [AutoCaptureForegroundService.ensureRunning]）。
+     * 2) 常驻通知：自动化开关已开时恢复 / 刷新前台服务（见 [AutoCaptureForegroundService.ensureRunning]）。
      *    Android 13+ 在未授权 POST_NOTIFICATIONS 期间投递的前台通知会被系统直接丢弃且不补发，
      *    用户事后去系统设置授权也不会自动出现 → 必须在这里再 startForeground 一次刷出来，
      *    否则就表现为「明明开了通知权限，通知栏却一直没有常驻通知」。
@@ -134,12 +130,6 @@ class MainActivity : FragmentActivity() {
                     val enabled = automationSettings.floatingBallEnabled.first()
                     if (enabled && !QuickBallService.isRunning && permissionGuide.canDrawOverlays()) {
                         QuickBallService.start(this@MainActivity)
-                    }
-                }
-                runCatching {
-                    val threeFinger = automationSettings.threeFingerEnabled.first()
-                    if (threeFinger && !ThreeFingerGestureService.isRunning && permissionGuide.canDrawOverlays()) {
-                        ThreeFingerGestureService.start(this@MainActivity)
                     }
                 }
             }
@@ -171,18 +161,9 @@ class MainActivity : FragmentActivity() {
                         Timber.w(e, "observe today expense failed")
                         emit(emptyList())
                     }
-                    .collect { bills ->
-                        val todayStart = DateTimeUtils.startOfDay(System.currentTimeMillis())
-                        val todayExpense = bills.asSequence()
-                            .filter {
-                                it.billType == BillType.EXPENSE &&
-                                    DateTimeUtils.startOfDay(it.billTime) == todayStart
-                            }
-                            .map { it.amountFen }
-                            .sum()
-                        AutoCaptureForegroundService.updateSummaryIfVisible(
-                            this@MainActivity, todayExpense
-                        )
+                    .collect {
+                        // 账单有任何变动就让服务重新取数并刷新通知（含今日/本月/预算等用户勾选项）
+                        AutoCaptureForegroundService.refreshNow(this@MainActivity)
                     }
             }.onFailure { Timber.w(it, "today expense collector stopped") }
         }

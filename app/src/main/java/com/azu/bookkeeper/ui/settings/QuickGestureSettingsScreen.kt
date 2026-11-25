@@ -1,0 +1,124 @@
+package com.azu.bookkeeper.ui.settings
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+/** 快捷手势选择页：只列本机真正支持的手势，不启用触摸探索模式，不干扰正常操作。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QuickGestureSettingsScreen(
+    viewModel: QuickGestureViewModel = hiltViewModel()
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshPermission()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("快捷手势") }) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+            Text(
+                "选一个系统能识别的手势，触发后立即打开「记一笔」。不会占用底部屏幕，也不影响其他应用。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            state.options.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = state.selected == option.code,
+                            enabled = option.supported,
+                            onClick = { viewModel.select(option.code) }
+                        )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = state.selected == option.code,
+                        onClick = null,
+                        enabled = option.supported
+                    )
+                    Column(Modifier.padding(start = 8.dp)) {
+                        Text(
+                            text = option.label + if (option.supported) "" else "（本机不支持）",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = option.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (state.needsAccessibility) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            "手势需要「读屏服务」在系统中保持开启。它同时负责支付完成页的自动识别。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Button(
+                            onClick = viewModel::openAccessibilitySettings,
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) { Text("去开启读屏服务") }
+                    }
+                }
+            }
+
+            state.message?.let { msg ->
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 12.dp).clickable { viewModel.clearMessage() }
+                )
+            }
+        }
+    }
+}

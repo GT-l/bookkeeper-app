@@ -20,7 +20,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 悬浮层手势（悬浮球长按 / 三指上滑手势条）共用的「主动识屏记账」触发器。
+ * 悬浮球长按共用的「主动识屏记账」触发器。
  *
  * 识屏流程不重复 OCR：CaptureCoordinator.onCapture 内部已包含
  * 幂等 → 落库 → OCR → 分类 → 置信度 → 去重 → 自动入账/进校对 的完整管线，

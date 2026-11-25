@@ -70,6 +70,12 @@ fun AutomationSettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 系统权限页统一用 ActivityResultLauncher：留在当前 task，返回时直接刷新权限状态，
+    // 不再出现「授权完按返回直接回桌面、像退出了一次 App」的问题。
+    val systemSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { viewModel.refreshPermissions() }
+
     // MediaProjection 每次会话需重新授权（Android 14+）；拒绝则降级读屏/通知
     val captureLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -207,14 +213,14 @@ fun AutomationSettingsScreen(
                 description = "读取支付完成页金额/商家/时间，主识别路径",
                 granted = state.accessibilityGranted,
                 actionLabel = "去开启",
-                onAction = viewModel::openAccessibilitySettings
+                onAction = { systemSettingsLauncher.launch(viewModel.accessibilitySettingsIntent()) }
             )
             PermissionStatusCard(
                 title = "通知使用权",
                 description = "读取锁屏上的支付通知，读屏未授权时的降级路径",
                 granted = state.notificationListenerGranted,
                 actionLabel = "去开启",
-                onAction = viewModel::openNotificationListenerSettings
+                onAction = { systemSettingsLauncher.launch(viewModel.notificationListenerSettingsIntent()) }
             )
             PermissionStatusCard(
                 title = "通知权限",
@@ -231,7 +237,7 @@ fun AutomationSettingsScreen(
                 ActionCard(
                     title = "弹窗不再出现时，到应用详情开启通知",
                     buttonLabel = "应用详情",
-                    onClick = viewModel::openAppDetails
+                    onClick = { systemSettingsLauncher.launch(viewModel.appDetailsIntent()) }
                 )
             }
             PermissionStatusCard(
@@ -239,14 +245,17 @@ fun AutomationSettingsScreen(
                 description = "后台校对弹窗；未授权自动降级为通知",
                 granted = state.overlayGranted,
                 actionLabel = "去开启",
-                onAction = viewModel::openOverlaySettings
+                onAction = { systemSettingsLauncher.launch(viewModel.overlaySettingsIntent()) }
             )
             PermissionStatusCard(
                 title = "电池优化白名单",
                 description = "减少 Doze 限制；强杀自启做不到，需手动打开一次 App",
                 granted = state.batteryWhitelisted,
                 actionLabel = "去设置",
-                onAction = viewModel::requestBatteryWhitelist
+                onAction = {
+                    viewModel.batteryWhitelistIntent()?.let { systemSettingsLauncher.launch(it) }
+                        ?: runCatching { viewModel.requestBatteryWhitelist() }
+                }
             )
 
             Text("识别与去重", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
@@ -317,7 +326,7 @@ fun AutomationSettingsScreen(
             ActionCard(
                 title = "弹窗不再出现时，到应用详情开启短信权限",
                 buttonLabel = "应用详情",
-                onClick = viewModel::openAppDetails
+                onClick = { systemSettingsLauncher.launch(viewModel.appDetailsIntent()) }
             )
             Text(
                 stringResource(R.string.sms_dedup_hint),

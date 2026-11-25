@@ -301,10 +301,20 @@ class AutomationSettingsViewModel @Inject constructor(
         if (!ok) _uiState.update { it.copy(message = "截屏授权失败，已降级为读屏/通知识别") }
     }
 
-    fun openAccessibilitySettings() = openIntent(permissionGuide.accessibilitySettingsIntent())
-    fun openNotificationListenerSettings() = openIntent(permissionGuide.notificationListenerSettingsIntent())
-    fun openOverlaySettings() = openIntent(permissionGuide.overlaySettingsIntent())
-    fun openAppDetails() = openIntent(permissionGuide.appDetailsIntent())
+    // 暴露 Intent 给 Compose 的 ActivityResultLauncher（留在当前 task，返回不回桌面）
+    fun accessibilitySettingsIntent() = permissionGuide.accessibilitySettingsIntent()
+    fun notificationListenerSettingsIntent() = permissionGuide.notificationListenerSettingsIntent()
+    fun overlaySettingsIntent() = permissionGuide.overlaySettingsIntent()
+    fun appDetailsIntent() = permissionGuide.appDetailsIntent()
+
+    // 保留旧入口供非 Compose 场景使用
+    fun openAccessibilitySettings() = openIntent(accessibilitySettingsIntent())
+    fun openNotificationListenerSettings() = openIntent(notificationListenerSettingsIntent())
+    fun openOverlaySettings() = openIntent(overlaySettingsIntent())
+    fun openAppDetails() = openIntent(appDetailsIntent())
+
+    fun batteryWhitelistIntent() =
+        batteryHelper.requestIgnoreOptimizationsIntent() ?: batteryHelper.manufacturerAutoStartIntent()
 
     fun requestBatteryWhitelist() {
         batteryHelper.requestIgnoreOptimizationsIntent()?.let { openIntent(it) }

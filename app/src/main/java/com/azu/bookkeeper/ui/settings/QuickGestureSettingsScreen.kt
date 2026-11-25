@@ -49,6 +49,10 @@ fun QuickGestureSettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val systemSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { viewModel.refreshPermission() }
+
     Scaffold(topBar = { TopAppBar(title = { Text("快捷手势") }) }) { padding ->
         Column(
             modifier = Modifier
@@ -137,7 +141,7 @@ fun QuickGestureSettingsScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                         Button(
-                            onClick = viewModel::openAccessibilitySettings,
+                            onClick = { systemSettingsLauncher.launch(viewModel.accessibilitySettingsIntent()) },
                             modifier = Modifier.padding(top = 8.dp)
                         ) { Text("去开启读屏服务") }
                     }

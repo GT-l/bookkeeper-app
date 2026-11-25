@@ -140,20 +140,50 @@ class ShakeQuickAddService : Service() {
         }
     }
 
-    /** 摇一摇 → 识屏；任何失败路径都回退到表单让用户手动输入。 */
+    /**
+     * 摇一摇 → 轻量识屏：截屏 + OCR + 提取金额/商家 → 带预填打开表单。
+     * 不再走 CaptureCoordinator 重型管线，避免依赖图构造失败导致「识屏组件不可用」。
+     * 未授权截屏或识别失败都直接打开表单让用户手动输入。
+     */
     private fun triggerScreenCapture() {
-        val trigger = runCatching { entryPoint.quickCaptureTrigger() }.getOrNull()
-        if (trigger == null) {
-            openForm("识屏组件不可用，已打开记一笔")
+        val capture = runCatching { entryPoint.lightweightCapture() }.getOrNull()
+        if (capture == null) {
+            openForm("识屏暂不可用，已打开记一笔，请手动输入")
             return
         }
-        val launched = trigger.trigger(scope, { text, duration ->
-            Toast.makeText(applicationContext, text, duration).show()
-        }, onFailed = {
-            openForm("识屏未完成，请手动输入")
-        })
+        if (capture.needsAuthorization()) {
+            openForm("请先完成一次截屏授权，已打开记一笔")
+            return
+        }
+        capture.toast("正在识别屏幕…")
+        capture.captureIntoForm(scope) { amountFen, merchant ->
+            val message = if (amountFen != null && amountFen > 0L) {
+                "识别完成，请确认金额后保存"
+            } else {
+                "没有识别到金额，请手动输入"
+            }
+            openCaptureForm(capture, amountFen, merchant, message)
+        }
+    }
+
+    /** 用轻量识屏器的预填 Intent 打开表单；失败走全屏通知兜底。 */
+    private fun openCaptureForm(
+        capture: LightweightCapture,
+        amountFen: Long?,
+        merchant: String,
+        message: String
+    ) {
+        capture.toast(message)
+        val launched = runCatching {
+            startActivity(capture.formIntent(amountFen, merchant))
+        }.isSuccess
         if (!launched) {
-            openForm("未完成识屏授权，请手动输入")
+            val request = QuickCaptureRequest(
+                entry = QuickEntry.SYSTEM_GESTURE,
+                amountFen = amountFen,
+                merchant = merchant
+            )
+            showFullScreenFallback(request)
         }
     }
 
@@ -309,10 +339,10 @@ class ShakeQuickAddService : Service() {
     }
 }
 
-/** getter 名不能与不同类型冲突：automationSettings() 与 quickCaptureTrigger() 均与已有入口同类型。 */
+/** getter 名不能与不同类型冲突：automationSettings() 与 lightweightCapture() 均与已有入口同类型。 */
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface ShakeActionEntryPoint {
     fun automationSettings(): AutomationSettingsDataStore
-    fun quickCaptureTrigger(): QuickCaptureTrigger
+    fun lightweightCapture(): LightweightCapture
 }

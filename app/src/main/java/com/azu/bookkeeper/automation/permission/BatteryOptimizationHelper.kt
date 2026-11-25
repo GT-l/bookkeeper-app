@@ -32,7 +32,7 @@ class BatteryOptimizationHelper @Inject constructor(
             Intent(
                 Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                 Uri.parse("package:${context.packageName}")
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         } else {
             null
         }
@@ -51,6 +51,6 @@ class BatteryOptimizationHelper @Inject constructor(
                 Intent().setClassName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")
             else -> return null
         }
-        return intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return intent
     }
 }

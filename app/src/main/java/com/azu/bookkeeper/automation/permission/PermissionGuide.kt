@@ -57,22 +57,26 @@ class PermissionGuide @Inject constructor(
             android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
+    // 注意：这些 Intent 不再带 FLAG_ACTIVITY_NEW_TASK。
+    // 之前带这个 flag 从 Activity 启动系统设置会新建 task，用户授权完按返回时
+    // 常常直接回到桌面，表现为「每开一个权限 App 就退出一次」。
+    // 由 Activity context（ActivityResultLauncher）启动即可留在原 task，返回原页面。
+
     fun accessibilitySettingsIntent(): Intent =
-        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
 
     fun notificationListenerSettingsIntent(): Intent =
-        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
 
     fun overlaySettingsIntent(): Intent =
         Intent(
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
             Uri.parse("package:${context.packageName}")
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
 
     /** 短信权限撤销：跳应用详情页，文案说明「关闭后其他识别方式继续工作」。 */
     fun appDetailsIntent(): Intent =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     companion object {
         /** 设置页 ActivityResultContracts.RequestMultiplePermissions 使用，与 hasSmsPermission 同源。 */

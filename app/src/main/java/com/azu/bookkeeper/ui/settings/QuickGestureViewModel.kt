@@ -141,8 +141,10 @@ class QuickGestureViewModel @Inject constructor(
         }
     }
 
+    fun accessibilitySettingsIntent() = permissionGuide.accessibilitySettingsIntent()
+
     fun openAccessibilitySettings() {
-        runCatching { context.startActivity(permissionGuide.accessibilitySettingsIntent()) }
+        runCatching { context.startActivity(accessibilitySettingsIntent()) }
             .onFailure {
                 _uiState.update { it.copy(message = "打不开系统设置，请手动进入无障碍设置") }
             }

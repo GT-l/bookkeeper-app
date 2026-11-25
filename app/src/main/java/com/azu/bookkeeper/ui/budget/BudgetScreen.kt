@@ -6,11 +6,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -22,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.azu.bookkeeper.core.Money
+import com.azu.bookkeeper.ui.common.CuteOutlinedButton
+import com.azu.bookkeeper.ui.common.CutePrimaryButton
 import com.azu.bookkeeper.ui.theme.ExpenseRed
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,10 +72,10 @@ fun BudgetScreen(viewModel: BudgetViewModel = hiltViewModel()) {
             state.message?.let {
                 Text(it, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 12.dp))
             }
-            Button(onClick = { viewModel.save() }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+            CutePrimaryButton(onClick = { viewModel.save() }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
                 Text("保存预算")
             }
-            OutlinedButton(onClick = { viewModel.resetMonth() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            CuteOutlinedButton(onClick = { viewModel.resetMonth() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Text("本月重置")
             }
         }

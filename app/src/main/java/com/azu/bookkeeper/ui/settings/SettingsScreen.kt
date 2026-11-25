@@ -1,6 +1,8 @@
 package com.azu.bookkeeper.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,6 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -22,11 +25,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.ui.common.SoftCard
 import com.azu.bookkeeper.ui.navigation.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,7 +102,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = 6.dp)
             ) { Text("应用周起始日") }
 
-            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = state.appLockEnabled, onCheckedChange = viewModel::setAppLock)
                 Text("启用应用锁（退出 5 分钟后自动上锁）")
             }
@@ -113,7 +118,7 @@ fun SettingsScreen(
                 }
             }
 
-            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = state.autoBackupEnabled, onCheckedChange = viewModel::setAutoBackup)
                 Text("每日自动本地备份")
             }
@@ -121,7 +126,8 @@ fun SettingsScreen(
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
 
             Text("管理", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp))
-            listOf(
+            // 可爱化管理列表：SoftCard 分组 + 圆形涟漪 + 右侧「›」尾随符号，只调样式不动跳转逻辑
+            val manageEntries = listOf(
                 "分类管理" to Screen.Categories.route,
                 "标签管理" to Screen.Tags.route,
                 "账本管理" to Screen.Books.route,
@@ -129,11 +135,35 @@ fun SettingsScreen(
                 "导入（T4）" to Screen.Import.route,
                 "统计（T4）" to Screen.Statistics.route,
                 "备份与恢复（T4）" to Screen.Backup.route
-            ).forEach { (label, route) ->
-                OutlinedButton(
-                    onClick = { navController.navigate(route) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                ) { Text(label) }
+            )
+            SoftCard(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                manageEntries.forEachIndexed { index, (label, route) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { navController.navigate(route) }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "›",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (index < manageEntries.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            thickness = 1.dp
+                        )
+                    }
+                }
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.azu.bookkeeper.ui.home
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +20,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -34,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Money
+import com.azu.bookkeeper.ui.common.ConfirmDialog
+import com.azu.bookkeeper.ui.common.CutePill
 import com.azu.bookkeeper.ui.common.EmptyState
 import com.azu.bookkeeper.ui.common.SoftCard
 import com.azu.bookkeeper.ui.navigation.Screen
@@ -41,7 +45,7 @@ import com.azu.bookkeeper.ui.theme.AmountStyle
 import com.azu.bookkeeper.ui.theme.ExpenseRed
 import com.azu.bookkeeper.ui.theme.IncomeGreen
 
-/** 首页：账本切换 + 账单概览 + 快捷入口 + 账单列表。 */
+/** 首页：账本切换 + 账单概览 + 快捷入口 + 账单列表（右滑/长按删除需确认）。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -50,6 +54,8 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var bookMenuExpanded by remember { mutableStateOf(false) }
+    // 待删除账单 ID：滑动删除 / 长按删除都会先记录到这里，经确认对话框后再真正删除
+    var pendingDelete by remember { mutableStateOf<Long?>(null) }
     val currentBook = state.books.firstOrNull { it.bookId == state.bookId }
     val groups = state.dayGroups
     val totalIncome = groups.sumOf { it.incomeFen }
@@ -148,22 +154,15 @@ fun HomeScreen(
                     }
                 }
             }
-            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                TextButton(onClick = { navController.navigate(Screen.Accounts.route) }) {
-                    Text("资产", color = MaterialTheme.colorScheme.primary)
-                }
-                TextButton(onClick = { navController.navigate(Screen.Budget.route) }) {
-                    Text("预算", color = MaterialTheme.colorScheme.primary)
-                }
-                TextButton(onClick = { navController.navigate(Screen.Search.route) }) {
-                    Text("搜索", color = MaterialTheme.colorScheme.primary)
-                }
-                TextButton(onClick = { navController.navigate(Screen.Books.route) }) {
-                    Text("账本", color = MaterialTheme.colorScheme.primary)
-                }
-                TextButton(onClick = { navController.navigate(Screen.Settings.route) }) {
-                    Text("设置", color = MaterialTheme.colorScheme.primary)
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                QuickEntryPill(label = "资产") { navController.navigate(Screen.Accounts.route) }
+                QuickEntryPill(label = "预算") { navController.navigate(Screen.Budget.route) }
+                QuickEntryPill(label = "搜索") { navController.navigate(Screen.Search.route) }
+                QuickEntryPill(label = "账本") { navController.navigate(Screen.Books.route) }
+                QuickEntryPill(label = "设置") { navController.navigate(Screen.Settings.route) }
             }
             state.message?.let { message ->
                 Text(
@@ -178,10 +177,36 @@ fun HomeScreen(
                 BillList(
                     groups = state.dayGroups,
                     onBillClick = { id -> navController.navigate(Screen.billDetail(id)) },
+                    onSwipeDelete = { id -> pendingDelete = id },
                     onLoadMore = { viewModel.loadMore() },
                     modifier = Modifier.fillMaxSize()
                 )
             }
         }
     }
+
+    pendingDelete?.let { billId ->
+        ConfirmDialog(
+            title = "删除账单",
+            message = "删除后将回滚账户余额，此操作不可恢复。确认删除？",
+            confirmText = "确认删除",
+            onConfirm = {
+                viewModel.deleteBill(billId)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null }
+        )
+    }
+}
+
+/** 快捷入口胶囊：浅粉底 + 主色文字，圆形涟漪，替代原来生硬的 TextButton。 */
+@Composable
+private fun QuickEntryPill(label: String, onClick: () -> Unit) {
+    CutePill(
+        text = label,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+    )
 }

@@ -35,6 +35,7 @@ import androidx.navigation.NavController
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.Account
+import com.azu.bookkeeper.ui.common.CuteOutlinedButton
 import com.azu.bookkeeper.ui.common.EmptyState
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.theme.ExpenseRed
@@ -93,11 +94,11 @@ fun AccountListScreen(
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
-                        OutlinedButton(onClick = {
+                        CuteOutlinedButton(onClick = {
                             calibrating = account
                             actualText = Money.format(account.balanceFen, withSymbol = false)
                         }) { Text("校准") }
-                        OutlinedButton(
+                        CuteOutlinedButton(
                             onClick = { navController.navigate(Screen.accountEdit(account.accountId)) },
                             modifier = Modifier.padding(start = 6.dp)
                         ) { Text("编辑") }

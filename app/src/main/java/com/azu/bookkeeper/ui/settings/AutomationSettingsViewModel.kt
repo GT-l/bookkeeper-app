@@ -10,9 +10,11 @@ import com.azu.bookkeeper.automation.receiver.SmsBroadcastReceiver
 import com.azu.bookkeeper.automation.service.AutoCaptureForegroundService
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.SafeMode
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
 import com.azu.bookkeeper.ui.quick.QuickBallService
+import com.azu.bookkeeper.ui.quick.ThreeFingerGestureService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /** 自动化设置页状态与动作（含能力说明固定文案与短信隐私开关）。 */
@@ -50,6 +53,10 @@ class AutomationSettingsViewModel @Inject constructor(
         val smsDedupToleranceSec: Long = Constants.SMS_DEDUP_TOLERANCE_SEC,
         /** T7：悬浮球默认关闭（Q-DY-4），避免强打扰权限默认开启。 */
         val floatingBallEnabled: Boolean = false,
+        /** 三指上滑快速记账（底部手势条），默认关闭。 */
+        val threeFingerEnabled: Boolean = false,
+        /** 安全模式：上次启动崩溃过，悬浮层服务暂不自动启动。 */
+        val safeModeActive: Boolean = false,
         val batteryWhitelisted: Boolean = false,
         val message: String? = null
     )
@@ -91,7 +98,17 @@ class AutomationSettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(floatingBallEnabled = v) }
             }
         }
+        viewModelScope.launch {
+            automation.threeFingerEnabled.collect { v ->
+                _uiState.update { it.copy(threeFingerEnabled = v) }
+            }
+        }
         refreshPermissions()
+        // 安全模式是纯 SharedPreferences 标记（不依赖 DataStore/DB），进页面就先读一次，
+        // 否则「上次崩过」的提示要等用户切出去再回来才出现。
+        _uiState.update {
+            it.copy(safeModeActive = runCatching { SafeMode.isActive(context) }.getOrDefault(false))
+        }
     }
 
     /** 把系统权限实时状态叠加到 DataStore 配置态上。 */
@@ -110,16 +127,76 @@ class AutomationSettingsViewModel @Inject constructor(
 
     fun setEnabled(enabled: Boolean) = viewModelScope.launch {
         automation.setEnabled(enabled)
-        if (enabled) {
-            AutoCaptureForegroundService.start(context)
-            if (automation.serviceRunning.first().not()) {
-                _uiState.update { it.copy(message = "服务可能被系统限制，请检查电池优化设置") }
-            }
-        } else {
+        if (!enabled) {
             screenCapture.release()
             AutoCaptureForegroundService.stop(context)
+            _uiState.update { it.copy(message = "已关闭自动记账与常驻通知") }
+            return@launch
         }
+        val requested = AutoCaptureForegroundService.start(context)
+        // start() 只代表系统受理了启动请求；服务真正进入前台后才会异步写 serviceRunning。
+        // 之前在这里立刻读一次 serviceRunning.first()，读到的必然是旧值 false，
+        // 于是刚刚开启成功也会误报「服务可能被系统限制」——改为带超时地等待写入。
+        val running = withTimeoutOrNull(SERVICE_START_TIMEOUT_MS) {
+            automation.serviceRunning.first { it }
+        } != null
+        val notificationsGranted = permissionGuide.hasNotificationPermission()
+        val message = when {
+            !requested -> "无法启动后台服务，请检查电池优化 / 自启动设置后重试"
+            !running -> "服务可能被系统限制，请检查电池优化设置"
+            notificationsGranted -> "已开启：通知栏已出现常驻通知，点击可回到本页"
+            // 通知权限与总开关是两件事：没有权限时自动记账仍然工作，只是通知栏看不到常驻通知。
+            else -> "已开启自动记账；未授予通知权限，通知栏不会显示常驻通知"
+        }
+        _uiState.update { it.copy(message = message) }
+        refreshPermissions()
     }
+
+    /**
+     * Android 13+ POST_NOTIFICATIONS 运行时申请结果。
+     *
+     * @param granted 是否授予。
+     * @param enableRequested 本次申请是否由「启用自动记账」总开关发起（是则授权后直接开启）。
+     *
+     * 关键修复：Android 13+ 在未授权期间投递的前台通知会被系统丢弃且**不会补发**，
+     * 所以权限补齐后必须让已在运行的服务重新 startForeground 一次，通知才会出现在通知栏。
+     */
+    fun onNotificationPermissionResult(granted: Boolean, enableRequested: Boolean) =
+        viewModelScope.launch {
+            refreshPermissions()
+            if (!granted) {
+                _uiState.update {
+                    it.copy(
+                        message = "通知权限被拒绝：自动记账仍可运行，但通知栏不会显示常驻通知；" +
+                            "可在应用详情里手动开启通知权限"
+                    )
+                }
+                // 用户明确点了总开关：权限被拒也要把开关打开，识别能力仍然可用。
+                if (enableRequested) setEnabled(true)
+                return@launch
+            }
+            if (enableRequested) {
+                setEnabled(true)
+                return@launch
+            }
+            if (!automation.enabled.first()) {
+                _uiState.update {
+                    it.copy(message = "通知权限已授予：打开上方「启用自动记账」总开关后常驻通知才会出现")
+                }
+                return@launch
+            }
+            // 开关已开但此前没有通知权限：服务可能在跑但通知被系统丢弃，补发一次。
+            val refreshed = AutoCaptureForegroundService.ensureRunning(context, automation)
+            _uiState.update {
+                it.copy(
+                    message = if (refreshed) {
+                        "通知权限已授予，常驻通知已出现在通知栏"
+                    } else {
+                        "通知权限已授予；自动记账未运行，打开总开关后会出现常驻通知"
+                    }
+                )
+            }
+        }
 
     fun setOcrThreshold(value: Float) = viewModelScope.launch { automation.setOcrThreshold(value) }
 
@@ -177,6 +254,9 @@ class AutomationSettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(floatingBallEnabled = false, message = "悬浮球已关闭") }
                 return@launch
             }
+            // 用户显式开启 = 认可风险，退出安全模式；若再崩，CrashGuard 会重新进入安全模式
+            runCatching { SafeMode.clear(context) }
+            _uiState.update { it.copy(safeModeActive = false) }
             if (!permissionGuide.canDrawOverlays()) {
                 _uiState.update {
                     it.copy(
@@ -193,19 +273,59 @@ class AutomationSettingsViewModel @Inject constructor(
     }
 
     /**
-     * 页面回到前台时调用：开关已开 + 权限已给 + 球没在跑 → 自动补拉起。
+     * 页面回到前台时调用：开关已开 + 权限已给 + 组件没在跑 → 自动补拉起。
      * 覆盖「去系统设置授权后返回」和「进程被杀后重新打开 App」两种场景。
      */
     fun retryStartFloatingBallIfNeeded() {
         viewModelScope.launch {
-            val enabled = automation.floatingBallEnabled.first()
-            if (!enabled) return@launch
+            // 安全模式先判定：即使悬浮窗权限没给也要把提示挂出来（安全模式期间不自动拉起）
+            val safeMode = runCatching { SafeMode.isActive(context) }.getOrDefault(false)
+            _uiState.update { it.copy(safeModeActive = safeMode) }
+            if (safeMode) return@launch
             val overlayOk = permissionGuide.canDrawOverlays()
             if (!overlayOk) return@launch
-            if (QuickBallService.isRunning) return@launch
-            QuickBallService.start(context)
+            if (automation.floatingBallEnabled.first() && !QuickBallService.isRunning) {
+                QuickBallService.start(context)
+                _uiState.update { it.copy(floatingBallEnabled = true, overlayGranted = true) }
+            }
+            if (automation.threeFingerEnabled.first() && !ThreeFingerGestureService.isRunning) {
+                ThreeFingerGestureService.start(context)
+                _uiState.update { it.copy(threeFingerEnabled = true, overlayGranted = true) }
+            }
+        }
+    }
+
+    /**
+     * 三指上滑快速记账开关（底部透明手势条）：先落库用户意图，再拉起/停止服务。
+     */
+    fun setThreeFingerEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            automation.setThreeFingerEnabled(enabled)
+            if (!enabled) {
+                ThreeFingerGestureService.stop(context)
+                _uiState.update {
+                    it.copy(threeFingerEnabled = false, message = "三指上滑记账已关闭")
+                }
+                return@launch
+            }
+            runCatching { SafeMode.clear(context) }
+            _uiState.update { it.copy(safeModeActive = false) }
+            if (!permissionGuide.canDrawOverlays()) {
+                _uiState.update {
+                    it.copy(
+                        threeFingerEnabled = true,
+                        message = "已记录开启：请打开「显示在其他应用上层/悬浮窗」权限，返回本页后手势条会自动出现"
+                    )
+                }
+                openOverlaySettings()
+                return@launch
+            }
+            ThreeFingerGestureService.start(context)
             _uiState.update {
-                it.copy(floatingBallEnabled = true, overlayGranted = true)
+                it.copy(
+                    threeFingerEnabled = true,
+                    message = "三指上滑记账已开启：三根手指按住屏幕底部向上滑即触发识屏记账"
+                )
             }
         }
     }
@@ -249,5 +369,10 @@ class AutomationSettingsViewModel @Inject constructor(
     private fun openIntent(intent: Intent) {
         runCatching { context.startActivity(intent) }
             .onFailure { _uiState.update { it.copy(message = "无法打开系统设置，请手动进入") } }
+    }
+
+    companion object {
+        /** 等待前台服务把 running=true 写回 DataStore 的上限；超时即认为启动失败（与 FGS 失败退避互相兜底）。 */
+        private const val SERVICE_START_TIMEOUT_MS = 2_000L
     }
 }

@@ -43,6 +43,7 @@ class AutomationSettingsDataStore @Inject constructor(
         val SMS_DEDUP_TOLERANCE_SEC = intPreferencesKey("sms_dedup_tolerance_sec")
         val DOUYIN_DEFAULT_CATEGORY_ID = longPreferencesKey("douyin_default_category_id")
         val FLOATING_BALL_ENABLED = booleanPreferencesKey("floating_ball_enabled")
+        val THREE_FINGER_ENABLED = booleanPreferencesKey("three_finger_enabled")
     }
 
     private val store: DataStore<Preferences> get() = context.automationDataStore
@@ -170,6 +171,13 @@ class AutomationSettingsDataStore @Inject constructor(
 
     suspend fun setFloatingBallEnabled(value: Boolean) =
         store.edit { it[Keys.FLOATING_BALL_ENABLED] = value }
+
+    /** 三指上滑快速记账（底部手势条），默认关闭。 */
+    val threeFingerEnabled: Flow<Boolean> =
+        store.data.map { it[Keys.THREE_FINGER_ENABLED] ?: false }
+
+    suspend fun setThreeFingerEnabled(value: Boolean) =
+        store.edit { it[Keys.THREE_FINGER_ENABLED] = value }
 
     companion object {
         /** 连续启动失败 3 次后自动关闭自动化开关，彻底停止重试。 */

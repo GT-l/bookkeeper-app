@@ -18,9 +18,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /** 首页状态：日期分组 + 当日收支合计 + 分页可见条数。 */
@@ -72,9 +74,15 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            bookRepository.observeAll().collect { books ->
-                _uiState.update { it.copy(books = books) }
-            }
+            bookRepository.observeAll()
+                .catch { e ->
+                    // 库损坏等异常不允许沿协程炸掉进程：置空并由 CrashGuard 在下次启动自愈
+                    Timber.w(e, "observe books failed")
+                    emit(emptyList())
+                }
+                .collect { books ->
+                    _uiState.update { it.copy(books = books) }
+                }
         }
         viewModelScope.launch {
             settings.defaultBookId.collect { preferred ->
@@ -91,21 +99,31 @@ class HomeViewModel @Inject constructor(
                     // 而 Flow.collect 永不返回，账单流永远不会被订阅，数据库变更推送全部丢失。
                     dataJob = launch {
                         launch {
-                            accountRepository.observeAll(resolved).collect { accounts ->
-                                _uiState.update { it.copy(accounts = accounts) }
-                            }
+                            accountRepository.observeAll(resolved)
+                                .catch { e ->
+                                    Timber.w(e, "observe accounts failed")
+                                    emit(emptyList())
+                                }
+                                .collect { accounts ->
+                                    _uiState.update { it.copy(accounts = accounts) }
+                                }
                         }
                         launch {
-                            observeBills(resolved).collect { bills ->
-                                // 展示层过滤 0 值账单（一键建单的 0 分占位账单、余额校准残留等）：
-                                // 只影响列表呈现，不删库——数据由详情页 onLeave / 用户删除负责清理。
-                                _uiState.update {
-                                    it.copy(
-                                        bills = bills.filter { bill -> bill.amountFen > 0L },
-                                        message = null
-                                    )
+                            observeBills(resolved)
+                                .catch { e ->
+                                    Timber.w(e, "observe bills failed")
+                                    emit(emptyList())
                                 }
-                            }
+                                .collect { bills ->
+                                    // 展示层过滤 0 值账单（一键建单的 0 分占位账单、余额校准残留等）：
+                                    // 只影响列表呈现，不删库——数据由详情页 onLeave / 用户删除负责清理。
+                                    _uiState.update {
+                                        it.copy(
+                                            bills = bills.filter { bill -> bill.amountFen > 0L },
+                                            message = null
+                                        )
+                                    }
+                                }
                         }
                     }
                 }

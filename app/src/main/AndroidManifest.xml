@@ -58,9 +58,17 @@
         </receiver>
 
         <!-- T7：悬浮球快捷入口，复用 SYSTEM_ALERT_WINDOW；权限未授予时服务自行降级退出 -->
+        <!-- 放在独立进程 :overlay：悬浮层服务即使崩溃也只崩附属进程，主 App 不受影响 -->
         <service
             android:name=".ui.quick.QuickBallService"
-            android:exported="false" />
+            android:exported="false"
+            android:process=":overlay" />
+
+        <!-- 三指上滑快速记账：底部透明手势条，同样复用 SYSTEM_ALERT_WINDOW -->
+        <service
+            android:name=".ui.quick.ThreeFingerGestureService"
+            android:exported="false"
+            android:process=":overlay" />
 
         <!-- T4：导出文件 / 失败明细 CSV / 备份包经 FileProvider 临时授权分享 -->
         <provider

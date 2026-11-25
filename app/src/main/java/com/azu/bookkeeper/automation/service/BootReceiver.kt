@@ -6,6 +6,7 @@ import android.content.Intent
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.ui.quick.QuickBallService
+import com.azu.bookkeeper.ui.quick.ThreeFingerGestureService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -52,14 +53,28 @@ class BootReceiver : BroadcastReceiver() {
             }
         }
 
+        // 安全模式下不恢复悬浮层：上次启动崩过，恢复会再次把用户拖进崩溃循环
+        val safeMode = com.azu.bookkeeper.core.SafeMode.isActive(context.applicationContext)
         // 悬浮球恢复与自动化总开关解耦：用户只要开了悬浮球，重启手机后也应恢复
         scope.launch {
             runCatching {
+                if (safeMode) return@launch
                 if (!automationSettings.floatingBallEnabled.first()) return@launch
                 if (!permissionGuide.canDrawOverlays()) return@launch
                 if (QuickBallService.isRunning) return@launch
                 QuickBallService.start(context.applicationContext)
             }.onFailure { Timber.w(it, "restore quick ball on boot failed") }
+        }
+
+        // 三指手势条同样开机恢复
+        scope.launch {
+            runCatching {
+                if (safeMode) return@launch
+                if (!automationSettings.threeFingerEnabled.first()) return@launch
+                if (!permissionGuide.canDrawOverlays()) return@launch
+                if (ThreeFingerGestureService.isRunning) return@launch
+                ThreeFingerGestureService.start(context.applicationContext)
+            }.onFailure { Timber.w(it, "restore three-finger gesture on boot failed") }
         }
     }
 }

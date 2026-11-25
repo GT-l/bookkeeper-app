@@ -49,9 +49,16 @@ class BookkeeperApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // 崩溃自愈必须最先执行：检测「上次启动即崩」的循环（如强杀导致 SQLCipher 库损坏），
+        // 备份并重建数据库，保证用户永远能打开 App。内部已自兜底，不允许抛出。
+        runCatching { com.azu.bookkeeper.core.CrashGuard.install(this) }
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+        // 悬浮层服务运行在独立进程 :overlay，只为「崩了不拖死主进程」；该进程不需要
+        // WorkManager / 种子数据 / 识别规则，更要避免两个进程同时打开 SQLCipher 库。
+        // Hilt 组件已在 super.onCreate() 里建好，这里提前返回不影响 EntryPointAccessors。
+        if (!com.azu.bookkeeper.core.CrashGuard.isMainProcess(this)) return
         val workManager = WorkManager.getInstance(this)
         workManager.enqueueUniquePeriodicWork(
             "recurring_bills",

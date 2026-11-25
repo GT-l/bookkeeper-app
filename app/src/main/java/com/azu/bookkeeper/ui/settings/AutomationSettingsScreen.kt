@@ -1,5 +1,7 @@
 package com.azu.bookkeeper.ui.settings
 
+import android.Manifest
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,6 +87,25 @@ fun AutomationSettingsScreen(
         viewModel.onSmsPermissionResult(grants.isNotEmpty() && grants.values.all { it })
     }
 
+    // Android 13+ POST_NOTIFICATIONS 运行时申请（常驻通知不出现的主因之一：系统从不自动弹这个权限）。
+    // pendingEnable 记录本次申请是否由「启用自动记账」总开关发起：授权 / 拒绝后都要把开关落到用户点下的状态。
+    var pendingEnable by remember { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val enableRequested = pendingEnable
+        pendingEnable = false
+        viewModel.onNotificationPermissionResult(granted, enableRequested)
+    }
+    // 运行时申请入口：Android 13+ 用权限弹窗，低版本无需该权限（hasNotificationPermission 恒为 true）。
+    val requestNotificationPermission = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.openAppDetails()
+        }
+    }
+
     Scaffold(topBar = { TopAppBar(title = { Text("自动化设置") }) }) { padding ->
         Column(
             modifier = Modifier
@@ -118,15 +139,70 @@ fun AutomationSettingsScreen(
                 }
             }
 
-            // 总开关
-            SettingSwitch("启用自动记账", state.enabled) { viewModel.setEnabled(it) }
+            // 总开关：与「通知权限」是两件事。用户只开通知权限时服务不会启动，通知栏自然什么都没有，
+            // 所以开启总开关时顺手把 POST_NOTIFICATIONS 要下来（Android 13+），拿到权限后立即启动前台服务。
+            SettingSwitch("启用自动记账", state.enabled) { enabled ->
+                if (enabled && !state.notificationGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pendingEnable = true
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    viewModel.setEnabled(enabled)
+                }
+            }
+            // 文案把「总开关 / 常驻通知 / 通知权限」三者的因果关系说清楚，避免用户以为只开权限就够了。
+            Text(
+                "常驻通知随自动记账总开关出现：开关打开后通知栏会显示「少花点儿 · 自动记账运行中」，点击回到本页。" +
+                    if (state.enabled && !state.notificationGranted) {
+                        "当前未授予通知权限，自动记账仍在运行，但通知栏看不到常驻通知。"
+                    } else {
+                        ""
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             SettingSwitch("悬浮球快捷记账（单击记一笔 / 长按识屏 / 双击收起）", state.floatingBallEnabled) {
                 viewModel.setFloatingBallEnabled(it)
+            }
+            SettingSwitch("三指上滑快速记账（三指按住屏幕底部向上滑）", state.threeFingerEnabled) {
+                viewModel.setThreeFingerEnabled(it)
+            }
+
+            if (state.safeModeActive) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("已进入安全模式", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "上次启动异常退出，悬浮球 / 三指手势已停止自动启动（否则会反复闪退、打不开 App）。" +
+                                "确认机型支持后可在上方手动重新开启；再次异常会自动回到安全模式。",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                        // 开关此时仍是「开」的状态，用户想重试不会去拨开关；
+                        // 给一个明确的动作：清安全模式 + 重新拉起悬浮球（崩了下次启动会再次进入安全模式）
+                        OutlinedButton(
+                            onClick = { viewModel.setFloatingBallEnabled(true) },
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) { Text("重新尝试开启悬浮球") }
+                    }
+                }
             }
             Text(
                 "复用上方「悬浮窗」权限；默认关闭。四个快捷入口：桌面图标、桌面组件、悬浮球、常驻通知。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "按机型选择最稳的入口：① 长按桌面图标「记一笔」— 全机型可用，不占后台；" +
+                    "② 桌面小组件「记一笔」— 全机型；③ 常驻通知里的「记一笔」按钮 — 需通知权限；" +
+                    "④ 悬浮球 / 三指上滑 — 需「显示在其他应用上层」，部分国产 ROM 会拦（若异常会自动进入安全模式）。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
             )
             Text(
                 "服务状态：${if (state.serviceRunning) "运行中" else "未运行"}",
@@ -150,11 +226,22 @@ fun AutomationSettingsScreen(
             )
             PermissionStatusCard(
                 title = "通知权限",
-                description = "常驻服务通知与校对提醒",
+                description = "常驻服务通知与校对提醒；未授予时自动记账仍在运行，但通知栏不会出现常驻通知",
                 granted = state.notificationGranted,
-                actionLabel = "去开启",
-                onAction = viewModel::openAppDetails
+                actionLabel = if (state.notificationGranted) "已开启" else "去开启",
+                onAction = {
+                    pendingEnable = false
+                    requestNotificationPermission()
+                }
             )
+            // 勾选过「不再询问」后运行时弹窗不再出现，保留应用详情作为兜底入口
+            if (!state.notificationGranted) {
+                ActionCard(
+                    title = "通知授权弹窗不再出现时，请到应用详情手动开启通知权限",
+                    buttonLabel = "应用详情",
+                    onClick = viewModel::openAppDetails
+                )
+            }
             PermissionStatusCard(
                 title = "悬浮窗",
                 description = "后台校对弹窗；未授权自动降级为通知",

@@ -16,11 +16,16 @@ import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.verify.VerificationNotifier
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
+import com.azu.bookkeeper.data.local.db.dao.BillDao
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.model.QuickEntry
+import com.azu.bookkeeper.domain.repository.SettingsRepository
 import com.azu.bookkeeper.ui.navigation.AppEntryRouter
 import com.azu.bookkeeper.ui.quick.QuickCaptureLauncher
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -28,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
 import javax.inject.Inject
 
 /** 确保自动化通知渠道存在；服务前台通知与失败降级提示共用同一渠道。 */
@@ -90,6 +96,8 @@ class AutoCaptureForegroundService : Service() {
             val now = System.currentTimeMillis()
             startedSuccessfully = true
             scope.launch { automationSettings.markServiceStarted(now) }
+            // 常驻通知刷新出简略信息（今日支出），失败保持默认文案，不影响服务
+            refreshSummary()
             START_STICKY
         } catch (_: Exception) {
             // 失败状态必须同步落盘后再 stopSelf，否则 onDestroy 取消 scope 会丢掉失败计数。
@@ -119,45 +127,33 @@ class AutoCaptureForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun buildNotification(): Notification {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        } else {
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        }
-        // 点击常驻通知直接进「自动化设置」页：用户想关掉它时不用再找入口。
-        val contentIntent = android.app.PendingIntent.getActivity(
-            this,
-            0,
-            AppEntryRouter.openAutomationSettingsIntent(this),
-            flags
-        )
-        val quickCaptureIntent = QuickCaptureLauncher.pendingIntent(
-            this,
-            QuickCaptureRequest(entry = QuickEntry.FG_NOTIFICATION),
-            Constants.FOREGROUND_SERVICE_ID + 1
-        )
-        return NotificationCompat.Builder(this, Constants.CHANNEL_AUTO_CAPTURE)
-            .setSmallIcon(R.drawable.ic_quick_add)
-            .setContentTitle(getString(R.string.auto_capture_notification_title))
-            .setContentText(getString(R.string.auto_capture_notification_text))
-            // 常驻 + 只响一次：渠道本身是 IMPORTANCE_LOW（不响铃），这里再兜住刷新时不重复打扰。
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(contentIntent)
-            // T7 第四入口：常驻通知直接拉起记账表单，复用 FGS + POST_NOTIFICATIONS，无新权限。
-            .addAction(
-                NotificationCompat.Action.Builder(
-                    R.drawable.ic_quick_add,
-                    getString(R.string.quick_add),
-                    quickCaptureIntent
-                ).build()
-            )
-            .build()
-    }
+    private fun buildNotification(todayExpenseFen: Long? = null): Notification =
+        buildNotificationFor(this, todayExpenseFen)
 
     private fun createChannel() = ensureAutoCaptureChannel(this)
+
+    /**
+     * 查一次今日支出并刷新常驻通知文案。整段惰性取依赖 + runCatching：
+     * 前台服务创建时不做任何重依赖注入，避免数据库异常拖垮通知甚至进程。
+     */
+    private fun refreshSummary() {
+        scope.launch {
+            runCatching {
+                val ep = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                    applicationContext, SummaryEntryPoint::class.java
+                )
+                val bookId = ep.settings().defaultBookId.first().takeIf { it > 0L } ?: return@runCatching
+                val now = System.currentTimeMillis()
+                val sum = ep.billDao().sumExpenseBetween(
+                    bookId,
+                    com.azu.bookkeeper.core.DateTimeUtils.startOfDay(now),
+                    com.azu.bookkeeper.core.DateTimeUtils.endOfDay(now)
+                )
+                NotificationManagerCompat.from(this@AutoCaptureForegroundService)
+                    .notify(Constants.FOREGROUND_SERVICE_ID, buildNotification(sum))
+            }.onFailure { Timber.w(it, "refresh fgs summary failed") }
+        }
+    }
 
     companion object {
         const val ACTION_START = "com.azu.bookkeeper.action.AUTO_CAPTURE_START"
@@ -192,6 +188,72 @@ class AutoCaptureForegroundService : Service() {
             NotificationManagerCompat.from(context).areNotificationsEnabled()
         } catch (_: Exception) {
             false
+        }
+
+        /**
+         * 构造常驻通知（标题 + 今日支出简略信息 + 「记一笔」动作）。
+         * 放在 companion 里是为了让「账单变化后原地刷新」不依赖 Service 实例。
+         */
+        private fun buildNotificationFor(context: Context, todayExpenseFen: Long?): Notification {
+            val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE
+            // 点击常驻通知直接进「自动化设置」页：用户想关掉它时不用再找入口。
+            val contentIntent = android.app.PendingIntent.getActivity(
+                context,
+                0,
+                AppEntryRouter.openAutomationSettingsIntent(context),
+                flags
+            )
+            val quickCaptureIntent = QuickCaptureLauncher.pendingIntent(
+                context,
+                QuickCaptureRequest(entry = QuickEntry.FG_NOTIFICATION),
+                Constants.FOREGROUND_SERVICE_ID + 1
+            )
+            return NotificationCompat.Builder(context, Constants.CHANNEL_AUTO_CAPTURE)
+                .setSmallIcon(R.drawable.ic_quick_add)
+                .setContentTitle(context.getString(R.string.auto_capture_notification_title))
+                .setContentText(
+                    if (todayExpenseFen != null && todayExpenseFen > 0L) {
+                        // 简略信息：今日支出 + 引导用「记一笔」按钮直接记录
+                        "今日支出 ${com.azu.bookkeeper.core.Money.format(todayExpenseFen)} · 点「记一笔」随手记"
+                    } else {
+                        context.getString(R.string.auto_capture_notification_text)
+                    }
+                )
+                // 常驻 + 只响一次：渠道本身是 IMPORTANCE_LOW（不响铃），这里再兜住刷新时不重复打扰。
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(contentIntent)
+                // 第四入口：常驻通知直接拉起记账表单，复用 FGS + POST_NOTIFICATIONS，无新权限。
+                .addAction(
+                    NotificationCompat.Action.Builder(
+                        R.drawable.ic_quick_add,
+                        context.getString(R.string.quick_add),
+                        quickCaptureIntent
+                    ).build()
+                )
+                .build()
+        }
+
+        /**
+         * 账单变动（新增 / 删除 / 自动入账）后原地刷新常驻通知上的「今日支出」。
+         *
+         * 刻意不使用 startForegroundService：服务若启动失败会累加失败计数、最终把自动化开关关掉，
+         * 而「记完账刷新一下文案」绝不该有这种副作用。所以只在通知当前确实可见时替换它，
+         * 不可见就什么都不做（下次服务启动时会带上最新金额）。
+         */
+        suspend fun updateSummaryIfVisible(context: Context, todayExpenseFen: Long) {
+            val appContext = context.applicationContext
+            runCatching {
+                if (!areNotificationsEnabled(appContext)) return
+                val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                    ?: return
+                val visible = manager.activeNotifications.any { it.id == Constants.FOREGROUND_SERVICE_ID }
+                if (!visible) return
+                NotificationManagerCompat.from(appContext)
+                    .notify(Constants.FOREGROUND_SERVICE_ID, buildNotificationFor(appContext, todayExpenseFen))
+            }.onFailure { Timber.w(it, "update fgs summary failed") }
         }
 
         /**
@@ -249,4 +311,15 @@ class AutoCaptureForegroundService : Service() {
             }
         }
     }
+}
+
+/**
+ * 常驻通知简略信息用的惰性依赖入口。
+ * 不在服务 onCreate 字段注入：数据库/依赖图异常时只会让通知文案退回默认值，不会崩进程。
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SummaryEntryPoint {
+    fun billDao(): BillDao
+    fun settings(): SettingsRepository
 }

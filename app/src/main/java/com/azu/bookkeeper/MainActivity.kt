@@ -11,22 +11,35 @@ import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.rememberNavController
 import com.azu.bookkeeper.automation.permission.PermissionGuide
+import com.azu.bookkeeper.automation.service.AutoCaptureForegroundService
 import com.azu.bookkeeper.automation.verify.VerificationDialogHost
+import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
+import com.azu.bookkeeper.core.SafeMode
+import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
+import com.azu.bookkeeper.domain.repository.SettingsRepository
+import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
+import com.azu.bookkeeper.ui.navigation.AppEntryRouter
 import com.azu.bookkeeper.ui.navigation.AppNavHost
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.quick.QuickBallService
 import com.azu.bookkeeper.ui.quick.QuickCaptureLauncher
+import com.azu.bookkeeper.ui.quick.ThreeFingerGestureService
 import com.azu.bookkeeper.ui.theme.BookkeeperTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -41,8 +54,13 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var automationSettings: AutomationSettingsDataStore
     @Inject lateinit var permissionGuide: PermissionGuide
+    @Inject lateinit var settings: SettingsRepository
+    @Inject lateinit var observeBills: ObserveBillsUseCase
 
     private val quickCaptureEvents = MutableSharedFlow<QuickCaptureRequest>(extraBufferCapacity = 4)
+
+    /** 普通页面落地（如常驻通知点击 → 自动化设置页）；热启动时转发给 NavHost。 */
+    private val destinationEvents = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
     /** 悬浮球兜底恢复用；随 Activity 销毁取消，避免泄漏。 */
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -52,7 +70,9 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         val startDestination = QuickCaptureLauncher.resolve(intent)
             ?.let { Screen.billEdit(prefill = it.toPrefill()) }
+            ?: AppEntryRouter.resolve(intent)
             ?: Screen.Home.route
+        observeTodayExpenseForNotification()
         setContent {
             BookkeeperTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -64,6 +84,12 @@ class MainActivity : FragmentActivity() {
                             navController.navigate(Screen.billEdit(prefill = request.toPrefill())) {
                                 launchSingleTop = true
                             }
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        destinationEvents.collect { route ->
+                            navController.navigate(route) { launchSingleTop = true }
                         }
                     }
 
@@ -80,21 +106,85 @@ class MainActivity : FragmentActivity() {
         setIntent(newIntent)
         QuickCaptureLauncher.resolve(newIntent)?.let { request ->
             quickCaptureEvents.tryEmit(request)
+            return
         }
+        // 常驻通知（→ 自动化设置页）等普通页面入口：走独立事件流，避免和记账表单混淆。
+        AppEntryRouter.resolve(newIntent)?.let { route -> destinationEvents.tryEmit(route) }
     }
 
     /**
-     * 回到前台时兜底恢复悬浮球：开关已开 + 已授权 + 球没在跑 → 补拉起。
+     * 回到前台时兜底恢复：
+     * 1) 悬浮球：开关已开 + 已授权 + 球没在跑 → 补拉起；
+     * 2) 三指手势条：同上；
+     * 3) 常驻通知：自动化开关已开时恢复 / 刷新前台服务（见 [AutoCaptureForegroundService.ensureRunning]）。
+     *    Android 13+ 在未授权 POST_NOTIFICATIONS 期间投递的前台通知会被系统直接丢弃且不补发，
+     *    用户事后去系统设置授权也不会自动出现 → 必须在这里再 startForeground 一次刷出来，
+     *    否则就表现为「明明开了通知权限，通知栏却一直没有常驻通知」。
      * 覆盖「进程被系统杀掉后重新打开 App」和「刚从一个页面切回来」两种场景，
      * 是 START_NOT_STICKY（避免崩溃循环）下的主要恢复手段。
      */
     override fun onResume() {
         super.onResume()
         uiScope.launch {
-            val enabled = runCatching { automationSettings.floatingBallEnabled.first() }.getOrDefault(false)
-            if (!enabled || QuickBallService.isRunning) return@launch
-            if (!permissionGuide.canDrawOverlays()) return@launch
-            QuickBallService.start(this@MainActivity)
+            // 安全模式：上次启动崩溃过就不再自动拉起悬浮层服务，
+            // 否则「拉起→崩溃→重启→再拉起」会形成永远打不开的死循环。
+            val safeMode = runCatching { SafeMode.isActive(this@MainActivity) }.getOrDefault(false)
+            if (!safeMode) {
+                runCatching {
+                    val enabled = automationSettings.floatingBallEnabled.first()
+                    if (enabled && !QuickBallService.isRunning && permissionGuide.canDrawOverlays()) {
+                        QuickBallService.start(this@MainActivity)
+                    }
+                }
+                runCatching {
+                    val threeFinger = automationSettings.threeFingerEnabled.first()
+                    if (threeFinger && !ThreeFingerGestureService.isRunning && permissionGuide.canDrawOverlays()) {
+                        ThreeFingerGestureService.start(this@MainActivity)
+                    }
+                }
+            }
+            runCatching {
+                AutoCaptureForegroundService.ensureRunning(this@MainActivity, automationSettings)
+            }
+        }
+    }
+
+    /**
+     * 常驻通知上的「今日支出」跟随账单实时刷新。
+     *
+     * 为什么需要它：用户从常驻通知点「记一笔」→ 表单保存 → popBackStack 回到首页，
+     * 整个过程 Activity 没有 pause/resume，onCreate 只跑一次，通知上的金额会一直是旧值。
+     * 这里订阅当前账本的账单流（Room 一写库就推新列表），算出当日支出再回写通知。
+     *
+     * 只更新「已经存在的常驻通知」，不拉起服务、不新建通知，异常全部吞掉记日志，
+     * 记账功能绝不因为通知刷新失败受影响。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeTodayExpenseForNotification() {
+        uiScope.launch {
+            runCatching {
+                settings.defaultBookId
+                    .flatMapLatest { bookId ->
+                        if (bookId <= 0L) flowOf(emptyList()) else observeBills(bookId)
+                    }
+                    .catch { e ->
+                        Timber.w(e, "observe today expense failed")
+                        emit(emptyList())
+                    }
+                    .collect { bills ->
+                        val todayStart = DateTimeUtils.startOfDay(System.currentTimeMillis())
+                        val todayExpense = bills.asSequence()
+                            .filter {
+                                it.billType == BillType.EXPENSE &&
+                                    DateTimeUtils.startOfDay(it.billTime) == todayStart
+                            }
+                            .map { it.amountFen }
+                            .sum()
+                        AutoCaptureForegroundService.updateSummaryIfVisible(
+                            this@MainActivity, todayExpense
+                        )
+                    }
+            }.onFailure { Timber.w(it, "today expense collector stopped") }
         }
     }
 

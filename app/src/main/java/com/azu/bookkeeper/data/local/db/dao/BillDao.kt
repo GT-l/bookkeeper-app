@@ -50,6 +50,13 @@ interface BillDao {
     @Query("SELECT * FROM bills WHERE bill_id = :billId")
     suspend fun findById(billId: Long): BillEntity?
 
+    /** 常驻通知简略信息：某账本区间内支出合计（分）。 */
+    @Query(
+        "SELECT COALESCE(SUM(amount_fen), 0) FROM bills " +
+            "WHERE book_id = :bookId AND bill_type = 0 AND bill_time BETWEEN :startMillis AND :endMillis"
+    )
+    suspend fun sumExpenseBetween(bookId: Long, startMillis: Long, endMillis: Long): Long
+
     /**
      * 全局去重键查询（架构 §4 关键契约）：
      * 账本 + 秒级 bill_time + 金额分 + 转出账户 + 归一化备注。

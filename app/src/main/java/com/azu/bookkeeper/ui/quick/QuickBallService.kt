@@ -16,23 +16,16 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
-import com.azu.bookkeeper.automation.capture.CaptureCoordinator
-import com.azu.bookkeeper.automation.capture.CaptureEvent
-import com.azu.bookkeeper.automation.permission.PermissionGuide
-import com.azu.bookkeeper.automation.service.ScreenCaptureManager
-import com.azu.bookkeeper.data.local.db.dao.CaptureDao
-import com.azu.bookkeeper.domain.model.CaptureEventStatus
-import com.azu.bookkeeper.domain.model.CaptureType
+import com.azu.bookkeeper.core.SafeMode
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.model.QuickEntry
-import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import javax.inject.Inject
 
 /**
  * 悬浮球快捷入口（T7 / AC-15）。
@@ -40,19 +33,21 @@ import javax.inject.Inject
  * 与 T5 的 OverlayVerifyView 共用 SYSTEM_ALERT_WINDOW 权限，权限未授予时
  * 复用 PermissionGuide 的系统设置跳转引导，不重复申请；权限校验失败只降级、不崩溃。
  *
- * 手势约定（识屏记账可行性结论见 [triggerScreenCapture] 注释）：
- * - 单击：打开记账表单（保留现状，延迟一个双击窗口执行，见 onClick）；
+ * 依赖获取方式：**不使用 @AndroidEntryPoint 字段注入**，改为 [OverlayEntryPoint] 惰性取。
+ * 字段注入发生在 onCreate 之前，注入失败会让进程在服务创建阶段直接崩溃（onStartCommand
+ * 的 try/catch 拦不住），这正是「开启悬浮球即闪退、之后每次启动都闪退」的成因；
+ * 惰性获取 + 全程 runCatching 后，最坏情况只是功能不可用。
+ *
+ * 手势约定：
+ * - 单击：打开记账表单（延迟一个双击窗口执行）；
  * - 长按：主动触发识屏记账（截屏 → OCR → CaptureCoordinator 完整管线）；
- * - 双击：收起悬浮球（原「长按关闭」改为双击关闭，避免长按识屏与关闭手势冲突）。
+ * - 双击：收起悬浮球。
  */
-@AndroidEntryPoint
 class QuickBallService : Service() {
 
-    @Inject lateinit var permissionGuide: PermissionGuide
-    @Inject lateinit var screenCaptureManager: ScreenCaptureManager
-    @Inject lateinit var captureCoordinator: CaptureCoordinator
-    @Inject lateinit var captureDao: CaptureDao
-    @Inject lateinit var automationSettings: com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
+    private val entryPoint by lazy {
+        EntryPointAccessors.fromApplication(applicationContext, OverlayEntryPoint::class.java)
+    }
 
     private var ballView: View? = null
 
@@ -74,11 +69,17 @@ class QuickBallService : Service() {
                     return START_NOT_STICKY
                 }
             }
-            if (!permissionGuide.canDrawOverlays()) {
+            if (!canDrawOverlays()) {
                 // 不在这里主动跳系统设置：Service 里跳转会打断当前任务（用户容易以为「App 退出了」），
                 // 引导跳转统一由设置页的开关处理。
                 toast("尚未授予「显示在其他应用上层」权限，请在 设置→自动化 里开启", Toast.LENGTH_LONG)
                 stopSelf()
+                return START_NOT_STICKY
+            }
+            // 已经挂载过就直接返回：本服务在独立进程 :overlay，主进程的 isRunning 恒为 false，
+            // 于是每次回到前台都会再发一次 startService；这里挡住重复 addView，避免球被重置位置/闪烁。
+            if (ballView != null) {
+                isRunning = true
                 return START_NOT_STICKY
             }
             val added = showBall()
@@ -86,8 +87,11 @@ class QuickBallService : Service() {
                 toast("悬浮球创建失败，请确认已允许「显示在其他应用上层」后重试", Toast.LENGTH_LONG)
                 stopSelf()
                 return START_NOT_STICKY
+
             }
             isRunning = true
+            // 正向信号：本机悬浮层至少成功挂载过一次（安全模式判断用）
+            runCatching { SafeMode.markOverlayVerified(this) }
             // 不使用 START_STICKY：进程被杀后由系统反复拉起、反复失败，正是「频繁闪退」的放大器；
             // 恢复交给 MainActivity.onResume / BootReceiver / 用户手动开关。
             START_NOT_STICKY
@@ -164,11 +168,10 @@ class QuickBallService : Service() {
                 // 双击窗口内的第二次点击：取消待执行的单击动作，收起悬浮球
                 mainHandler.removeCallbacks(pending)
                 pendingSingleTap = null
-                // 同步把开关落库为关闭，否则下次回到 App（onResume 兜底）会把它又拉起来
-                scope.launch {
-                    runCatching { automationSettings.setFloatingBallEnabled(false) }
-                }
-                toast("悬浮球已收起，可在 设置→自动化 重新开启", Toast.LENGTH_SHORT)
+                // 注意：本服务运行在独立进程 :overlay，DataStore 不支持跨进程写，
+                // 因此这里不再回写开关（避免把用户数据写坏）。收起后由用户自行在设置页关闭开关，
+                // 下次回到 App 时 onResume 会按开关状态决定是否恢复。
+                toast("悬浮球已收起，可在 设置→自动化 关闭该开关彻底停用", Toast.LENGTH_SHORT)
                 stopSelf()
             } else {
                 // 延迟 DOUBLE_TAP_TIMEOUT_MS 再打开表单，给双击留出判定窗口
@@ -247,39 +250,28 @@ class QuickBallService : Service() {
      * 这里只负责截屏并投递 [CaptureEvent]。
      */
     private fun triggerScreenCapture() {
-        if (!screenCaptureManager.hasActiveSession()) {
-            // MediaProjection 授权只在 MainActivity 的设置/授权流程里能发起，
-            // Service 无法可靠拉起系统授权弹窗（且后台启动受限），Toast 引导后退出，不崩溃。
-            toast("请先在 设置→自动化 里完成识屏授权", Toast.LENGTH_LONG)
+        // 惰性取依赖：Hilt 图构造失败也只影响这一次识屏，不会拖垮进程
+        val captureTrigger = runCatching { entryPoint.quickCaptureTrigger() }.getOrNull()
+        if (captureTrigger == null) {
+            toast("识屏组件不可用，请打开记一笔", Toast.LENGTH_LONG)
+            openForm()
             return
         }
-        scope.launch {
-            runCatching {
-                val path = screenCaptureManager.capture()
-                    ?: return@launch toastOnMain("识屏失败，请重新完成授权", Toast.LENGTH_LONG)
-                val event = CaptureEvent(
-                    // eventId 只需保证幂等键唯一；手动触发场景以毫秒时间戳派生即可
-                    eventId = System.currentTimeMillis(),
-                    captureType = CaptureType.PROJECTION_IMAGE,
-                    imagePath = path,
-                    rawText = "",
-                    billTime = System.currentTimeMillis()
-                )
-                captureCoordinator.onCapture(event)
-                // 管线终态由 DB status 反推，区分三种反馈口径
-                when (captureDao.findByEventId(event.eventId)?.status) {
-                    CaptureEventStatus.LOW_CONFIDENCE.code -> toastOnMain("已进入校对", Toast.LENGTH_SHORT)
-                    // PENDING：管线因缺默认账本等原因未走完，事件留待后续处理
-                    CaptureEventStatus.PENDING.code ->
-                        toastOnMain("识别完成，请先在应用内设置默认账本", Toast.LENGTH_LONG)
-                    else -> toastOnMain("已识别并记账", Toast.LENGTH_SHORT)
-                }
-            }.onFailure { e ->
-                Timber.w(e, "quick ball screen capture failed")
-                toastOnMain("识屏失败，请稍后再试", Toast.LENGTH_SHORT)
-            }
+        val launched = captureTrigger.trigger(scope) { text, duration ->
+            toastOnMain(text, duration)
+        }
+        if (!launched) {
+            // MediaProjection 授权只在 MainActivity 的设置/授权流程里能发起，
+            // Service 无法可靠拉起系统授权弹窗（且后台启动受限），降级为直接打开记一笔表单。
+            runCatching { startActivity(captureTrigger.formIntent()) }
+                .onFailure { toast("未完成识屏授权，请在 设置→自动化 里开启", Toast.LENGTH_LONG) }
         }
     }
+
+    /** 悬浮窗权限判断同样惰性取依赖，失败按「无权限」处理，绝不抛出。 */
+    private fun canDrawOverlays(): Boolean = runCatching {
+        entryPoint.permissionGuide().canDrawOverlays()
+    }.getOrDefault(android.provider.Settings.canDrawOverlays(this))
 
     /** 当前线程即主线程时直接弹；否则切主线程，避免非 Looper 线程 Toast 崩溃。 */
     private fun toast(message: String, duration: Int) {

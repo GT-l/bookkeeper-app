@@ -7,10 +7,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -23,12 +27,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.Account
+import com.azu.bookkeeper.ui.common.EmptyState
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.theme.ExpenseRed
 
@@ -45,7 +52,22 @@ fun AccountListScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("资产账户") }) },
         floatingActionButton = {
-            Button(onClick = { navController.navigate(Screen.accountEdit(0L)) }) { Text("新增") }
+            // 醒目的可爱风「+」悬浮按钮：创建账户的唯一入口，避免被误认为普通小按钮而找不到
+            FloatingActionButton(
+                onClick = { navController.navigate(Screen.accountEdit(0L)) },
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 4.dp,
+                    pressedElevation = 2.dp
+                )
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_fab_add),
+                    contentDescription = "新增账户"
+                )
+            }
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
@@ -57,7 +79,11 @@ fun AccountListScreen(
             )
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
 
-            LazyColumn(modifier = Modifier.padding(top = 12.dp)) {
+            if (state.accounts.isEmpty()) {
+                // 空态引导：告诉用户账户从这里创建
+                EmptyState(message = "还没有账户，点右下角 + 添加你的银行卡 / 微信 / 支付宝钱包")
+            } else {
+                LazyColumn(modifier = Modifier.padding(top = 12.dp)) {
                 items(items = state.accounts, key = { it.accountId }) { account ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -77,6 +103,7 @@ fun AccountListScreen(
                         ) { Text("编辑") }
                     }
                     Divider()
+                }
                 }
             }
         }

@@ -32,7 +32,7 @@ class QuickBallToggleActivity : Activity() {
             runCatching {
                 val settings = EntryPointAccessors.fromApplication(
                     applicationContext, BallToggleEntryPoint::class.java
-                ).settings()
+                ).automationSettings()
                 val wasOn = settings.floatingBallEnabled.first()
                 settings.setFloatingBallEnabled(!wasOn)
                 if (wasOn) {
@@ -60,5 +60,5 @@ class QuickBallToggleActivity : Activity() {
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface BallToggleEntryPoint {
-    fun settings(): AutomationSettingsDataStore
+    fun automationSettings(): AutomationSettingsDataStore
 }

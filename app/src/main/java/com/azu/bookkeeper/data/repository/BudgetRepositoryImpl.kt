@@ -38,6 +38,17 @@ class BudgetRepositoryImpl @Inject constructor(
     }
 
     /**
+     * 生效总预算：未设置总预算时回落到「各分类预算之和」，规则本身收敛在
+     * [com.azu.bookkeeper.domain.model.Budget.effectiveTotalLimitFen]，此处只做读库 + 降级。
+     */
+    override suspend fun effectiveTotalLimit(bookId: Long, month: Int): Long =
+        withContext(ioDispatcher) {
+            runCatching {
+                budgetDao.findByBookAndMonth(bookId, month)?.toDomain()?.effectiveTotalLimitFen ?: 0L
+            }.getOrDefault(0L)
+        }
+
+    /**
      * 新月重置：沿用上月预算上限，使用量由当月账单实时统计，故天然归零。
      * 上月无预算时清除当月记录。
      */

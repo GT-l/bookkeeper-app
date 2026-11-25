@@ -18,11 +18,13 @@ import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.model.QuickEntry
+import com.azu.bookkeeper.ui.navigation.AppEntryRouter
 import com.azu.bookkeeper.ui.quick.QuickCaptureLauncher
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -118,17 +120,18 @@ class AutoCaptureForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun buildNotification(): Notification {
-        val openIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         } else {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT
         }
-        val contentIntent = openIntent?.let {
-            android.app.PendingIntent.getActivity(this, 0, it, flags)
-        }
+        // 点击常驻通知直接进「自动化设置」页：用户想关掉它时不用再找入口。
+        val contentIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            AppEntryRouter.openAutomationSettingsIntent(this),
+            flags
+        )
         val quickCaptureIntent = QuickCaptureLauncher.pendingIntent(
             this,
             QuickCaptureRequest(entry = QuickEntry.FG_NOTIFICATION),
@@ -138,7 +141,9 @@ class AutoCaptureForegroundService : Service() {
             .setSmallIcon(R.drawable.ic_quick_add)
             .setContentTitle(getString(R.string.auto_capture_notification_title))
             .setContentText(getString(R.string.auto_capture_notification_text))
+            // 常驻 + 只响一次：渠道本身是 IMPORTANCE_LOW（不响铃），这里再兜住刷新时不重复打扰。
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(contentIntent)
             // T7 第四入口：常驻通知直接拉起记账表单，复用 FGS + POST_NOTIFICATIONS，无新权限。
@@ -180,6 +185,34 @@ class AutoCaptureForegroundService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, AutoCaptureForegroundService::class.java).setAction(ACTION_STOP)
             context.stopService(intent)
+        }
+
+        /** 通知是否真正可见（Android 13+ 等价于 POST_NOTIFICATIONS 是否授予）。 */
+        fun areNotificationsEnabled(context: Context): Boolean = try {
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
+        } catch (_: Exception) {
+            false
+        }
+
+        /**
+         * 幂等恢复 / 刷新常驻通知，App 回到前台（MainActivity.onResume）时调用。
+         *
+         * 解决两类「通知栏里没有常驻通知」：
+         * 1) 开关开着但服务已被系统回收 → 这里重新拉起（历史上只有 15min 探活 Worker 和开机广播负责恢复，
+         *    用户重新打开 App 也不会恢复）；
+         * 2) 服务在跑，但通知是在没有 POST_NOTIFICATIONS 时投递的 —— Android 13+ 会直接丢弃且**不会补发**，
+         *    用户事后去系统设置授权也不会自动出现 → 这里再 startForeground 一次把通知刷出来。
+         *
+         * @return 是否发出了启动 / 刷新请求。
+         */
+        suspend fun ensureRunning(context: Context, settings: AutomationSettingsDataStore): Boolean {
+            val appContext = context.applicationContext
+            if (!settings.enabled.first()) return false
+            val running = settings.serviceRunning.first()
+            // 已在运行且通知权限没给：刷新也刷不出通知，等用户授权后会再次调用本方法。
+            if (running && !areNotificationsEnabled(appContext)) return false
+            if (!settings.canStartService(System.currentTimeMillis())) return false
+            return start(appContext)
         }
 
         /**

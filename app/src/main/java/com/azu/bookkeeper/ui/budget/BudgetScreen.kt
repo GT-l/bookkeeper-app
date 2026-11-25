@@ -37,13 +37,31 @@ fun BudgetScreen(viewModel: BudgetViewModel = hiltViewModel()) {
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            Text("已支出 ${Money.format(state.spentFen)}", style = MaterialTheme.typography.titleMedium)
+            // 总预算兜底说明（固定文案）：未设总预算时按分类预算之和计算
+            Text(
+                "未设置总预算时，将自动按各分类预算之和计算",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "已支出 ${Money.format(state.spentFen)}",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
             Text(
                 "剩余 ${Money.format(state.remainingFen)}" +
                     if (state.isOverBudget) " · 已超预算" else "",
                 color = if (state.isOverBudget) ExpenseRed else MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium
             )
+            if (state.totalLimitDerived) {
+                Text(
+                    "当前总预算按分类预算之和计算：${Money.format(state.effectiveTotalLimitFen)}" +
+                        "（上方总预算留空即保持此模式）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             LinearProgressIndicator(
                 progress = { state.progress },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -54,11 +72,16 @@ fun BudgetScreen(viewModel: BudgetViewModel = hiltViewModel()) {
                 value = state.totalLimitText,
                 onValueChange = viewModel::setTotalLimit,
                 label = { Text("总预算（元）") },
+                placeholder = { Text("留空 = 按分类预算之和") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
             )
 
-            Text("分类预算", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp))
+            Text(
+                "分类预算（未设置总预算时，各项之和即为总预算）",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 20.dp)
+            )
             state.categories.forEach { category ->
                 OutlinedTextField(
                     value = state.categoryLimitTexts[category.categoryId].orEmpty(),

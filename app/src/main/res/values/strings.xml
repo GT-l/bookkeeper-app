@@ -4,7 +4,7 @@
     <string name="accessibility_service_label">少花点儿 · 读屏服务</string>
     <string name="accessibility_service_description">在支付完成页读取金额、商家与时间文字节点，用于本地自动生成账单。仅在个人自用场景开启，识别全程在本机完成，不上传任何数据。</string>
     <string name="notification_listener_label">少花点儿 · 通知读取</string>
-    <string name="auto_capture_notification_title">少花点儿服务运行中</string>
+    <string name="auto_capture_notification_title">少花点儿 · 自动记账运行中</string>
     <string name="auto_capture_notification_text">正在监听支付结果以生成本地账单</string>
     <string name="notification_channel_auto_capture">少花点儿 · 自动记账服务</string>
     <string name="notification_channel_verify">账单校对提醒</string>

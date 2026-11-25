@@ -47,7 +47,8 @@ class GetStatisticsUseCase @Inject constructor(
             incomeFen = incomeFen,
             expenseFen = expenseFen,
             transferFen = transferFen,
-            budgetLimitFen = budget?.totalLimitFen ?: 0L,
+            // 未设置总预算时按分类预算之和兜底，统计概览的预算进度与预算页保持一致。
+            budgetLimitFen = budget?.effectiveTotalLimitFen ?: 0L,
             budgetUsedFen = expenseFen
         )
 

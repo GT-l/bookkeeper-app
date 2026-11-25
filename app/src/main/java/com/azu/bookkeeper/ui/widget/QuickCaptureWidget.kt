@@ -95,10 +95,13 @@ class QuickCaptureWidget : GlanceAppWidget() {
             endMillis = DateTimeUtils.endOfMonth(now)
         ).getOrNull()?.get(BillType.EXPENSE) ?: 0L
 
+        // 生效总预算：未设置总预算时按各分类预算之和兜底（与预算页 / 超支提醒同一规则）。
+        val totalLimitFen = budget?.effectiveTotalLimitFen ?: 0L
+
         return QuickWidgetSnapshot(
             todayCount = todayBills.size,
-            budgetRemainingFen = if (budget == null) 0L else budget.totalLimitFen - monthExpense,
-            hasBudget = budget != null
+            budgetRemainingFen = totalLimitFen - monthExpense,
+            hasBudget = totalLimitFen > 0L
         )
     }
 

@@ -46,11 +46,13 @@ class NotificationWorker @AssistedInject constructor(
         val spent = billRepository.sumByType(bookId, start, end)
             .getOrDefault(emptyMap())[BillType.EXPENSE] ?: 0L
         val budget = budgetRepository.findByBookAndMonth(bookId, DateTimeUtils.monthKey(now)).getOrNull()
+        // 总预算兜底：用户只设了分类预算时，总预算 = 各分类预算之和（与预算页同一规则）。
+        val totalLimitFen = budget?.effectiveTotalLimitFen ?: 0L
 
-        if (budget != null && budget.totalLimitFen > 0L && spent > budget.totalLimitFen) {
+        if (totalLimitFen > 0L && spent > totalLimitFen) {
             showNotification(
                 title = "预算已超支",
-                text = "本月已支出 ${Money.format(spent)}，超出预算 ${Money.format(spent - budget.totalLimitFen)}",
+                text = "本月已支出 ${Money.format(spent)}，超出预算 ${Money.format(spent - totalLimitFen)}",
                 channel = Constants.CHANNEL_REMINDER,
                 notificationId = 2001
             )

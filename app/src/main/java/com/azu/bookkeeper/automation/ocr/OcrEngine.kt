@@ -49,11 +49,20 @@ class OcrEngine @Inject constructor(
         }.getOrDefault(OcrResult(rawText = "", confidence = 0f, blockCount = 0))
     }
 
-    /** 读取加密截图后识别；文件不存在或解密失败返回空结果。 */
+    /**
+     * 读取加密截图后识别；文件不存在或解密失败返回空结果。
+     * Bitmap 在识别结束（含异常路径）后立即 recycle，识别过程中产生的大图内存
+     * 不留到下一次调用，避免连续识屏时的内存占用堆积。
+     */
     suspend fun recognizeFromFile(path: String): OcrResult = withContext(ioDispatcher) {
         val bitmap = encryptedFiles.readCapture(path)
             ?: return@withContext OcrResult("", 0f, 0)
-        recognize(bitmap)
+        try {
+            recognize(bitmap)
+        } finally {
+            // Tasks.await 已在 recognize 内同步完成，ML Kit 此时不再持有像素，可安全回收
+            runCatching { bitmap.recycle() }
+        }
     }
 
     /** 释放底层识别器（可选，进程退出时系统亦会回收）。 */

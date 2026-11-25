@@ -4,6 +4,7 @@ import com.azu.bookkeeper.automation.dedup.DuplicateDetector
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
+import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
 import com.azu.bookkeeper.data.mapper.toCandidate
 import com.azu.bookkeeper.domain.model.Bill
 import com.azu.bookkeeper.domain.model.BillSource
@@ -51,7 +52,8 @@ class VerificationController @Inject constructor(
     private val automationSettings: AutomationSettingsDataStore,
     private val notifier: VerificationNotifier,
     private val overlay: OverlayVerifyView,
-    private val dedup: DuplicateDetector
+    private val dedup: DuplicateDetector,
+    private val encryptedFiles: EncryptedFileDataSource
 ) {
 
     private val _requests = MutableSharedFlow<CaptureCandidate>(extraBufferCapacity = 16)
@@ -130,7 +132,27 @@ class VerificationController @Inject constructor(
         pendingQuickEventIds.remove(eventId)
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             captureDao.markStatus(eventId, CaptureEventStatus.DISCARDED.code)
+            // DISCARDED 终态：校对已被用户放弃，截图缓存随之清理
+            deleteCaptureImage(
+                imagePath = captureDao.findByEventId(eventId)?.imagePath.orEmpty(),
+                reason = "overlay_discarded"
+            )
         }
+    }
+
+    /**
+     * 校对终态后清理加密截图缓存（USER_CORRECTED / DISCARDED）。
+     * 仅删除文件、不改 DB schema；删除失败只记 Timber 日志不抛异常。
+     * 校对中（LOW_CONFIDENCE）与决定未落定前的错误路径（缺账本/金额/分类）保留文件，
+     * 保证校对弹窗仍可看图。
+     */
+    private suspend fun deleteCaptureImage(imagePath: String, reason: String) {
+        if (imagePath.isBlank()) return
+        val deleted = encryptedFiles.deleteFile(imagePath)
+        Timber.d(
+            "verify image cleanup deleted=%b reason=%s path=%s",
+            deleted, reason, imagePath
+        )
     }
 
     /**
@@ -150,6 +172,8 @@ class VerificationController @Inject constructor(
 
         if (!decision.accepted) {
             captureDao.markStatus(decision.eventId, CaptureEventStatus.DISCARDED.code)
+            // DISCARDED 终态：用户拒绝该识别记录，清理其截图缓存
+            deleteCaptureImage(pending.imagePath, "verify_discarded")
             return Result.Error(
                 com.azu.bookkeeper.core.AppError.Automation(
                     code = "E_AUTO_003",
@@ -185,6 +209,8 @@ class VerificationController @Inject constructor(
             // 用户介入路径：即使因「已存在相同账单」未建单，终态也必须是 USER_CORRECTED，
             // 不能标成「自动入账完成」（QA F-08）。
             captureDao.markStatus(decision.eventId, CaptureEventStatus.USER_CORRECTED.code)
+            // USER_CORRECTED 终态：清理截图缓存
+            deleteCaptureImage(pending.imagePath, "verify_dedup_terminal")
             return Result.Error(
                 com.azu.bookkeeper.core.AppError.Validation(
                     code = "E_AUTO_004", userMessage = "已存在相同账单，无需重复添加"
@@ -228,6 +254,8 @@ class VerificationController @Inject constructor(
             terminalStatus = CaptureEventStatus.USER_CORRECTED
         ).also { result ->
             if (result.isSuccess) {
+                // USER_CORRECTED 终态：确认入账成功后清理截图缓存
+                deleteCaptureImage(pending.imagePath, "verify_bill_created")
                 Timber.d("verified bill created eventId=%d", decision.eventId)
             }
         }

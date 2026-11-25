@@ -15,6 +15,7 @@ import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
 import com.azu.bookkeeper.data.local.db.entity.CaptureEventEntity
+import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
 import com.azu.bookkeeper.domain.model.Bill
 import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
@@ -54,6 +55,7 @@ class CaptureCoordinator @Inject constructor(
     private val accountRepository: AccountRepository,
     private val settings: SettingsRepository,
     private val automationSettings: AutomationSettingsDataStore,
+    private val encryptedFiles: EncryptedFileDataSource,
     private val json: Json,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
@@ -143,6 +145,8 @@ class CaptureCoordinator @Inject constructor(
         val toleranceSec = if (isSms) automationSettings.smsDedupToleranceSec.first() else 0L
         if (dedup.isDuplicateWithTolerance(candidate, toleranceSec)) {
             captureDao.markStatus(event.eventId, CaptureEventStatus.DISCARDED.code)
+            // 终态清理：去重丢弃的截图没有保留价值，删除加密文件释放存储
+            deleteCaptureFile(event.imagePath, "dedup_discarded")
             Timber.d("capture deduped eventId=%d", event.eventId)
             return@withContext
         }
@@ -163,13 +167,33 @@ class CaptureCoordinator @Inject constructor(
             sourceEventId = event.eventId,
             terminalStatus = CaptureEventStatus.CONSUMED_AUTO
         )) {
-            is Result.Success -> Timber.d("auto bill created id=%d score=%.2f", result.data, score)
+            is Result.Success -> {
+                // 终态清理：自动入账成功后截图缓存不再需要，删除加密文件并丢弃内存候选中的路径
+                deleteCaptureFile(candidate.imagePath, "auto_bill_created")
+                Timber.d("auto bill created id=%d score=%.2f", result.data, score)
+            }
             is Result.Error -> {
                 captureDao.markStatus(event.eventId, CaptureEventStatus.LOW_CONFIDENCE.code)
                 verifier.requestVerify(candidate)
             }
             Result.Loading -> Unit
         }
+    }
+
+    /**
+     * 终态后清理加密截图缓存（自动入账成功 / 去重丢弃）。
+     * 仅删除文件、不改 DB schema；内存候选中的 imagePath 已在调用前不再被引用。
+     * 删除失败只记 Timber 日志不抛异常，避免影响主流程。
+     * LOW_CONFIDENCE / 校对中路径不调用本方法，保留文件供校对弹窗看图；
+     * 校对终态（USER_CORRECTED / DISCARDED）的删除由 VerificationController 负责。
+     */
+    private suspend fun deleteCaptureFile(imagePath: String, reason: String) {
+        if (imagePath.isBlank()) return
+        val deleted = encryptedFiles.deleteFile(imagePath)
+        Timber.d(
+            "capture image cleanup deleted=%b reason=%s path=%s",
+            deleted, reason, imagePath
+        )
     }
 
     /**

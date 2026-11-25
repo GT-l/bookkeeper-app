@@ -87,7 +87,7 @@ private fun showBiometricPrompt(
     )
     val promptInfo = BiometricPrompt.PromptInfo.Builder()
         .setTitle("应用锁")
-        .setSubtitle("验证指纹或面容以进入记账本")
+        .setSubtitle("验证指纹或面容以进入少花点儿")
         .setNegativeButtonText("使用数字密码")
         .setAllowedAuthenticators(BIOMETRIC_STRONG)
         .build()

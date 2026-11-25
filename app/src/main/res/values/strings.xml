@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">记账本</string>
-    <string name="accessibility_service_label">自动记账 · 读屏服务</string>
+    <string name="app_name">少花点儿</string>
+    <string name="accessibility_service_label">少花点儿 · 读屏服务</string>
     <string name="accessibility_service_description">在支付完成页读取金额、商家与时间文字节点，用于本地自动生成账单。仅在个人自用场景开启，识别全程在本机完成，不上传任何数据。</string>
-    <string name="notification_listener_label">自动记账 · 通知读取</string>
-    <string name="auto_capture_notification_title">自动记账服务运行中</string>
+    <string name="notification_listener_label">少花点儿 · 通知读取</string>
+    <string name="auto_capture_notification_title">少花点儿服务运行中</string>
     <string name="auto_capture_notification_text">正在监听支付结果以生成本地账单</string>
-    <string name="notification_channel_auto_capture">自动记账服务</string>
+    <string name="notification_channel_auto_capture">少花点儿 · 自动记账服务</string>
     <string name="notification_channel_verify">账单校对提醒</string>
     <string name="notification_channel_reminder">记账提醒</string>
     <!-- 桌面小组件 / 静态快捷方式（T7 消费） -->
-    <string name="appwidget_label">快速记账</string>
+    <string name="appwidget_label">少花点儿 · 快速记账</string>
     <string name="appwidget_description">一键打开记一笔表单</string>
     <string name="shortcut_quick_add_short">记一笔</string>
     <string name="shortcut_quick_add_long">快速记一笔</string>
@@ -18,7 +18,7 @@
 
     <!-- 自动化能力说明（增量架构 §8 固定文案，禁止暗示「无感检测已实现」） -->
     <string name="automation_capability_title">自动化能力说明（请先看这里）</string>
-    <string name="automation_capability_body">✅ 已实现：\n· 支付成功页面/通知/银行扣款短信的自动识别（本地解析，不联网）\n· 分类置信度不足时弹窗让你确认或改写\n· 四个快捷入口一键记一笔（桌面图标、桌面组件、悬浮球、常驻通知）\n\n❌ 做不到（系统限制，非本 App 缺陷）：\n· 真·无感扣款无法实时检测：抖音/任何支付的免密代扣，如果本机既没有界面变化、也没有通知、更没有银行短信，本 App 无从得知。Android 应用之间数据相互隔离，系统不提供“全局交易事件”供第三方订阅；本 App 也没有（且不会申请）hook 支付流程的能力。\n  → 这种情况请用「记一笔」快捷补记，这是最短路径。\n· 被系统“强行停止”（force-stop）后不会自动重启：Android 3.1 起系统明确禁止第三方 App 自行启动。请手动打开一次 App，服务会恢复。\n· 无法读取锁屏界面上的第三方支付内容：锁屏时本 App 读不到其他 App 的界面节点。若已授权“通知使用权”，仍可读取锁屏上的支付通知。\n· 静默截屏（无需授权）做不到：截屏备选需要你每次授权 MediaProjection，授权会话失效后会自动降级为读屏/通知路。\n· 本 App 仅提供 Android 版：iOS 沙盒更严格（无读屏、无通知使用权、无悬浮窗），没有对应实现，也不会有。\n· 短信识别只用于读取银行扣款短信：正文不上传、不存原文、可随时在本页关闭并撤销权限；关闭后其他识别方式继续工作。</string>
+    <string name="automation_capability_body">✅ 已实现：\n· 支付成功页面/通知/银行扣款短信的自动识别（本地解析，不联网）\n· 分类置信度不足时弹窗让你确认或改写\n· 四个快捷入口一键记一笔（桌面图标、桌面组件、悬浮球、常驻通知）\n\n❌ 做不到（系统限制，非本 App 缺陷）：\n· 真·无感扣款无法实时检测：抖音/任何支付的免密代扣，如果本机既没有界面变化、也没有通知、更没有银行短信，本 App 无从得知。Android 应用之间数据相互隔离，系统不提供“全局交易事件”供第三方订阅；本 App 也没有（且不会申请）hook 支付流程的能力。\n  → 这种情况请用「记一笔」快捷补记，这是最短路径。\n· 被系统“强行停止”（force-stop）后不会自动重启：Android 3.1 起系统明确禁止第三方 App 自行启动。请手动打开一次 App，服务会恢复。\n· 无法读取锁屏界面上的第三方支付内容：锁屏时本 App 读不到其他 App 的界面节点。若已授权“通知使用权”，仍可读取锁屏上的支付通知。\n· 静默截屏（无需授权）做不到：截屏备选需要你每次授权 MediaProjection，授权会话失效后会自动降级为读屏/通知路。\n· 本 App 仅提供 Android 版：iOS 沙盒更严格（无读屏、无通知使用权、无悬浮窗），没有对应实现，也不会有。\n· 短信识别只用于读取银行扣款短信：正文不上传、不存原文、可随时在本页关闭并撤销权限；关闭后其他识别方式继续工作。\n· 部分机型（尤其国产定制 ROM）即使已授予全部权限，系统仍可能拒绝悬浮窗显示、后台常驻或通知常驻；这是厂商 ROM 的额外限制，本 App 无法绕过。此时请改用「记一笔」快捷补记，或换用通知/读屏等其他通道。</string>
     <string name="automation_capability_footer">以上限制来自 Android 系统沙盒，与本 App 是否联网、是否常驻无关。识别不到时，请用「记一笔」补记——我们不承诺做不到的功能。</string>
     <string name="sms_dedup_hint">短信容差默认 180 秒（可配 0~600）。仅短信源启用；短时间内同账户两笔同额消费可能被合并，可调小容差。</string>
 </resources>

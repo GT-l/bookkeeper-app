@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.azu.bookkeeper.core.Constants
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,6 +35,8 @@ class AutomationSettingsDataStore @Inject constructor(
         val VERIFY_MODE = intPreferencesKey("verify_mode")
         val SERVICE_RUNNING = booleanPreferencesKey("service_running")
         val LAST_SERVICE_START_AT = longPreferencesKey("last_service_start_at")
+        val SERVICE_START_FAILURE_COUNT = intPreferencesKey("service_start_failure_count")
+        val SERVICE_NEXT_RETRY_AT = longPreferencesKey("service_next_retry_at")
         val DEDUP_ENABLED = booleanPreferencesKey("dedup_enabled")
         // T6：短信源开关 / 容差 / 抖音默认分类 / 悬浮球（T7 用）
         val SMS_ENABLED = booleanPreferencesKey("sms_enabled")
@@ -46,7 +49,14 @@ class AutomationSettingsDataStore @Inject constructor(
 
     val enabled: Flow<Boolean> = store.data.map { it[Keys.ENABLED] ?: false }
 
-    suspend fun setEnabled(value: Boolean) = store.edit { it[Keys.ENABLED] = value }
+    suspend fun setEnabled(value: Boolean) = store.edit { prefs ->
+        prefs[Keys.ENABLED] = value
+        if (value) {
+            // 用户手动开启视为明确的重试意图：清掉失败计数与退避窗口，保证正常路径立即生效。
+            prefs.remove(Keys.SERVICE_START_FAILURE_COUNT)
+            prefs.remove(Keys.SERVICE_NEXT_RETRY_AT)
+        }
+    }
 
     val screenCaptureEnabled: Flow<Boolean> =
         store.data.map { it[Keys.SCREEN_CAPTURE_ENABLED] ?: false }
@@ -78,6 +88,53 @@ class AutomationSettingsDataStore @Inject constructor(
 
     suspend fun setLastServiceStartAt(value: Long) =
         store.edit { it[Keys.LAST_SERVICE_START_AT] = value }
+
+    // ---------- 服务启动失败退避（防止闪退 / 反复拉起） ----------
+
+    val serviceStartFailureCount: Flow<Int> =
+        store.data.map { it[Keys.SERVICE_START_FAILURE_COUNT] ?: 0 }
+
+    val serviceNextRetryAt: Flow<Long> =
+        store.data.map { it[Keys.SERVICE_NEXT_RETRY_AT] ?: 0L }
+
+    /**
+     * 探活 / 开机恢复拉起前统一询问：连续失败未达上限、且已过退避窗口才允许启动。
+     */
+    suspend fun canStartService(nowMillis: Long): Boolean {
+        val prefs = store.data.first()
+        val count = prefs[Keys.SERVICE_START_FAILURE_COUNT] ?: 0
+        val nextRetryAt = prefs[Keys.SERVICE_NEXT_RETRY_AT] ?: 0L
+        return count < MAX_SERVICE_START_FAILURES && nowMillis >= nextRetryAt
+    }
+
+    /** 启动成功：复位失败计数与退避窗口，并落盘运行状态。 */
+    suspend fun markServiceStarted(nowMillis: Long) = store.edit { prefs ->
+        prefs[Keys.SERVICE_RUNNING] = true
+        prefs[Keys.LAST_SERVICE_START_AT] = nowMillis
+        prefs.remove(Keys.SERVICE_START_FAILURE_COUNT)
+        prefs.remove(Keys.SERVICE_NEXT_RETRY_AT)
+    }
+
+    /**
+     * 记录一次启动失败：运行状态置 false，按指数退避设置下次允许时间。
+     * @return 连续失败是否已达上限（调用方应据此关闭开关并提示用户）。
+     */
+    suspend fun recordServiceStartFailure(nowMillis: Long): Boolean {
+        var failureCount = 0
+        store.edit { prefs ->
+            failureCount = (prefs[Keys.SERVICE_START_FAILURE_COUNT] ?: 0) + 1
+            prefs[Keys.SERVICE_START_FAILURE_COUNT] = failureCount
+            prefs[Keys.SERVICE_NEXT_RETRY_AT] = nowMillis + backoffAfterFailure(failureCount)
+            prefs[Keys.SERVICE_RUNNING] = false
+        }
+        return failureCount >= MAX_SERVICE_START_FAILURES
+    }
+
+    /** 显式清除失败状态（手动开启时由 setEnabled(true) 完成，保留给测试 / 未来入口）。 */
+    suspend fun resetServiceStartFailures() = store.edit { prefs ->
+        prefs.remove(Keys.SERVICE_START_FAILURE_COUNT)
+        prefs.remove(Keys.SERVICE_NEXT_RETRY_AT)
+    }
 
     val dedupEnabled: Flow<Boolean> = store.data.map { it[Keys.DEDUP_ENABLED] ?: true }
 
@@ -113,4 +170,18 @@ class AutomationSettingsDataStore @Inject constructor(
 
     suspend fun setFloatingBallEnabled(value: Boolean) =
         store.edit { it[Keys.FLOATING_BALL_ENABLED] = value }
+
+    companion object {
+        /** 连续启动失败 3 次后自动关闭自动化开关，彻底停止重试。 */
+        const val MAX_SERVICE_START_FAILURES = 3
+
+        /** 退避窗口：第 1 次 1 分钟、第 2 次 5 分钟、第 3 次及以后 15 分钟。 */
+        private val SERVICE_START_BACKOFF_MS = longArrayOf(60_000L, 5 * 60_000L, 15 * 60_000L)
+
+        /** 第 failureCount 次失败后的退避时长；failureCount <= 0 时无退避。 */
+        fun backoffAfterFailure(failureCount: Int): Long {
+            if (failureCount <= 0) return 0L
+            return SERVICE_START_BACKOFF_MS[minOf(failureCount - 1, SERVICE_START_BACKOFF_MS.lastIndex)]
+        }
+    }
 }

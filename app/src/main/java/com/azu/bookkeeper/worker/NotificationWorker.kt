@@ -57,7 +57,7 @@ class NotificationWorker @AssistedInject constructor(
         } else {
             showNotification(
                 title = "该记一笔啦",
-                text = "打开记账本，记录今天的收支",
+                text = "打开少花点儿，记录今天的收支",
                 channel = Constants.CHANNEL_REMINDER,
                 notificationId = 2002
             )

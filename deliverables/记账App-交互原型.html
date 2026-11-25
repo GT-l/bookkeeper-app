@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bookkeeper · 记账 App 高保真交互原型</title>
+<title>少花点儿 · 记账 App 高保真交互原型</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -417,11 +417,11 @@ body::after{width:380px;height:380px;background:#63d9c0;bottom:-160px;right:-110
 
   <header class="topbar">
     <div class="brand">
-      <div class="logo" title="Bookkeeper 标志">
+      <div class="logo" title="少花点儿 标志">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h4"/><path d="m15.5 15.5 1.4 1.4 2.6-2.9"/></svg>
       </div>
       <div>
-        <h1>Bookkeeper · 记账 App</h1>
+        <h1>少花点儿 · 记账 App</h1>
         <p>高保真交互原型 · 单文件离线演示 · 数据仅存于浏览器内存</p>
       </div>
     </div>
@@ -467,7 +467,7 @@ body::after{width:380px;height:380px;background:#63d9c0;bottom:-160px;right:-110
   </div>
 
   <div class="footer-note">
-    <b>Bookkeeper</b> · 纯前端单文件原型（内联 CSS / 原生 JS / 手写 SVG 图表，零外部依赖）<br>
+    <b>少花点儿</b> · 纯前端单文件原型（内联 CSS / 原生 JS / 手写 SVG 图表，零外部依赖）<br>
     所有数据仅存在于浏览器内存，刷新即重置；真实 Android App 需按 <b>BUILD.md</b> 配好 JDK 17 + SDK Platform 35 后构建，当前仓库内没有 APK。
   </div>
 </div>
@@ -1078,7 +1078,7 @@ function renderSettings(){
         '<button class="set-btn" data-action="setting-action" data-msg="原型演示：真实 App 将导出加密 SQLite 备份" title="导出备份">导出 ›</button></div>'+
       '<div class="set-row"><div><div class="set-name">清理缓存</div><div class="set-desc">清除 OCR 临时图片与解析缓存</div></div>'+
         '<button class="set-btn" data-action="setting-action" data-msg="原型演示：已清理 0 条缓存记录" title="清理缓存">清理 ›</button></div>'+
-      '<div class="set-row"><div><div class="set-name">关于 Bookkeeper</div><div class="set-desc">Android 原生 · Kotlin / Compose · 1.0.0</div></div>'+
+      '<div class="set-row"><div><div class="set-name">关于少花点儿</div><div class="set-desc">Android 原生 · Kotlin / Compose · 1.0.0</div></div>'+
         '<span class="set-btn static" title="版本 1.0.0，尚未真实编译，见 BUILD.md">v1.0.0</span></div>'+
     '</div>'+
     '<div class="hint">本页为精简视图；所有按钮均有响应，纯展示项以 title 或轻提示说明。</div>';
@@ -1113,7 +1113,7 @@ function renderMine(){
     '<div class="card"><div class="card-title">外观</div><div class="set-group" style="padding:0">'+
       '<div class="set-row"><div><div class="set-name">深色模式</div><div class="set-desc">当前：'+(state.dark?'深色主题':'浅色主题')+'</div></div>'+
       switchHTML(state.dark,'theme','','切换深色 / 浅色主题')+'</div></div></div>'+
-    '<div class="hint">Bookkeeper · 数据全部留在设备本地，不上传云端（真实 App 的设计前提）。</div>';
+    '<div class="hint">少花点儿 · 数据全部留在设备本地，不上传云端（真实 App 的设计前提）。</div>';
 }
 
 /* ==================== 校对弹窗 ==================== */

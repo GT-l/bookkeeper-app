@@ -1,7 +1,9 @@
 package com.azu.bookkeeper.ui.bill
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,19 +11,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,7 +32,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,10 @@ import androidx.navigation.NavController
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.CycleType
+import com.azu.bookkeeper.ui.common.CuteOutlinedButton
+import com.azu.bookkeeper.ui.common.CutePrimaryButton
+import com.azu.bookkeeper.ui.common.SoftCard
+import com.azu.bookkeeper.ui.theme.AmountStyle
 import com.azu.bookkeeper.ui.widget.QuickCaptureWidget
 import kotlinx.coroutines.launch
 
@@ -55,7 +61,6 @@ fun BillEditScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var categoryExpanded by remember { mutableStateOf(false) }
     var accountExpanded by remember { mutableStateOf(false) }
     var toAccountExpanded by remember { mutableStateOf(false) }
     var bookExpanded by remember { mutableStateOf(false) }
@@ -78,7 +83,18 @@ fun BillEditScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text(if (state.billId > 0L) "编辑账单" else "记一笔") }) }) { padding ->
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                ),
+                title = { Text(if (state.billId > 0L) "编辑账单" else "记一笔") }
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -93,22 +109,43 @@ fun BillEditScreen(
                         selected = state.billType == type,
                         onClick = { viewModel.setBillType(type) },
                         label = { Text(type.label) },
+                        shape = MaterialTheme.shapes.small,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
                         modifier = Modifier.padding(end = 8.dp)
                     )
                 }
             }
 
-            OutlinedTextField(
-                value = state.amountText,
-                onValueChange = viewModel::setAmount,
-                label = { Text("金额（元）") },
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
-            )
+            SoftCard(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                OutlinedTextField(
+                    value = state.amountText,
+                    onValueChange = viewModel::setAmount,
+                    label = { Text("金额（元）") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    textStyle = AmountStyle,
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        cursorColor = MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
 
             // 账本
-            OutlinedButton(onClick = { bookExpanded = true }, modifier = Modifier.padding(top = 8.dp)) {
+            CuteOutlinedButton(
+                onClick = { bookExpanded = true },
+                modifier = Modifier.padding(top = 12.dp)
+            ) {
                 Text("账本：${state.books.firstOrNull { it.bookId == state.bookId }?.name ?: "默认"}")
             }
             DropdownMenu(expanded = bookExpanded, onDismissRequest = { bookExpanded = false }) {
@@ -120,25 +157,59 @@ fun BillEditScreen(
                 }
             }
 
-            // 分类
-            OutlinedButton(onClick = { categoryExpanded = true }, modifier = Modifier.padding(top = 8.dp)) {
-                Text("分类：${state.categories.firstOrNull { it.categoryId == state.categoryId }?.name ?: "未选择"}")
-            }
-            DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
-                state.categories.forEach { category ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (category.parentId == 0L) category.name else "  └ ${category.name}"
-                            )
-                        },
-                        onClick = { viewModel.setCategory(category.categoryId); categoryExpanded = false }
-                    )
+            // 分类：三列圆角胶囊网格，点击行为与原下拉选择完全一致
+            Text(
+                text = "分类",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            SoftCard(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (state.categories.isEmpty()) {
+                        Text(
+                            text = "暂无分类，请先在分类管理中添加",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    state.categories.chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            row.forEach { category ->
+                                FilterChip(
+                                    selected = category.categoryId == state.categoryId,
+                                    onClick = { viewModel.setCategory(category.categoryId) },
+                                    label = {
+                                        Text(
+                                            text = if (category.parentId == 0L) category.name else "└ ${category.name}",
+                                            maxLines = 1
+                                        )
+                                    },
+                                    shape = MaterialTheme.shapes.small,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
             // 账户（转账时显示转入账户）
-            OutlinedButton(onClick = { accountExpanded = true }, modifier = Modifier.padding(top = 8.dp)) {
+            CuteOutlinedButton(
+                onClick = { accountExpanded = true },
+                modifier = Modifier.padding(top = 12.dp)
+            ) {
                 Text("${if (state.billType == BillType.TRANSFER) "转出" else "账户"}：${state.accounts.firstOrNull { it.accountId == state.accountFrom }?.name ?: "未选择"}")
             }
             DropdownMenu(expanded = accountExpanded, onDismissRequest = { accountExpanded = false }) {
@@ -150,7 +221,10 @@ fun BillEditScreen(
                 }
             }
             if (state.billType == BillType.TRANSFER) {
-                OutlinedButton(onClick = { toAccountExpanded = true }, modifier = Modifier.padding(top = 8.dp)) {
+                CuteOutlinedButton(
+                    onClick = { toAccountExpanded = true },
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
                     Text("转入：${state.accounts.firstOrNull { it.accountId == state.accountTo }?.name ?: "未选择"}")
                 }
                 DropdownMenu(expanded = toAccountExpanded, onDismissRequest = { toAccountExpanded = false }) {
@@ -169,13 +243,21 @@ fun BillEditScreen(
                 onValueChange = { timeText = it },
                 label = { Text("时间（yyyy-MM-dd HH:mm）") },
                 singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    cursorColor = MaterialTheme.colorScheme.primary
+                ),
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
             )
             Row(modifier = Modifier.padding(top = 4.dp)) {
-                OutlinedButton(onClick = { timeText = DateTimeUtils.format(DateTimeUtils.nowMillis()) }) {
+                CuteOutlinedButton(onClick = { timeText = DateTimeUtils.format(DateTimeUtils.nowMillis()) }) {
                     Text("现在")
                 }
-                OutlinedButton(
+                CuteOutlinedButton(
                     onClick = {
                         val parsed = DateTimeUtils.parseFlexible(timeText)
                         if (parsed != null) viewModel.setBillTime(parsed)
@@ -186,13 +268,24 @@ fun BillEditScreen(
             }
 
             // 标签（最多 10 个）
-            Text("标签", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+            Text(
+                text = "标签",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 16.dp)
+            )
             Row(modifier = Modifier.fillMaxWidth()) {
                 state.tags.forEach { tag ->
                     FilterChip(
                         selected = tag.tagId in state.tagIds,
                         onClick = { viewModel.toggleTag(tag.tagId) },
                         label = { Text(tag.name) },
+                        shape = CircleShape,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
                         modifier = Modifier.padding(end = 6.dp)
                     )
                 }
@@ -200,7 +293,7 @@ fun BillEditScreen(
 
             // 图片（URI 字符串作为索引，真实加密落盘由 T4/相册选择器完善）
             Row(modifier = Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { imagePicker.launch("image/*") }) { Text("添加图片") }
+                CuteOutlinedButton(onClick = { imagePicker.launch("image/*") }) { Text("添加图片") }
                 Text(
                     text = "已选 ${state.imagePaths.size}/9",
                     modifier = Modifier.padding(start = 12.dp)
@@ -209,12 +302,15 @@ fun BillEditScreen(
             state.imagePaths.forEach { path ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = path.take(48), modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = { viewModel.removeImage(path) }) { Text("移除") }
+                    CuteOutlinedButton(onClick = { viewModel.removeImage(path) }) { Text("移除") }
                 }
             }
 
             // 周期
-            OutlinedButton(onClick = { cycleExpanded = true }, modifier = Modifier.padding(top = 12.dp)) {
+            CuteOutlinedButton(
+                onClick = { cycleExpanded = true },
+                modifier = Modifier.padding(top = 12.dp)
+            ) {
                 Text("周期：${state.cycleType.label}")
             }
             DropdownMenu(expanded = cycleExpanded, onDismissRequest = { cycleExpanded = false }) {
@@ -230,6 +326,15 @@ fun BillEditScreen(
                 value = state.remark,
                 onValueChange = viewModel::setRemark,
                 label = { Text("备注 / 商家") },
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    cursorColor = MaterialTheme.colorScheme.primary
+                ),
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
             )
 
@@ -242,12 +347,12 @@ fun BillEditScreen(
             }
 
             Row(modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
-                OutlinedButton(
+                CuteOutlinedButton(
                     onClick = { navController.popBackStack() },
                     enabled = !state.isSaving,
                     modifier = Modifier.weight(1f)
                 ) { Text("取消") }
-                Button(
+                CutePrimaryButton(
                     onClick = {
                         DateTimeUtils.parseFlexible(timeText)?.let(viewModel::setBillTime)
                         viewModel.save { _ ->

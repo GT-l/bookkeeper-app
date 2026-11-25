@@ -1,5 +1,5 @@
 # =============================================================================
-# Bookkeeper App — GitHub Actions 云端构建 Debug APK
+# 少花点儿 App — GitHub Actions 云端构建 Debug APK
 # -----------------------------------------------------------------------------
 # 源码由 git checkout 直接提供：全部 Kotlin 源文件、Gradle 脚本以及
 # gradle/wrapper/gradle-wrapper.jar 均已随 git 推送到 main 分支。
@@ -110,9 +110,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0-debug
-          name: Bookkeeper v1.0.0 (Debug APK)
+          name: 少花点儿 v1.0.0 (Debug APK)
           body: |
-            # Bookkeeper · 个人记账 App — Debug APK v1.0.0
+            # 少花点儿 · 个人记账 App — Debug APK v1.0.0
 
             一款**完全本地离线**的 Android 原生记账应用。Kotlin + Jetpack Compose 编写，支持手动记账与四路自动捕获，数据经 SQLCipher 加密存储在本地，不联网、不上传、不收集任何个人信息。
 
@@ -207,6 +207,7 @@ jobs:
 
             - 这是 **Debug 构建**，未做混淆与正式签名，包体较大（约 86 MB，含调试符号）
             - 四路自动捕获依赖用户主动授权，不同厂商 ROM 后台保活策略不同，效果因机型而异
+            - 部分机型（尤其国产定制 ROM）即使已授予全部权限，系统仍可能拒绝悬浮窗显示、后台常驻或通知常驻；这是厂商 ROM 的额外限制，本 App 无法绕过。此时请改用「记一笔」快捷补记，或换用通知/读屏等其他通道。
             - XLSX 导入目前使用 POI DOM 方式 + 10 MB 上限，真流式（SAX）解析列入二期
             - 自动备份为本地文件，未接入云端同步（二期规划）
 

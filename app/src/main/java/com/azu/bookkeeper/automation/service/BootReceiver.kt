@@ -35,8 +35,13 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         scope.launch {
             try {
-                if (automationSettings.enabled.first()) {
-                    AutoCaptureForegroundService.start(context)
+                if (!automationSettings.enabled.first()) return@launch
+                // 开机恢复同样尊重失败退避，避免开机后立刻陷入反复拉起。
+                if (!automationSettings.canStartService(System.currentTimeMillis())) return@launch
+                if (automationSettings.serviceRunning.first()) return@launch
+                val appContext = context.applicationContext
+                if (!AutoCaptureForegroundService.start(appContext)) {
+                    AutoCaptureForegroundService.handleStartFailure(appContext, automationSettings)
                 }
             } finally {
                 pending.finish()

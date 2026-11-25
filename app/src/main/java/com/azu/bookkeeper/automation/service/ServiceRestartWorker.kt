@@ -23,10 +23,12 @@ class ServiceRestartWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): WorkResult {
-        val enabled = automationSettings.enabled.first()
-        val running = automationSettings.serviceRunning.first()
-        if (enabled && !running) {
-            AutoCaptureForegroundService.start(applicationContext)
+        if (!automationSettings.enabled.first()) return WorkResult.success()
+        // 连续启动失败时尊重退避窗口；达上限后开关已被关闭，这里也不会再拉起。
+        if (!automationSettings.canStartService(System.currentTimeMillis())) return WorkResult.success()
+        if (automationSettings.serviceRunning.first()) return WorkResult.success()
+        if (!AutoCaptureForegroundService.start(applicationContext)) {
+            AutoCaptureForegroundService.handleStartFailure(applicationContext, automationSettings)
         }
         // 统一返回 success：探活本身失败不重试，避免系统在 Doze 下反复唤醒
         return WorkResult.success()

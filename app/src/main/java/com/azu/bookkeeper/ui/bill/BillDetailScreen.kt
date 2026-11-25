@@ -45,7 +45,7 @@ import com.azu.bookkeeper.ui.theme.ExpenseRed
 import com.azu.bookkeeper.ui.theme.IncomeGreen
 import com.azu.bookkeeper.ui.theme.TransferGray
 
-/** 账单详情：长按金额/备注/分类/账户/时间任一行可就地单字段编辑；保留查看、复制、删除。 */
+/** 账单详情：点一下金额/备注/分类/账户/时间任一行即可就地编辑或跳转管理页；保留查看、复制、删除。 */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BillDetailScreen(
@@ -73,14 +73,14 @@ fun BillDetailScreen(
                 )
                 if (bill.amountFen == 0L) {
                     Text(
-                        text = "点住金额改数字",
+                        text = "点一下金额就能改数字",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
                 Text(
-                    text = "长按下面条目可直接修改",
+                    text = "点一下下面条目即可修改；账户 / 分类还能跳去管理页",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
@@ -98,27 +98,27 @@ fun BillDetailScreen(
                     label = "金额",
                     value = Money.format(bill.amountFen),
                     hint = if (bill.amountFen == 0L) "还没写金额" else null,
-                    onLongClick = { viewModel.startEdit(EditField.Amount) }
+                    onClick = { viewModel.startEdit(EditField.Amount) }
                 )
                 EditableInfoRow(
                     label = "分类",
                     value = categoryName,
-                    onLongClick = { viewModel.startEdit(EditField.Category) }
+                    onClick = { viewModel.startEdit(EditField.Category) }
                 )
                 EditableInfoRow(
                     label = "账户",
                     value = accountName,
-                    onLongClick = { viewModel.startEdit(EditField.Account) }
+                    onClick = { viewModel.startEdit(EditField.Account) }
                 )
                 EditableInfoRow(
                     label = "时间",
                     value = DateTimeUtils.format(bill.billTime, "yyyy-MM-dd HH:mm:ss"),
-                    onLongClick = { viewModel.startEdit(EditField.Time) }
+                    onClick = { viewModel.startEdit(EditField.Time) }
                 )
                 EditableInfoRow(
                     label = "备注",
                     value = bill.remark.ifBlank { "—" },
-                    onLongClick = { viewModel.startEdit(EditField.Remark) }
+                    onClick = { viewModel.startEdit(EditField.Remark) }
                 )
 
                 InfoRow("类型", bill.billType.label)
@@ -176,13 +176,21 @@ fun BillDetailScreen(
             categories = state.categories,
             selectedId = state.bill?.categoryId ?: 0L,
             onSelect = viewModel::updateCategory,
-            onDismiss = viewModel::cancelEdit
+            onDismiss = viewModel::cancelEdit,
+            onManage = {
+                viewModel.cancelEdit()
+                navController.navigate(Screen.Categories.route)
+            }
         )
         EditField.Account -> AccountPickerSheet(
             accounts = state.accounts,
             selectedId = state.bill?.accountFrom ?: 0L,
             onSelect = viewModel::updateAccount,
-            onDismiss = viewModel::cancelEdit
+            onDismiss = viewModel::cancelEdit,
+            onManage = {
+                viewModel.cancelEdit()
+                navController.navigate(Screen.Accounts.route)
+            }
         )
         EditField.Time -> state.bill?.let { bill ->
             TimeEditSheet(
@@ -209,19 +217,19 @@ fun BillDetailScreen(
     }
 }
 
-/** 支持长按就地编辑的条目行；onClick 空实现仅保留涟漪反馈。 */
+/** 支持单击就地编辑/跳转的条目行；保留长按同款操作作为习惯兜底。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EditableInfoRow(
     label: String,
     value: String,
     hint: String? = null,
-    onLongClick: () -> Unit
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = {}, onLongClick = onLongClick)
+            .combinedClickable(onClick = onClick, onLongClick = onClick)
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -312,14 +320,15 @@ private fun RemarkEditSheet(
     }
 }
 
-/** 分类选择：该账本支出分类列表，点选即保存并关闭。 */
+/** 分类选择：该账本支出分类列表，点选即保存并关闭；底部可跳分类管理新增。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CategoryPickerSheet(
     categories: List<com.azu.bookkeeper.domain.model.Category>,
     selectedId: Long,
     onSelect: (Long) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onManage: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -341,19 +350,23 @@ private fun CategoryPickerSheet(
                     }
                 }
             }
+            TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) {
+                Text("找不到想要的？去分类管理新增 →", color = MaterialTheme.colorScheme.primary)
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
-/** 账户选择：该账本账户列表，点选即保存并关闭。 */
+/** 账户选择：该账本账户列表，点选即保存并关闭；底部可跳资产页新增账户。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AccountPickerSheet(
     accounts: List<com.azu.bookkeeper.domain.model.Account>,
     selectedId: Long,
     onSelect: (Long) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onManage: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -374,6 +387,9 @@ private fun AccountPickerSheet(
                         )
                     }
                 }
+            }
+            TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) {
+                Text("没有合适的账户？去资产页新增 →", color = MaterialTheme.colorScheme.primary)
             }
             Spacer(modifier = Modifier.height(16.dp))
         }

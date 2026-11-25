@@ -1,5 +1,6 @@
 package com.azu.bookkeeper.ui.bill
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,6 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,6 +39,8 @@ import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.ui.common.ConfirmDialog
+import com.azu.bookkeeper.ui.common.CuteOutlinedButton
+import com.azu.bookkeeper.ui.common.CutePrimaryButton
 import com.azu.bookkeeper.ui.common.LoadingIndicator
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.theme.ExpenseRed
@@ -55,7 +57,31 @@ fun BillDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("账单详情") }) }) { padding ->
+    // 统一离开动作：先让 VM 清理「进去什么都没改」的 0 值占位账单，再回退栈。
+    // 一键建单会先落一条 0 分占位账单，用户直接返回时必须把它删掉，否则首页残留空账单。
+    val leave: () -> Unit = remember(viewModel, navController) {
+        {
+            viewModel.onLeave()
+            navController.popBackStack()
+        }
+    }
+
+    // 系统返回键 / 手势返回与顶部返回按钮走同一套清理逻辑
+    BackHandler(enabled = true) { leave() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("账单详情") },
+                navigationIcon = {
+                    // material-icons 未在 app/build.gradle.kts 声明，按约定用文本箭头兜底（不新增依赖）
+                    TextButton(onClick = leave) {
+                        Text(text = "←", style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            )
+        }
+    ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             val bill = state.bill
             if (bill == null) {
@@ -89,10 +115,11 @@ fun BillDetailScreen(
 
                 val categoryName = state.categories
                     .firstOrNull { it.categoryId == bill.categoryId }?.name
-                    ?: bill.categoryId.toString()
+                    ?: if (bill.categoryId == 0L) "未设置分类" else bill.categoryId.toString()
+                // 账户非必须：accountFrom=0 表示「还没选账户」，不能显示成 "0"
                 val accountName = state.accounts
                     .firstOrNull { it.accountId == bill.accountFrom }?.name
-                    ?: bill.accountFrom.toString()
+                    ?: if (bill.accountFrom <= 0L) "未设置账户" else bill.accountFrom.toString()
 
                 EditableInfoRow(
                     label = "金额",
@@ -108,6 +135,7 @@ fun BillDetailScreen(
                 EditableInfoRow(
                     label = "账户",
                     value = accountName,
+                    hint = if (bill.accountFrom <= 0L) "可以先不选，之后再补" else null,
                     onClick = { viewModel.startEdit(EditField.Account) }
                 )
                 EditableInfoRow(
@@ -132,14 +160,14 @@ fun BillDetailScreen(
                 InfoRow("校对状态", bill.verifyStatus.label)
 
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
-                    Button(onClick = { navController.navigate(Screen.billEdit(bill.billId)) }) {
+                    CutePrimaryButton(onClick = { navController.navigate(Screen.billEdit(bill.billId)) }) {
                         Text("编辑")
                     }
-                    OutlinedButton(
+                    CuteOutlinedButton(
                         onClick = { viewModel.copy { id -> navController.navigate(Screen.billDetail(id)) } },
                         modifier = Modifier.padding(start = 8.dp)
                     ) { Text("复制") }
-                    OutlinedButton(
+                    CuteOutlinedButton(
                         onClick = { confirmDelete = true },
                         modifier = Modifier.padding(start = 8.dp)
                     ) { Text("删除") }
@@ -371,25 +399,35 @@ private fun AccountPickerSheet(
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text(text = "改账户", style = MaterialTheme.typography.titleMedium)
-            LazyColumn(modifier = Modifier.fillMaxWidth().height(360.dp).padding(top = 8.dp)) {
-                items(accounts, key = { it.accountId }) { account ->
-                    TextButton(
-                        onClick = { onSelect(account.accountId) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = account.name,
-                            color = if (account.accountId == selectedId) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
-                        )
+            if (accounts.isEmpty()) {
+                // 账户非必须：账本里一个账户都没有时给出明确提示，并保留下方「去资产页新增」入口
+                Text(
+                    text = "还没有账户",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp)
+                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth().height(360.dp).padding(top = 8.dp)) {
+                    items(accounts, key = { it.accountId }) { account ->
+                        TextButton(
+                            onClick = { onSelect(account.accountId) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = account.name,
+                                color = if (account.accountId == selectedId) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
                     }
                 }
             }
             TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) {
-                Text("没有合适的账户？去资产页新增 →", color = MaterialTheme.colorScheme.primary)
+                Text("去资产页新增 →", color = MaterialTheme.colorScheme.primary)
             }
             Spacer(modifier = Modifier.height(16.dp))
         }

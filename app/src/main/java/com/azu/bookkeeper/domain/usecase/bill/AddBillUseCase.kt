@@ -4,6 +4,7 @@ import com.azu.bookkeeper.core.AppError
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.domain.model.Bill
+import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.repository.BillRepository
 import javax.inject.Inject
@@ -28,7 +29,9 @@ class AddBillUseCase @Inject constructor(
             code = "E_VALID_003",
             userMessage = "金额必须大于 0"
         )
-        bill.accountFrom <= 0L -> AppError.Validation(
+        // 账户改为「非必须」：手动记账 / 快捷补记允许 accountFrom=0（先记金额，账户随后在详情页补选）。
+        // 转账与自动捕获（含导入、余额校准）保持原有严格校验，避免记账落到不存在的账户。
+        bill.accountFrom <= 0L && mustSelectAccount(bill) -> AppError.Validation(
             code = "E_VALID_004",
             userMessage = "请选择账户"
         )
@@ -43,5 +46,16 @@ class AddBillUseCase @Inject constructor(
         bill.billType != BillType.TRANSFER && bill.categoryId <= 0L && !bill.isAdjustment ->
             AppError.Validation(code = "E_VALID_007", userMessage = "请选择分类")
         else -> null
+    }
+
+    /**
+     * 该账单是否必须携带有效账户。
+     *
+     * 仅 MANUAL / QUICK_MANUAL 允许缺账户（PRD：账户非必填，用户可在详情页补选）；
+     * 转账无论来源都必须有转出账户；其余来源（自动捕获 / 导入 / 余额校准）保持严格口径。
+     */
+    private fun mustSelectAccount(bill: Bill): Boolean = when (bill.billType) {
+        BillType.TRANSFER -> true
+        else -> bill.source != BillSource.MANUAL && bill.source != BillSource.QUICK_MANUAL
     }
 }

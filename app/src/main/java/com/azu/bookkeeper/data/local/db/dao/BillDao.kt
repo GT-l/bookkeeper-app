@@ -83,6 +83,24 @@ interface BillDao {
         end: Long
     ): BillEntity?
 
+    /**
+     * 疑似重复提醒：统计同账本 + 同商户（remark，调用方需先归一化）+ 同金额，
+     * 且 bill_time 不早于 sinceMillis 的账单条数。
+     *
+     * 用途：去重命中时不直接丢弃，先看近期已存在几笔——达到 2 笔时本次将是第 3 笔，
+     * 视为「疑似重复」转人工校验（用户可能确实连续消费了 3 笔相同金额）。
+     */
+    @Query(
+        "SELECT COUNT(*) FROM bills WHERE book_id = :bookId AND remark = :merchant " +
+            "AND amount_fen = :amountFen AND bill_time >= :sinceMillis"
+    )
+    suspend fun countRecentSameAmountMerchant(
+        bookId: Long,
+        merchant: String,
+        amountFen: Long,
+        sinceMillis: Long
+    ): Int
+
     @Query(
         "SELECT category_id AS categoryId, SUM(amount_fen) AS totalFen, COUNT(*) AS count " +
             "FROM bills WHERE book_id = :bookId AND bill_type = :billType AND `source` != :excludedSource " +

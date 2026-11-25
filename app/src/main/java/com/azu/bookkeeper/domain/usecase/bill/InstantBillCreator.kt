@@ -64,7 +64,8 @@ class InstantBillCreator @Inject constructor(
         val categoryId = (categories.firstOrNull { it.name.contains("其他") }
             ?: categories.firstOrNull())?.categoryId ?: 0L
 
-        // 3. 第一个账户
+        // 3. 第一个账户；账本还没有账户时取 0——账户非必须，绝不因缺账户阻断一键建单，
+        // 用户随后在详情页「账户」一行补选（AddBillUseCase 已对 MANUAL 放宽 accountFrom>0）。
         val accountId = accountRepository.observeAll(bookId).first().firstOrNull()?.accountId ?: 0L
 
         // 4. 占位账单：金额 0、备注空、时间为当前时刻，其余字段用模型默认值

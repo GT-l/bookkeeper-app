@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import com.azu.bookkeeper.BuildConfig
 import com.azu.bookkeeper.automation.classify.SeedRuleInitializer
 import com.azu.bookkeeper.automation.service.ServiceRestartWorker
+import com.azu.bookkeeper.core.FirstRunSeeder
 import com.azu.bookkeeper.worker.NotificationWorker
 import com.azu.bookkeeper.worker.RecurringBillWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -34,6 +35,9 @@ class BookkeeperApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var seedRuleInitializer: SeedRuleInitializer
+
+    @Inject
+    lateinit var firstRunSeeder: FirstRunSeeder
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -67,8 +71,12 @@ class BookkeeperApp : Application(), Configuration.Provider {
                 ServiceRestartWorker.INTERVAL_MINUTES, TimeUnit.MINUTES
             ).build()
         )
-        // T6：首次启动幂等注入抖音 / 通用种子规则（不覆盖用户改动）
+        // 首启种子数据（默认账本 + 默认分类 + 默认账户）与 T6 种子规则串行执行：
+        // 种子规则依赖 defaultBookId 指向的账本，必须先落账本再注入规则。
+        // 失败只记日志不崩溃：用户仍可手动在账本管理页建账本。
         appScope.launch {
+            runCatching { firstRunSeeder.ensureSeeded() }
+                .onFailure { Timber.w(it, "first run seed failed") }
             runCatching { seedRuleInitializer.initialize() }
                 .onFailure { Timber.w(it, "seed rules init failed") }
         }

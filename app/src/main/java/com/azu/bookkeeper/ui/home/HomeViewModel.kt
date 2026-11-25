@@ -10,6 +10,7 @@ import com.azu.bookkeeper.domain.model.Book
 import com.azu.bookkeeper.domain.repository.AccountRepository
 import com.azu.bookkeeper.domain.repository.BookRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository
+import com.azu.bookkeeper.domain.usecase.bill.DeleteBillUseCase
 import com.azu.bookkeeper.domain.usecase.bill.InstantBillCreator
 import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +30,8 @@ class HomeViewModel @Inject constructor(
     private val bookRepository: BookRepository,
     private val accountRepository: AccountRepository,
     private val settings: SettingsRepository,
-    private val instantBillCreator: InstantBillCreator
+    private val instantBillCreator: InstantBillCreator,
+    private val deleteBillUseCase: DeleteBillUseCase
 ) : ViewModel() {
 
     data class DayGroup(
@@ -95,7 +97,14 @@ class HomeViewModel @Inject constructor(
                         }
                         launch {
                             observeBills(resolved).collect { bills ->
-                                _uiState.update { it.copy(bills = bills, message = null) }
+                                // 展示层过滤 0 值账单（一键建单的 0 分占位账单、余额校准残留等）：
+                                // 只影响列表呈现，不删库——数据由详情页 onLeave / 用户删除负责清理。
+                                _uiState.update {
+                                    it.copy(
+                                        bills = bills.filter { bill -> bill.amountFen > 0L },
+                                        message = null
+                                    )
+                                }
                             }
                         }
                     }
@@ -120,6 +129,25 @@ class HomeViewModel @Inject constructor(
 
     fun switchBook(bookId: Long) {
         viewModelScope.launch { settings.setDefaultBookId(bookId) }
+    }
+
+    /**
+     * 首页滑动删除（契约方法，首页列表 swipe-to-dismiss 调用）。
+     *
+     * 走 DeleteBillUseCase 的带余额回滚事务（deleteWithBalanceTx），
+     * 余额回滚与账单删除在同一事务内完成；失败经 UiState.message 提示，成功由 Flow 自动刷新列表。
+     *
+     * @param billId 待删除账单 ID；<=0 时直接忽略。
+     */
+    fun deleteBill(billId: Long) {
+        if (billId <= 0L) return
+        viewModelScope.launch {
+            when (val result = deleteBillUseCase(billId)) {
+                is Result.Success -> _uiState.update { it.copy(message = null) }
+                is Result.Error -> _uiState.update { it.copy(message = result.error.userMessage) }
+                Result.Loading -> Unit
+            }
+        }
     }
 
     fun loadMore() {

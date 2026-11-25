@@ -12,7 +12,9 @@ import com.azu.bookkeeper.automation.verify.VerificationController
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.core.getOrNull
+import com.azu.bookkeeper.core.normalizeRemark
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
+import com.azu.bookkeeper.data.local.db.dao.BillDao
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
 import com.azu.bookkeeper.data.local.db.entity.CaptureEventEntity
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
@@ -44,6 +46,7 @@ import javax.inject.Singleton
 @Singleton
 class CaptureCoordinator @Inject constructor(
     private val captureDao: CaptureDao,
+    private val billDao: BillDao,
     private val ocrEngine: OcrEngine,
     private val extractor: FieldExtractor,
     private val confidence: ConfidenceCalculator,
@@ -144,6 +147,19 @@ class CaptureCoordinator @Inject constructor(
         // 6) 去重：短信源用可配容差（默认 180s），其余精确键
         val toleranceSec = if (isSms) automationSettings.smsDedupToleranceSec.first() else 0L
         if (dedup.isDuplicateWithTolerance(candidate, toleranceSec)) {
+            // 先去重命中不直接丢弃：若近 24 小时内同账本 + 同商户 + 同金额已有 >=2 笔，
+            // 本次就是第 3 笔，属于「疑似重复」而不是确定重复——转人工校验让用户判断
+            // （用户可能确实连续买了 3 次同价商品）。截图文件此时不删，校对弹窗还要看图。
+            val recentSame = countRecentSameAmountMerchant(bookId, candidate)
+            if (recentSame >= SUSPECTED_DUPLICATE_HIT_THRESHOLD) {
+                captureDao.markStatus(event.eventId, CaptureEventStatus.LOW_CONFIDENCE.code)
+                verifier.requestVerify(candidate)
+                Timber.d(
+                    "suspected duplicate, sent to verify eventId=%d amount=%d hits=%d",
+                    event.eventId, candidate.amountFen ?: 0L, recentSame
+                )
+                return@withContext
+            }
             captureDao.markStatus(event.eventId, CaptureEventStatus.DISCARDED.code)
             // 终态清理：去重丢弃的截图没有保留价值，删除加密文件释放存储
             deleteCaptureFile(event.imagePath, "dedup_discarded")
@@ -212,6 +228,33 @@ class CaptureCoordinator @Inject constructor(
         fields to (summary.acct.takeIf { it > 0L } ?: 0L)
     }.getOrDefault(ExtractedFields() to 0L)
 
+    /**
+     * 统计近 24 小时内同账本 + 同商户（写库时统一归一化）+ 同金额的账单条数。
+     *
+     * 商户为空或金额非正时无从判断重复程度，返回 0（保持原有「确定重复 → 丢弃」语义）。
+     * 查询异常只记日志并返回 0，绝不因为统计失败而丢失正常记账流程。
+     */
+    private suspend fun countRecentSameAmountMerchant(
+        bookId: Long,
+        candidate: CaptureCandidate
+    ): Int {
+        val amountFen = candidate.amountFen ?: 0L
+        val merchant = candidate.merchant.normalizeRemark()
+        if (amountFen <= 0L || merchant.isBlank()) return 0
+        val sinceMillis = System.currentTimeMillis() - SUSPECTED_DUPLICATE_WINDOW_MILLIS
+        return try {
+            billDao.countRecentSameAmountMerchant(
+                bookId = bookId,
+                merchant = merchant,
+                amountFen = amountFen,
+                sinceMillis = sinceMillis
+            )
+        } catch (throwable: Throwable) {
+            Timber.w(throwable, "count recent same amount merchant failed")
+            0
+        }
+    }
+
     /** 高分候选 → 自动账单（verifyStatus=auto_passed，source=auto_capture）。 */
     private fun buildBill(candidate: CaptureCandidate, bookId: Long): Bill {
         val now = System.currentTimeMillis()
@@ -236,5 +279,11 @@ class CaptureCoordinator @Inject constructor(
 
     private companion object {
         const val MAX_RAW_TEXT_LENGTH = 2000
+
+        /** 疑似重复判定的回溯窗口：近 24 小时。 */
+        const val SUSPECTED_DUPLICATE_WINDOW_MILLIS = 24L * 60L * 60L * 1000L
+
+        /** 窗口内已有 >=2 笔同账本/同商户/同金额账单时，本次（第 3 笔）转人工校验。 */
+        const val SUSPECTED_DUPLICATE_HIT_THRESHOLD = 2
     }
 }

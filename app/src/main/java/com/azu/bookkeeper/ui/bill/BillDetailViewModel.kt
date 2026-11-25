@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.core.Result
+import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.Bill
+import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.Category
 import com.azu.bookkeeper.domain.model.CategoryKind
 import com.azu.bookkeeper.domain.repository.AccountRepository
@@ -18,12 +20,16 @@ import com.azu.bookkeeper.domain.usecase.bill.DeleteBillUseCase
 import com.azu.bookkeeper.domain.usecase.bill.UpdateBillUseCase
 import com.azu.bookkeeper.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /** 详情页支持就地编辑（长按对应行触发）的字段。 */
@@ -47,7 +53,8 @@ class BillDetailViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val updateBill: UpdateBillUseCase,
     private val deleteBill: DeleteBillUseCase,
-    private val addBill: AddBillUseCase
+    private val addBill: AddBillUseCase,
+    @IoDispatcher ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     data class UiState(
@@ -63,12 +70,61 @@ class BillDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    /**
+     * 进入页面时的账单快照：用于判断用户是否真的改动过这笔账单。
+     * 一键建单会先落一条 0 分占位账单再跳详情页，用户什么都没改就返回时必须把它删掉。
+     */
+    private data class BillSnapshot(
+        val billId: Long,
+        val amountFen: Long,
+        val remark: String,
+        val categoryId: Long,
+        val accountFrom: Long,
+        val billTime: Long,
+        val tagIds: List<Long>,
+        val imagePaths: List<String>
+    ) {
+        companion object {
+            fun from(bill: Bill): BillSnapshot = BillSnapshot(
+                billId = bill.billId,
+                amountFen = bill.amountFen,
+                remark = bill.remark,
+                categoryId = bill.categoryId,
+                accountFrom = bill.accountFrom,
+                billTime = bill.billTime,
+                tagIds = bill.tagIds,
+                imagePaths = bill.imagePaths
+            )
+        }
+    }
+
+    /** 初始快照；账单还没加载完成时为 null。 */
+    private var initialSnapshot: BillSnapshot? = null
+
+    /** 任一 updateXxx 成功落库后置 true：用户确实改过，离开时不得删除。 */
+    private var dirty: Boolean = false
+
+    /** onLeave 幂等保护：返回键与顶部返回按钮可能先后触发。 */
+    private var leaveHandled: Boolean = false
+
+    /**
+     * 离开页面时的静默清理 scope。
+     *
+     * 不能用 viewModelScope：[onLeave] 之后页面立刻 popBackStack，ViewModel 随即 onCleared，
+     * viewModelScope 会被取消，删除事务可能半途中断。这里用与 Service 同款的
+     * SupervisorJob + 注入的 IO 调度器（禁止硬编码 Dispatchers，架构 §9.5）。
+     */
+    private val leaveScope = CoroutineScope(SupervisorJob() + ioDispatcher)
+
     init {
         viewModelScope.launch {
             when (val result = billRepository.getBill(billId)) {
                 is Result.Success -> {
                     _uiState.update { it.copy(bill = result.data) }
-                    result.data?.let { loadBookData(it.bookId) }
+                    result.data?.let { bill ->
+                        initialSnapshot = BillSnapshot.from(bill)
+                        loadBookData(bill.bookId)
+                    }
                 }
                 is Result.Error -> _uiState.update { it.copy(message = result.error.userMessage) }
                 Result.Loading -> Unit
@@ -136,10 +192,49 @@ class BillDetailViewModel @Inject constructor(
         val updated = transform(current)
         viewModelScope.launch {
             when (val result = updateBill(updated)) {
-                is Result.Success -> _uiState.update {
-                    it.copy(bill = updated, editingField = null, message = null)
+                is Result.Success -> {
+                    // 用户确实改过这笔账单：打上 dirty 标记，离开时不再当占位账单清理
+                    dirty = true
+                    _uiState.update {
+                        it.copy(bill = updated, editingField = null, message = null)
+                    }
                 }
                 is Result.Error -> _uiState.update { it.copy(message = result.error.userMessage) }
+                Result.Loading -> Unit
+            }
+        }
+    }
+
+    // ---------- 离开页面：清理未编辑的 0 值占位账单 ----------
+
+    /**
+     * 离开详情页时调用（系统返回键 / 顶部返回按钮）。
+     *
+     * 一键建单会先插入一条 0 分占位账单并跳转到详情页；若用户什么都没改就返回，
+     * 这条占位账单会残留在首页列表里（表现为「莫名多出一笔 0 元账单」）。
+     * 因此：账单存在 && 未被改动 && 金额为 0 && 来源为 MANUAL && billId>0 时，
+     * 走 DeleteBillUseCase 的带余额回滚事务静默删除（金额为 0，实际余额差为 0）。
+     */
+    fun onLeave() {
+        if (leaveHandled) return
+        leaveHandled = true
+
+        val bill = _uiState.value.bill ?: return
+        if (dirty) return
+        val snapshot = initialSnapshot ?: return
+        if (bill.billId <= 0L || bill.billId != snapshot.billId) return
+        if (bill.source != BillSource.MANUAL || bill.amountFen != 0L) return
+
+        val placeholderId = bill.billId
+        leaveScope.launch {
+            when (val result = deleteBill(placeholderId)) {
+                is Result.Success -> Timber.d("placeholder bill discarded on leave id=%d", placeholderId)
+                is Result.Error -> Timber.w(
+                    result.error.cause,
+                    "discard placeholder bill failed id=%d code=%s",
+                    placeholderId,
+                    result.error.code
+                )
                 Result.Loading -> Unit
             }
         }
@@ -148,6 +243,8 @@ class BillDetailViewModel @Inject constructor(
     // ---------- 原有功能保持不变 ----------
 
     fun delete(onDeleted: () -> Unit) {
+        // 用户显式删除：标记已处理，避免随后的 onLeave 再触发一次占位账单清理
+        leaveHandled = true
         viewModelScope.launch {
             when (val result = deleteBill(billId)) {
                 is Result.Success -> {

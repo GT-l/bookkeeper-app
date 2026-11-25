@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -13,7 +14,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
 import com.azu.bookkeeper.automation.capture.CaptureEvent
@@ -51,6 +52,7 @@ class QuickBallService : Service() {
     @Inject lateinit var screenCaptureManager: ScreenCaptureManager
     @Inject lateinit var captureCoordinator: CaptureCoordinator
     @Inject lateinit var captureDao: CaptureDao
+    @Inject lateinit var automationSettings: com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 
     private var ballView: View? = null
 
@@ -63,35 +65,56 @@ class QuickBallService : Service() {
     private var pendingSingleTap: Runnable? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> {
+        // 任何异常都不得逃出本方法：Service 抛异常会直接杀死进程，
+        // 若再叠加系统重启就是用户看到的「频繁闪退」。统一降级 + 明确提示。
+        return try {
+            when (intent?.action) {
+                ACTION_STOP -> {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+            }
+            if (!permissionGuide.canDrawOverlays()) {
+                // 不在这里主动跳系统设置：Service 里跳转会打断当前任务（用户容易以为「App 退出了」），
+                // 引导跳转统一由设置页的开关处理。
+                toast("尚未授予「显示在其他应用上层」权限，请在 设置→自动化 里开启", Toast.LENGTH_LONG)
                 stopSelf()
                 return START_NOT_STICKY
             }
-        }
-        if (!permissionGuide.canDrawOverlays()) {
-            toast("请先授予悬浮窗权限，再开启悬浮球", Toast.LENGTH_LONG)
-            runCatching { startActivity(permissionGuide.overlaySettingsIntent()) }
+            val added = showBall()
+            if (!added) {
+                toast("悬浮球创建失败，请确认已允许「显示在其他应用上层」后重试", Toast.LENGTH_LONG)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            isRunning = true
+            // 不使用 START_STICKY：进程被杀后由系统反复拉起、反复失败，正是「频繁闪退」的放大器；
+            // 恢复交给 MainActivity.onResume / BootReceiver / 用户手动开关。
+            START_NOT_STICKY
+        } catch (t: Throwable) {
+            Timber.e(t, "QuickBallService start failed")
+            toast("悬浮球启动失败：${t.javaClass.simpleName}", Toast.LENGTH_LONG)
+            isRunning = false
             stopSelf()
-            return START_NOT_STICKY
+            START_NOT_STICKY
         }
-        showBall()
-        return START_STICKY
     }
 
-    /** 添加可拖拽的「记」球；重复 start 时先移除旧视图避免叠加。 */
-    private fun showBall() {
+    /**
+     * 添加可拖拽的「记」球；重复 start 时先移除旧视图避免叠加。
+     * 返回 true 表示已成功挂载到 WindowManager。
+     */
+    private fun showBall(): Boolean {
         removeBall()
+        val view: View = try {
+            buildBallView()
+        } catch (t: Throwable) {
+            // 主题/资源异常等极端情况下也不让进程崩掉
+            Timber.e(t, "build ball view failed")
+            return false
+        }
         val density = resources.displayMetrics.density
         val size = (52 * density).toInt()
-        val view = Button(this).apply {
-            text = "记"
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            // 主题草莓粉（与 App 主题一致），替换原硬编码 #C62828
-            setBackgroundColor(Color.parseColor("#C74372"))
-            alpha = 0.88f
-        }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -141,6 +164,11 @@ class QuickBallService : Service() {
                 // 双击窗口内的第二次点击：取消待执行的单击动作，收起悬浮球
                 mainHandler.removeCallbacks(pending)
                 pendingSingleTap = null
+                // 同步把开关落库为关闭，否则下次回到 App（onResume 兜底）会把它又拉起来
+                scope.launch {
+                    runCatching { automationSettings.setFloatingBallEnabled(false) }
+                }
+                toast("悬浮球已收起，可在 设置→自动化 重新开启", Toast.LENGTH_SHORT)
                 stopSelf()
             } else {
                 // 延迟 DOUBLE_TAP_TIMEOUT_MS 再打开表单，给双击留出判定窗口
@@ -157,13 +185,43 @@ class QuickBallService : Service() {
             true
         }
 
-        try {
+        return try {
             windowManager().addView(view, params)
             ballView = view
-        } catch (_: Exception) {
-            // 权限被系统回收等场景：安静降级，用户可在设置页重新开启
+            true
+        } catch (t: Throwable) {
+            // 权限被系统回收 / ROM 拦截：明确告知原因，不再静默
+            Timber.e(t, "add overlay view failed")
             ballView = null
-            stopSelf()
+            false
+        }
+    }
+
+    /**
+     * 构建可爱风「记」球：粉色圆点 + 白色「记」字 + 轻微阴影。
+     * 用代码构建 GradientDrawable 而不是依赖 XML/AppCompat 主题，
+     * 避免极简主题下控件实例化失败导致 Service 反复崩溃。
+     */
+    private fun buildBallView(): View {
+        val density = resources.displayMetrics.density
+        val radius = 26 * density
+        val bg = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#C74372"))
+            setStroke((2 * density).toInt(), Color.parseColor("#FFF9F5"))
+        }
+        return TextView(this).apply {
+            text = "记"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = bg
+            elevation = 6 * density
+            alpha = 0.92f
+            // 触摸热区略大于视觉圆点，方便手指按住
+            setPadding(0, 0, 0, 0)
+            width = (radius * 2).toInt()
+            height = (radius * 2).toInt()
         }
     }
 
@@ -247,6 +305,7 @@ class QuickBallService : Service() {
         getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     override fun onDestroy() {
+        isRunning = false
         removeBall()
         pendingSingleTap?.let { mainHandler.removeCallbacks(it) }
         pendingSingleTap = null
@@ -263,10 +322,18 @@ class QuickBallService : Service() {
         /** 双击判定窗口（毫秒），与系统 ViewConfiguration 双击超时口径一致。 */
         private const val DOUBLE_TAP_TIMEOUT_MS = 300L
 
+        /** 悬浮球当前是否已挂载。由 onStartCommand 成功挂载后置 true，onDestroy 置 false。 */
+        @Volatile
+        var isRunning: Boolean = false
+
+        /**
+         * 启动悬浮球。调用方若在 Activity/前台场景直接调用即可；
+         * 未授予悬浮窗权限或后台启动受限时静默失败（服务内部会 Toast 说明），不抛异常。
+         */
         fun start(context: Context) {
             runCatching {
                 context.startService(Intent(context, QuickBallService::class.java).setAction(ACTION_START))
-            }
+            }.onFailure { Timber.w(it, "start QuickBallService failed") }
         }
 
         fun stop(context: Context) {

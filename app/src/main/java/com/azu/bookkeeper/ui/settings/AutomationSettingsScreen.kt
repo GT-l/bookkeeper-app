@@ -22,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.azu.bookkeeper.R
@@ -51,6 +55,17 @@ fun AutomationSettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var verifyExpanded by remember { mutableStateOf(false) }
+
+    // 从系统「悬浮窗权限」页返回本页时自动补拉起悬浮球：
+    // 否则用户授权完返回，开关虽已记录为开启，球却永远不出现。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.retryStartFloatingBallIfNeeded()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // MediaProjection 每次会话需重新授权（Android 14+）；拒绝则降级读屏/通知
     val captureLauncher = rememberLauncherForActivityResult(
@@ -105,7 +120,7 @@ fun AutomationSettingsScreen(
 
             // 总开关
             SettingSwitch("启用自动记账", state.enabled) { viewModel.setEnabled(it) }
-            SettingSwitch("悬浮球快捷记账（点击记一笔 / 长按收起）", state.floatingBallEnabled) {
+            SettingSwitch("悬浮球快捷记账（单击记一笔 / 长按识屏 / 双击收起）", state.floatingBallEnabled) {
                 viewModel.setFloatingBallEnabled(it)
             }
             Text(

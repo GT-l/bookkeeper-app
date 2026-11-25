@@ -3,12 +3,15 @@ package com.azu.bookkeeper.automation.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
+import com.azu.bookkeeper.ui.quick.QuickBallService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -22,6 +25,7 @@ import javax.inject.Inject
 class BootReceiver : BroadcastReceiver() {
 
     @Inject lateinit var automationSettings: AutomationSettingsDataStore
+    @Inject lateinit var permissionGuide: PermissionGuide
 
     private val scope = CoroutineScope(SupervisorJob())
 
@@ -46,6 +50,16 @@ class BootReceiver : BroadcastReceiver() {
             } finally {
                 pending.finish()
             }
+        }
+
+        // 悬浮球恢复与自动化总开关解耦：用户只要开了悬浮球，重启手机后也应恢复
+        scope.launch {
+            runCatching {
+                if (!automationSettings.floatingBallEnabled.first()) return@launch
+                if (!permissionGuide.canDrawOverlays()) return@launch
+                if (QuickBallService.isRunning) return@launch
+                QuickBallService.start(context.applicationContext)
+            }.onFailure { Timber.w(it, "restore quick ball on boot failed") }
         }
     }
 }

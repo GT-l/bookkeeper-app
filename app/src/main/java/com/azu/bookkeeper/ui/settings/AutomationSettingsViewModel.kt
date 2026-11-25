@@ -162,16 +162,51 @@ class AutomationSettingsViewModel @Inject constructor(
     }
 
     /** T7 悬浮球：复用已有悬浮窗权限，未授权时引导开启且不写开关状态。 */
+    /**
+     * 悬浮球开关。
+     *
+     * 关键修复：先落库「用户意图」，再处理权限——否则用户去系统设置授权后返回，
+     * 开关仍是关的、也没人再拉起服务，表现为「开了悬浮球却永远不出现」。
+     * 授权返回后的自动恢复见 [retryStartFloatingBallIfNeeded]（页面 ON_RESUME 调用）。
+     */
     fun setFloatingBallEnabled(enabled: Boolean) {
-        if (enabled && !permissionGuide.canDrawOverlays()) {
-            _uiState.update { it.copy(message = "请先授予悬浮窗权限，再开启悬浮球") }
-            openOverlaySettings()
-            return
-        }
         viewModelScope.launch {
             automation.setFloatingBallEnabled(enabled)
-            if (enabled) QuickBallService.start(context) else QuickBallService.stop(context)
-            _uiState.update { it.copy(floatingBallEnabled = enabled) }
+            if (!enabled) {
+                QuickBallService.stop(context)
+                _uiState.update { it.copy(floatingBallEnabled = false, message = "悬浮球已关闭") }
+                return@launch
+            }
+            if (!permissionGuide.canDrawOverlays()) {
+                _uiState.update {
+                    it.copy(
+                        floatingBallEnabled = true,
+                        message = "已记录开启：请打开「显示在其他应用上层/悬浮窗」权限，返回本页后悬浮球会自动出现"
+                    )
+                }
+                openOverlaySettings()
+                return@launch
+            }
+            QuickBallService.start(context)
+            _uiState.update { it.copy(floatingBallEnabled = true, message = "悬浮球已开启，可拖动到顺手的位置") }
+        }
+    }
+
+    /**
+     * 页面回到前台时调用：开关已开 + 权限已给 + 球没在跑 → 自动补拉起。
+     * 覆盖「去系统设置授权后返回」和「进程被杀后重新打开 App」两种场景。
+     */
+    fun retryStartFloatingBallIfNeeded() {
+        viewModelScope.launch {
+            val enabled = automation.floatingBallEnabled.first()
+            if (!enabled) return@launch
+            val overlayOk = permissionGuide.canDrawOverlays()
+            if (!overlayOk) return@launch
+            if (QuickBallService.isRunning) return@launch
+            QuickBallService.start(context)
+            _uiState.update {
+                it.copy(floatingBallEnabled = true, overlayGranted = true)
+            }
         }
     }
 

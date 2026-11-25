@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cute settings tab icon: rounded gear with only 6 round teeth and a big center hole.
+  Drawn as nonzero winding: body + 6 teeth clockwise, center hole counter-clockwise.
+  Apache-2.0 style, free for any use.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12 4.5a7.5 7.5 0 1 1 0 15a7.5 7.5 0 1 1 0-15zM19.5 10.1a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8zM15.75 3.6a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8zM8.25 3.6a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8zM4.5 10.1a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8zM8.25 16.6a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8zM15.75 16.6a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8zM12 8.4a3.6 3.6 0 1 0 0 7.2a3.6 3.6 0 1 0 0-7.2z" />
+</vector>

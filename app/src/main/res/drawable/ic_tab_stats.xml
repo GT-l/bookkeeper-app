@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cute stats tab icon: three rounded pill bars of different heights. Apache-2.0 style, free for any use. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M6.6 14c.88 0 1.6.72 1.6 1.6v2.8c0 .88-.72 1.6-1.6 1.6-.88 0-1.6-.72-1.6-1.6v-2.8c0-.88.72-1.6 1.6-1.6zM12 9.6c.88 0 1.6.72 1.6 1.6v7.2c0 .88-.72 1.6-1.6 1.6-.88 0-1.6-.72-1.6-1.6v-7.2c0-.88.72-1.6 1.6-1.6zM17.4 12.6c.88 0 1.6.72 1.6 1.6v4.2c0 .88-.72 1.6-1.6 1.6-.88 0-1.6-.72-1.6-1.6v-4.2c0-.88.72-1.6 1.6-1.6z" />
+</vector>

@@ -14,6 +14,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,10 +27,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.ui.common.EmptyState
 import com.azu.bookkeeper.ui.common.SoftCard
@@ -91,7 +94,12 @@ fun HomeScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController.navigate(Screen.billEdit()) },
+                onClick = {
+                    // 极简记账：一键默认建单，成功后直接进详情页让用户长按就地补全
+                    viewModel.createInstantBill { id ->
+                        navController.navigate(Screen.billDetail(id))
+                    }
+                },
                 shape = CircleShape,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -100,7 +108,11 @@ fun HomeScreen(
                     pressedElevation = 2.dp
                 )
             ) {
-                Text("+", style = MaterialTheme.typography.titleLarge)
+                Icon(
+                    painter = painterResource(R.drawable.ic_fab_add),
+                    contentDescription = "记一笔",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
     ) { padding ->
@@ -161,7 +173,7 @@ fun HomeScreen(
                 )
             }
             if (state.bills.isEmpty()) {
-                EmptyState(message = "还没有账单，点右下角 + 记一笔")
+                EmptyState(message = "还没有账单，点右下角 + 一秒记一笔")
             } else {
                 BillList(
                     groups = state.dayGroups,

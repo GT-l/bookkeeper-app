@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cute quick-capture badge: round book with spine and a little heart cut on the cover.
+  Apache-2.0 style, free for any use.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- outer ring (evenOdd) -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM12 4.6a7.4 7.4 0 1 1 0 14.8a7.4 7.4 0 1 1 0-14.8z" />
+    <!-- book cover with spine line and heart cutouts (evenOdd) -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M8.6 8c0-.8.65-1.45 1.45-1.45h4.3c.8 0 1.45.65 1.45 1.45v8c0 .8-.65 1.45-1.45 1.45h-4.3c-.8 0-1.45-.65-1.45-1.45zM8.95 6.55h.6v10.9h-.6zM13 14.2C11.9 13.4 10.8 12.6 10.8 11.4C10.8 10.6 11.4 10 12.2 10C12.55 10 12.85 10.15 13 10.35C13.15 10.15 13.45 10 13.8 10C14.6 10 15.2 10.6 15.2 11.4C15.2 12.6 14.1 13.4 13 14.2z" />
+</vector>

@@ -2,6 +2,7 @@ package com.azu.bookkeeper.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.Bill
@@ -9,6 +10,7 @@ import com.azu.bookkeeper.domain.model.Book
 import com.azu.bookkeeper.domain.repository.AccountRepository
 import com.azu.bookkeeper.domain.repository.BookRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository
+import com.azu.bookkeeper.domain.usecase.bill.InstantBillCreator
 import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +27,8 @@ class HomeViewModel @Inject constructor(
     private val observeBills: ObserveBillsUseCase,
     private val bookRepository: BookRepository,
     private val accountRepository: AccountRepository,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val instantBillCreator: InstantBillCreator
 ) : ViewModel() {
 
     data class DayGroup(
@@ -83,6 +86,20 @@ class HomeViewModel @Inject constructor(
                         _uiState.update { it.copy(bills = bills, message = null) }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 极简记账：一键按默认配置创建占位账单，
+     * 成功后回调新账单 ID（首页跳转到详情页让用户长按就地补全）。
+     */
+    fun createInstantBill(onCreated: (Long) -> Unit) {
+        viewModelScope.launch {
+            when (val result = instantBillCreator()) {
+                is Result.Success -> onCreated(result.data)
+                is Result.Error -> _uiState.update { it.copy(message = result.error.userMessage) }
+                Result.Loading -> Unit
             }
         }
     }

@@ -3,6 +3,7 @@ package com.azu.bookkeeper.ui.navigation
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -12,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -19,6 +21,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
+import com.azu.bookkeeper.R
 import com.azu.bookkeeper.ui.account.AccountEditScreen
 import com.azu.bookkeeper.ui.account.AccountListScreen
 import com.azu.bookkeeper.ui.backup.BackupScreen
@@ -38,13 +41,13 @@ import com.azu.bookkeeper.ui.settings.SettingsScreen
 import com.azu.bookkeeper.ui.unlock.AppLockScreen
 
 /** 底部导航的四个主入口；仅指向既有路由，不新增业务逻辑。 */
-private data class BottomTab(val route: String, val label: String, val glyph: String)
+private data class BottomTab(val route: String, val label: String, val iconRes: Int)
 
 private val bottomTabs = listOf(
-    BottomTab(Screen.Home.route, "首页", "⌂"),
-    BottomTab(Screen.Budget.route, "预算", "▤"),
-    BottomTab(Screen.Statistics.route, "统计", "◔"),
-    BottomTab(Screen.Settings.route, "设置", "⚙")
+    BottomTab(Screen.Home.route, "首页", R.drawable.ic_tab_home),
+    BottomTab(Screen.Budget.route, "预算", R.drawable.ic_tab_budget),
+    BottomTab(Screen.Statistics.route, "统计", R.drawable.ic_tab_stats),
+    BottomTab(Screen.Settings.route, "设置", R.drawable.ic_tab_settings)
 )
 
 /** 可爱风底部栏：奶油白容器 + 浅粉胶囊指示条 + 主色图标 tint。 */
@@ -61,10 +64,10 @@ private fun CuteBottomBar(currentRoute: String?, onSelect: (String) -> Unit) {
                 selected = selected,
                 onClick = { onSelect(tab.route) },
                 icon = {
-                    Text(
-                        text = tab.glyph,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = if (selected) {
+                    Icon(
+                        painter = painterResource(tab.iconRes),
+                        contentDescription = tab.label,
+                        tint = if (selected) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant

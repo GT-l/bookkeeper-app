@@ -1,24 +1,36 @@
 package com.azu.bookkeeper.ui.bill
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,7 +45,8 @@ import com.azu.bookkeeper.ui.theme.ExpenseRed
 import com.azu.bookkeeper.ui.theme.IncomeGreen
 import com.azu.bookkeeper.ui.theme.TransferGray
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 账单详情：长按金额/备注/分类/账户/时间任一行可就地单字段编辑；保留查看、复制、删除。 */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BillDetailScreen(
     navController: NavController,
@@ -55,15 +68,60 @@ fun BillDetailScreen(
                 }
                 Text(
                     text = "${Money.format(bill.amountFen)}",
-                    color = color,
+                    color = if (bill.amountFen == 0L) MaterialTheme.colorScheme.error else color,
                     style = MaterialTheme.typography.displaySmall
                 )
+                if (bill.amountFen == 0L) {
+                    Text(
+                        text = "点住金额改数字",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Text(
+                    text = "长按下面条目可直接修改",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
                 Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+                val categoryName = state.categories
+                    .firstOrNull { it.categoryId == bill.categoryId }?.name
+                    ?: bill.categoryId.toString()
+                val accountName = state.accounts
+                    .firstOrNull { it.accountId == bill.accountFrom }?.name
+                    ?: bill.accountFrom.toString()
+
+                EditableInfoRow(
+                    label = "金额",
+                    value = Money.format(bill.amountFen),
+                    hint = if (bill.amountFen == 0L) "还没写金额" else null,
+                    onLongClick = { viewModel.startEdit(EditField.Amount) }
+                )
+                EditableInfoRow(
+                    label = "分类",
+                    value = categoryName,
+                    onLongClick = { viewModel.startEdit(EditField.Category) }
+                )
+                EditableInfoRow(
+                    label = "账户",
+                    value = accountName,
+                    onLongClick = { viewModel.startEdit(EditField.Account) }
+                )
+                EditableInfoRow(
+                    label = "时间",
+                    value = DateTimeUtils.format(bill.billTime, "yyyy-MM-dd HH:mm:ss"),
+                    onLongClick = { viewModel.startEdit(EditField.Time) }
+                )
+                EditableInfoRow(
+                    label = "备注",
+                    value = bill.remark.ifBlank { "—" },
+                    onLongClick = { viewModel.startEdit(EditField.Remark) }
+                )
+
                 InfoRow("类型", bill.billType.label)
-                InfoRow("分类 ID", bill.categoryId.toString())
-                InfoRow("账户", "转出 ${bill.accountFrom}" + if (bill.isTransfer) " → 转入 ${bill.accountTo}" else "")
-                InfoRow("时间", DateTimeUtils.format(bill.billTime, "yyyy-MM-dd HH:mm:ss"))
-                InfoRow("备注", bill.remark.ifBlank { "—" })
                 InfoRow("来源", bill.source.label)
                 InfoRow("标签", bill.tagIds.joinToString().ifBlank { "—" })
                 InfoRow("图片", "${bill.imagePaths.size} 张")
@@ -97,6 +155,46 @@ fun BillDetailScreen(
         }
     }
 
+    // ---------- 单字段就地编辑 BottomSheet ----------
+
+    when (val field = state.editingField) {
+        EditField.Amount -> state.bill?.let { bill ->
+            AmountEditSheet(
+                initialText = Money.formatPlain(bill.amountFen, withSymbol = false),
+                onConfirm = viewModel::updateAmount,
+                onDismiss = viewModel::cancelEdit
+            )
+        }
+        EditField.Remark -> state.bill?.let { bill ->
+            RemarkEditSheet(
+                initialText = bill.remark,
+                onConfirm = viewModel::updateRemark,
+                onDismiss = viewModel::cancelEdit
+            )
+        }
+        EditField.Category -> CategoryPickerSheet(
+            categories = state.categories,
+            selectedId = state.bill?.categoryId ?: 0L,
+            onSelect = viewModel::updateCategory,
+            onDismiss = viewModel::cancelEdit
+        )
+        EditField.Account -> AccountPickerSheet(
+            accounts = state.accounts,
+            selectedId = state.bill?.accountFrom ?: 0L,
+            onSelect = viewModel::updateAccount,
+            onDismiss = viewModel::cancelEdit
+        )
+        EditField.Time -> state.bill?.let { bill ->
+            TimeEditSheet(
+                initialText = DateTimeUtils.format(bill.billTime, "yyyy-MM-dd HH:mm"),
+                onConfirm = viewModel::updateBillTimeText,
+                onSetNow = viewModel::updateBillTimeToNow,
+                onDismiss = viewModel::cancelEdit
+            )
+        }
+        null -> Unit
+    }
+
     if (confirmDelete) {
         ConfirmDialog(
             title = "删除账单",
@@ -111,10 +209,213 @@ fun BillDetailScreen(
     }
 }
 
+/** 支持长按就地编辑的条目行；onClick 空实现仅保留涟漪反馈。 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun EditableInfoRow(
+    label: String,
+    value: String,
+    hint: String? = null,
+    onLongClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = onLongClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(text = value, style = MaterialTheme.typography.bodyMedium)
+            hint?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         Text(text = value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+// ---------- 各字段编辑器 Sheet ----------
+
+/** 金额编辑：数字键盘文本框，保存经 Money.parse 校验（金额必须大于 0）。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AmountEditSheet(
+    initialText: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialText) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = "改金额", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("金额（元）") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
+            Button(
+                onClick = { onConfirm(text) },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            ) { Text("保存") }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/** 备注编辑：单行文本框，允许为空。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RemarkEditSheet(
+    initialText: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialText) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = "改备注", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("备注") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
+            Button(
+                onClick = { onConfirm(text) },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            ) { Text("保存") }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/** 分类选择：该账本支出分类列表，点选即保存并关闭。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryPickerSheet(
+    categories: List<com.azu.bookkeeper.domain.model.Category>,
+    selectedId: Long,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text(text = "改分类", style = MaterialTheme.typography.titleMedium)
+            LazyColumn(modifier = Modifier.fillMaxWidth().height(360.dp).padding(top = 8.dp)) {
+                items(categories, key = { it.categoryId }) { category ->
+                    TextButton(
+                        onClick = { onSelect(category.categoryId) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = category.name,
+                            color = if (category.categoryId == selectedId) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+/** 账户选择：该账本账户列表，点选即保存并关闭。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AccountPickerSheet(
+    accounts: List<com.azu.bookkeeper.domain.model.Account>,
+    selectedId: Long,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text(text = "改账户", style = MaterialTheme.typography.titleMedium)
+            LazyColumn(modifier = Modifier.fillMaxWidth().height(360.dp).padding(top = 8.dp)) {
+                items(accounts, key = { it.accountId }) { account ->
+                    TextButton(
+                        onClick = { onSelect(account.accountId) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = account.name,
+                            color = if (account.accountId == selectedId) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * 时间编辑：文本框支持多种常见格式（经 DateTimeUtils.parseFlexible 容错解析），
+ * 另提供「改为现在」一键快捷入口。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeEditSheet(
+    initialText: String,
+    onConfirm: (String) -> Unit,
+    onSetNow: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialText) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = "改时间", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("时间（如 2026-01-01 12:00）") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onSetNow) { Text("改为现在") }
+                Spacer(modifier = Modifier.weight(1f))
+                Button(onClick = { onConfirm(text) }) { Text("保存") }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
     }
 }

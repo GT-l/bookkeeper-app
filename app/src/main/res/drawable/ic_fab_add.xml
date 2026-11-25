@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cute FAB icon: thick plus with rounded stroke caps. Apache-2.0 style, free for any use. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12 5.2V18.8M5.2 12H18.8"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.6"
+        android:strokeLineCap="round" />
+</vector>

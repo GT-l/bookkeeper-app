@@ -134,22 +134,29 @@ class BalanceCalculationTest {
 
     @Test
     fun `转账改转入账户 旧B回滚新C入账且A保持`() {
+        // merge 返回的是「需要应用到余额上的增量」，不是最终余额：
+        // 旧转账与新转账都是从 A(11) 出钱，A 的增量相互抵消为 0（会被过滤掉，余额保持不动），
+        // B(12) 需要回滚 -10000，C(13) 需要入账 +10000。
         val old = deltas(bill(BillType.TRANSFER, 10_000L, from = 11L, to = 12L))
         val new = deltas(bill(BillType.TRANSFER, 10_000L, from = 11L, to = 13L))
         val result = merged(old, new)
-        assertEquals(-10_000L, result[11L])
+        assertEquals(null, result[11L])
         assertEquals(-10_000L, result[12L])
         assertEquals(10_000L, result[13L])
+        assertEquals(2, result.size)
         assertEquals(0L, result.values.sum())
     }
 
     @Test
     fun `转账改支出 撤销转入账户的入账`() {
+        // 转账→支出：A(11) 前后都是支出 -10000，增量 0；B(12) 的 +10000 需要撤销。
         val old = deltas(bill(BillType.TRANSFER, 10_000L, from = 11L, to = 12L))
         val new = deltas(bill(BillType.EXPENSE, 10_000L, from = 11L))
         val result = merged(old, new)
-        assertEquals(-10_000L, result[11L])
+        assertEquals(null, result[11L])
         assertEquals(-10_000L, result[12L])
+        assertEquals(1, result.size)
+        assertEquals(-10_000L, result.values.sum())
     }
 
     @Test

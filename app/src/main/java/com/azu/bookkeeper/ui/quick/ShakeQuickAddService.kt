@@ -154,6 +154,7 @@ class ShakeQuickAddService : Service() {
      * - 任一环节失败：Toast 明确原因 + 进度通知标题写明原因 + 自检页留痕 + 自动打开表单。
      */
     private fun triggerScreenCapture() {
+        com.azu.bookkeeper.core.CaptureLog.i(applicationContext, "SHAKE", "摇一摇触发识屏")
         val capture = runCatching { entryPoint.lightweightCapture() }.getOrNull()
         if (capture == null) {
             recordDiagnostic(
@@ -179,6 +180,7 @@ class ShakeQuickAddService : Service() {
 
     /** 没有截屏授权：优先拉起透明授权页；被 ROM 拦截则发可点击的「去授权」通知兜底。 */
     private fun requestCaptureAuthorization(capture: LightweightCapture) {
+        com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "SHAKE", "无可用截屏通道，拉起授权页")
         val authIntent = Intent(this, ScreenCaptureAuthActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val launched = runCatching { startActivity(authIntent) }.isSuccess

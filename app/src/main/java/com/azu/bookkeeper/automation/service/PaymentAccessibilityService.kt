@@ -88,6 +88,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         // 用 Log.w 而不是 Timber.i：release 的 -assumenosideeffects 会把 i() 整段裁掉，
         // 连不上服务时必须有能在 logcat 里看到的日志。
         Log.w(TAG, "无障碍服务已连接: canTakeScreenshot=$canShot sdk=${Build.VERSION.SDK_INT}")
+        com.azu.bookkeeper.core.CaptureLog.i(applicationContext, "A11Y", "服务已连接 canTakeScreenshot=$canShot")
         runCatching { logScreenshotCapability() }
         // 心跳：主进程读这个标记判断服务是否真的连上（系统开关状态在部分 ROM 上不可靠）
         runCatching {
@@ -220,6 +221,7 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         Log.w(TAG, "无障碍服务被解绑（系统关闭开关 / ROM 回收）")
+        com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "服务被解绑（系统关闭/ROM 回收）")
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putLong(KEY_LAST_DISCONNECTED, System.currentTimeMillis()).apply()

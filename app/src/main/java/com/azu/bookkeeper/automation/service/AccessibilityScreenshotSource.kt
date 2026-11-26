@@ -57,10 +57,14 @@ class AccessibilityScreenshotSource @Inject constructor(
             )
         }
         val service = PaymentAccessibilityService.current()
-            ?: return AccessibilityShotResult(
+        if (service == null) {
+            com.azu.bookkeeper.core.CaptureLog.w(context, "A11Y", "takeScreenshot 跳过：无障碍服务未连接")
+            return AccessibilityShotResult(
                 null, -101, CaptureFailReason.ACCESSIBILITY_NOT_CONNECTED,
                 "无障碍服务未连接（设置 → 无障碍 → 少花点儿 未开启或已被系统关闭）"
             )
+        }
+        com.azu.bookkeeper.core.CaptureLog.i(context, "A11Y", "takeScreenshot 发起")
         return suspendCancellableCoroutine { cont ->
             // takeScreenshot 走系统 binder，且服务实例的生命周期在主线程序列——
             // 统一在主线程发起，避免线程约束导致的系统级异常。
@@ -107,6 +111,10 @@ class AccessibilityScreenshotSource @Inject constructor(
                         "accessibility screenshot ok: %s",
                         bitmap?.let { "${it.width}x${it.height}" } ?: "convert failed"
                     )
+                    com.azu.bookkeeper.core.CaptureLog.i(
+                        context, "A11Y",
+                        "takeScreenshot 成功 " + (bitmap?.let { "${it.width}x${it.height}" } ?: "HardwareBuffer 转换失败")
+                    )
                     onResult(
                         if (bitmap == null) {
                             AccessibilityShotResult(
@@ -121,6 +129,9 @@ class AccessibilityScreenshotSource @Inject constructor(
                 override fun onFailure(errorCode: Int) {
                     val (reason, text) = mapError(errorCode)
                     Timber.w("accessibility screenshot failed: code=%d %s", errorCode, text)
+                    com.azu.bookkeeper.core.CaptureLog.w(
+                        context, "A11Y", "takeScreenshot 失败 code=$errorCode reason=${reason.name} $text"
+                    )
                     onResult(AccessibilityShotResult(null, errorCode, reason, text))
                 }
             }

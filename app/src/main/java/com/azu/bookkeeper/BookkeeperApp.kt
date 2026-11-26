@@ -58,6 +58,8 @@ class BookkeeperApp : Application(), Configuration.Provider {
         runCatching { com.azu.bookkeeper.core.CrashGuard.install(this) }
         // 全局崩溃栈落盘：任何 Java 崩溃都会写文件，下次进「识屏自检」页可直接复制
         runCatching { com.azu.bookkeeper.core.CrashLog.install(this) }
+        // 识屏日志：读取上次开关状态（用户开启识屏后开始记录）
+        runCatching { com.azu.bookkeeper.core.CaptureLog.init(this) }
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }

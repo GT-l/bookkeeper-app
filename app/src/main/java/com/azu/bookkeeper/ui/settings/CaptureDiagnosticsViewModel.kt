@@ -9,6 +9,7 @@ import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
 import com.azu.bookkeeper.core.CaptureChannel
+import com.azu.bookkeeper.core.CaptureLog
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
@@ -206,6 +207,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
 
     private fun enterStep(name: String) {
         SelfCheckGuard.markStep(context, name)
+        CaptureLog.i(context, "SELFCHECK", "步骤=$name")
         _state.update { it.copy(currentStep = name) }
     }
 
@@ -385,6 +387,19 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         }
     }
 
+    /** 识屏日志预览（最近 N 行）。 */
+    fun logPreview(lines: Int = 40): String = CaptureLog.export(context, lines)
+
+    fun logSummary(): String {
+        val kb = CaptureLog.sizeBytes(context) / 1024
+        return if (CaptureLog.isEnabled()) "记录中 · ${kb}KB" else "未开启（在自动化设置里开启截屏授权后开始记录）"
+    }
+
+    fun clearLog() {
+        CaptureLog.clear(context)
+        _state.update { it.copy(message = "识屏日志已清空") }
+    }
+
     fun clearReport() {
         CaptureDiagnostics.clear(context)
         CrashLog.clear(context)
@@ -412,6 +427,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
             sb.appendLine("--- 最近一次崩溃 ---")
             sb.appendLine(crash.take(3000))
         }
+        sb.appendLine("--- 识屏日志（最近 200 行）---")
+        sb.appendLine(CaptureLog.export(context, 200))
         s.last?.let { report ->
             sb.appendLine("--- 最近一次识屏 ---")
             sb.appendLine("时间：${fmt.format(java.util.Date(report.timeMillis))}")

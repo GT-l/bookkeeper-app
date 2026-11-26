@@ -95,9 +95,11 @@ class ScreenCaptureManager @Inject constructor(
             }
             mediaProjection.registerCallback(callback, null)
         }
+        com.azu.bookkeeper.core.CaptureLog.i(context, "PROJ", "MediaProjection 会话已建立")
         true
     } catch (t: Throwable) {
         Timber.w(t, "start projection session failed")
+        com.azu.bookkeeper.core.CaptureLog.e(context, "PROJ", "MediaProjection 会话建立失败", t)
         false
     }
 
@@ -155,14 +157,22 @@ class ScreenCaptureManager @Inject constructor(
                     } else {
                         CaptureFailReason.VIRTUAL_DISPLAY_FAILED
                     }
+                    com.azu.bookkeeper.core.CaptureLog.e(
+                        context, "PROJ", "createVirtualDisplay 失败 ${t.javaClass.simpleName}: ${t.message}", t
+                    )
                     return@withContext FrameBitmapResult(null, reason, "${t.javaClass.simpleName}: ${t.message}")
                 }
 
                 val bitmap = withTimeoutOrNull(CAPTURE_TIMEOUT_MS) {
                     awaitBitmap(imageReader!!, width, height)
-                } ?: return@withContext FrameBitmapResult(
-                    null, CaptureFailReason.FRAME_TIMEOUT, "${CAPTURE_TIMEOUT_MS}ms 内未收到画面帧"
-                )
+                } ?: run {
+                    com.azu.bookkeeper.core.CaptureLog.w(
+                        context, "PROJ", "取帧超时（${CAPTURE_TIMEOUT_MS}ms）${width}x${height}"
+                    )
+                    return@withContext FrameBitmapResult(
+                        null, CaptureFailReason.FRAME_TIMEOUT, "${CAPTURE_TIMEOUT_MS}ms 内未收到画面帧"
+                    )
+                }
 
                 FrameBitmapResult(bitmap, null, "${width}x$height")
             } catch (t: Throwable) {

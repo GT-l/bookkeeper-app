@@ -21,10 +21,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -45,6 +50,13 @@ fun CaptureDiagnosticsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+    // 识屏日志预览：自检跑完或页面数据变化时刷新
+    var logText by remember { mutableStateOf(viewModel.logPreview(20)) }
+    var logSummary by remember { mutableStateOf(viewModel.logSummary()) }
+    LaunchedEffect(state.running, state.last, state.message) {
+        logText = viewModel.logPreview(20)
+        logSummary = viewModel.logSummary()
+    }
     val authLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result -> viewModel.onAuthResult(result.resultCode, result.data) }
@@ -109,6 +121,51 @@ fun CaptureDiagnosticsScreen(
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("复制诊断信息") }
+
+            // 识屏日志：开启识屏后自动记录全链路，复制即发给开发者定位
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("识屏日志", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        logSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    Row(modifier = Modifier.padding(top = 8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(
+                                    android.content.Context.CLIPBOARD_SERVICE
+                                ) as? android.content.ClipboardManager
+                                clipboard?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText(
+                                        "识屏日志", viewModel.logPreview(400)
+                                    )
+                                )
+                                Toast.makeText(context, "识屏日志已复制", Toast.LENGTH_SHORT).show()
+                            }
+                        ) { Text("复制识屏日志") }
+                        OutlinedButton(
+                            onClick = { viewModel.clearLog() },
+                            modifier = Modifier.padding(start = 8.dp)
+                        ) { Text("清空日志") }
+                    }
+                    if (logText.isNotBlank()) {
+                        Text(
+                            logText,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                }
+            }
 
             // 监督指示：自检进行中实时显示当前步骤（不是等全部跑完才反馈）
             if (state.running) {

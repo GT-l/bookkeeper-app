@@ -63,6 +63,7 @@ class LightweightCapture @Inject constructor(
             val startedAt = System.currentTimeMillis()
 
             fun fail(reason: CaptureFailReason, detail: String) {
+                com.azu.bookkeeper.core.CaptureLog.w(context, "CAPTURE", "失败 ${reason.name}：$detail")
                 steps += DiagnosticStep(reason.title, false, detail)
                 Timber.w("识屏失败: %s | %s", reason.name, detail)
                 runCatching {
@@ -90,6 +91,7 @@ class LightweightCapture @Inject constructor(
             runCatching {
                 progress.showStage(CaptureProgressNotifier.Stage.CAPTURE)
                 // 双通道：无障碍截屏（免授权）优先，媒体投影兜底；内部已做黑帧/FLAG_SECURE 判定
+                com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=截屏")
                 val frame = withContext(ioDispatcher) { channels.capture() }
                 val bitmap = frame.bitmap
                 if (bitmap == null) {
@@ -100,6 +102,7 @@ class LightweightCapture @Inject constructor(
                 steps += DiagnosticStep("截屏（${frame.channel}）", true, frame.detail)
 
                 progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE)
+                com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=OCR（独立进程）")
                 // OCR 放到 :ocr 独立进程执行：ML Kit 原生库崩溃不会带走主进程
                 val ipc = withContext(ioDispatcher) { ocrIpc.recognize(bitmap) }
                 runCatching { bitmap.recycle() }
@@ -119,6 +122,7 @@ class LightweightCapture @Inject constructor(
                 )
 
                 progress.showStage(CaptureProgressNotifier.Stage.EXTRACT)
+                com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=提取")
                 val analysis = analyzer.analyze(ocrText)
                 val fallback = extractor.extract(ocrText, System.currentTimeMillis())
                 val amountFen = analysis.amountFen ?: fallback.amountFen
@@ -141,6 +145,10 @@ class LightweightCapture @Inject constructor(
                     return@launch
                 }
 
+                com.azu.bookkeeper.core.CaptureLog.i(
+                    context, "CAPTURE",
+                    "识别结果 amount=${amountFen} merchant=${merchant.ifBlank { "-" }} conf=${analysis.confidence}"
+                )
                 steps += DiagnosticStep(
                     "提取金额", merchant.isNotBlank(),
                     "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }} / conf=${"%.2f".format(analysis.confidence)}"

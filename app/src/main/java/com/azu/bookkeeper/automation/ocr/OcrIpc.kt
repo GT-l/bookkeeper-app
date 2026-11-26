@@ -81,7 +81,9 @@ class OcrIpcClient @Inject constructor(
                 putExtra(OcrWorkerService.EXTRA_OUT, out.absolutePath)
             }
             val started = runCatching { context.startService(intent) }.isSuccess
+            com.azu.bookkeeper.core.CaptureLog.i(context, "OCR", "启动 :ocr 进程 started=$started")
             if (!started) {
+                com.azu.bookkeeper.core.CaptureLog.e(context, "OCR", "无法启动 OCR 进程（服务被 ROM 拦截）")
                 return@withContext OcrIpcResult(null, "无法启动 OCR 进程（服务被 ROM 拦截）")
             }
             val deadline = System.currentTimeMillis() + timeoutMs
@@ -91,12 +93,18 @@ class OcrIpcClient @Inject constructor(
                         json.decodeFromString<OcrIpcPayload>(out.readText())
                     }.getOrNull()
                     out.delete()
-                    if (payload != null) return@withContext OcrIpcResult(payload, null)
+                    if (payload != null) {
+                        com.azu.bookkeeper.core.CaptureLog.i(
+                            context, "OCR", "识别完成 ${payload.text.length} 字 conf=${payload.confidence} blocks=${payload.blocks}"
+                        )
+                        return@withContext OcrIpcResult(payload, null)
+                    }
                 }
                 delay(120)
             }
             runCatching { out.delete() }
             Timber.w("ocr ipc timeout after %dms", timeoutMs)
+            com.azu.bookkeeper.core.CaptureLog.e(context, "OCR", "OCR 进程 ${timeoutMs}ms 无响应（可能 native 崩溃）")
             OcrIpcResult(null, "OCR 进程 ${timeoutMs}ms 内无响应（可能已 native 崩溃）")
         }
 }

@@ -299,6 +299,8 @@ class AutomationSettingsViewModel @Inject constructor(
             _uiState.update { it.copy(message = "请在弹出的系统对话框中允许屏幕捕获") }
         }
         automation.setScreenCaptureEnabled(enabled)
+        // 识屏开关与日志开关联动：开启识屏才开始记录，关闭即停（不采集额外信息）
+        runCatching { com.azu.bookkeeper.core.CaptureLog.setEnabled(context, enabled) }
         if (!enabled) screenCapture.release()
     }
 

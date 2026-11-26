@@ -63,6 +63,13 @@ class CaptureChannels @Inject constructor(
 
     suspend fun capture(): ChannelCaptureResult {
         val attempts = mutableListOf<String>()
+        com.azu.bookkeeper.core.CaptureLog.i(
+            context, "CHANNEL",
+            "开始抓帧 a11yCapable=${accessibility.isReady()} " +
+                "a11yBreaker=${CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)} " +
+                "projSession=${projection.hasActiveSession()} " +
+                "projBreaker=${CaptureBreakerStore.isOpen(context, CaptureChannel.PROJECTION)}"
+        )
         var accessibilityReason: CaptureFailReason? = null
         var accessibilityDetail = ""
 
@@ -73,6 +80,7 @@ class CaptureChannels @Inject constructor(
             )
         ) {
             CaptureBreakerStore.markInflight(context, CaptureChannel.ACCESSIBILITY)
+            com.azu.bookkeeper.core.CaptureLog.i(context, "CHANNEL", "尝试无障碍截屏")
             var shot = accessibility.capture()
             // 333ms 节流：稍等再来一次
             if (shot.errorCode == 3) {
@@ -82,6 +90,10 @@ class CaptureChannels @Inject constructor(
             // 走到这里说明调用返回了（无论成功失败），清除 in-flight 标记
             CaptureBreakerStore.clearInflight(context, CaptureChannel.ACCESSIBILITY)
 
+            com.azu.bookkeeper.core.CaptureLog.i(
+                context, "CHANNEL",
+                "无障碍截屏返回 code=${shot.errorCode} bitmap=${shot.bitmap?.let { "${it.width}x${it.height}" } ?: "null"} detail=${shot.detail}"
+            )
             val bitmap = shot.bitmap?.let { downscale(it) }
             when {
                 bitmap != null && !isBlackFrame(bitmap) -> {
@@ -122,9 +134,14 @@ class CaptureChannels @Inject constructor(
             )
         ) {
             CaptureBreakerStore.markInflight(context, CaptureChannel.PROJECTION)
+            com.azu.bookkeeper.core.CaptureLog.i(context, "CHANNEL", "尝试媒体投影截屏")
             val frame = projection.captureBitmapScaled()
             CaptureBreakerStore.clearInflight(context, CaptureChannel.PROJECTION)
 
+            com.azu.bookkeeper.core.CaptureLog.i(
+                context, "CHANNEL",
+                "媒体投影返回 bitmap=${frame.bitmap?.let { "${it.width}x${it.height}" } ?: "null"} reason=${frame.reason?.name} detail=${frame.detail}"
+            )
             val bitmap = frame.bitmap
             if (bitmap != null) {
                 if (isBlackFrame(bitmap)) {
@@ -154,6 +171,9 @@ class CaptureChannels @Inject constructor(
                 CaptureBreakerStore.isOpen(context, CaptureChannel.PROJECTION) -> CaptureFailReason.CHANNEL_DISABLED
             else -> CaptureFailReason.NO_CHANNEL
         }
+        com.azu.bookkeeper.core.CaptureLog.w(
+            context, "CHANNEL", "抓帧全部失败 reason=${reason.name} attempts=${attempts.joinToString("；")}"
+        )
         return ChannelCaptureResult(
             null, "无", reason,
             accessibilityDetail.ifBlank { attempts.joinToString("；") }, attempts

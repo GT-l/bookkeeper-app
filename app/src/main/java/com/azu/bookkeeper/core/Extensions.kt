@@ -19,6 +19,27 @@ fun String.sha256(): String {
 /** 备注归一化：去首尾空白、折叠连续空白，作为去重键的一部分。 */
 fun String.normalizeRemark(): String = trim().replace(Regex("\\s+"), " ")
 
+/**
+ * 把「商户」与「购买内容」拼成一条备注。
+ *
+ * 识屏拿到两项时写成「瑞幸咖啡 · 生椰拿铁」，只有一项时就用那一项，
+ * 两项互相包含（支付宝常把商品名写成「商户-商品」）时取信息更多的那个，
+ * 避免出现「瑞幸咖啡 · 瑞幸咖啡-生椰拿铁」这种重复。
+ *
+ * 注意：商户始终是备注的**前缀**，疑似重复查询依赖这个约定。
+ */
+fun composeRemark(merchant: String, goods: String): String {
+    val m = merchant.trim()
+    val g = goods.trim()
+    return when {
+        g.isBlank() -> m
+        m.isBlank() -> g
+        g == m -> m
+        g.startsWith(m) || m.startsWith(g) -> if (g.length >= m.length) g else m
+        else -> "$m · $g"
+    }
+}
+
 fun Long?.orZero(): Long = this ?: 0L
 
 fun Int?.orZero(): Int = this ?: 0

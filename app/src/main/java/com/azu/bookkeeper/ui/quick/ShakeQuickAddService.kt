@@ -180,22 +180,66 @@ class ShakeQuickAddService : Service() {
                 } else {
                     "没有识别到金额，请手动输入"
                 }
-                openCaptureForm(capture, amount, outcome.merchant, message)
+                openCaptureForm(capture, amount, outcome.remark, message)
             }
         }
     }
 
     /**
-     * 识别到金额后的三档分流：
-     * - 置信度 ≥ [AUTO_RECORD_CONFIDENCE]（金额+商户同时命中）→ 直接记账，只提示「记账成功」；
-     * - 0.5 ~ 0.8（只拿到金额 / 金额+支付成功）→ 弹一颗小卡片确认，不把用户丢进完整表单；
-     * - 更低或落库失败 → 打开完整表单。
+     * 识别到金额后的分流：
+     * 0. **疑似重复检查**（近 24 小时同商户同金额已有一笔）→ 弹确认让用户决定是否重复记录。
+     *    优先级最高——重复记账比少记一笔更让用户恼火，而这一笔到底要不要记只有用户知道。
+     * 1. 置信度 ≥ [AUTO_RECORD_CONFIDENCE]（金额+商户同时命中）→ 直接记账，只提示「记账成功」；
+     * 2. 0.5 ~ 0.8（只拿到金额 / 金额+支付成功）→ 弹一颗小卡片确认，不把用户丢进完整表单；
+     * 3. 更低或落库失败 → 打开完整表单。
      */
     private fun handleRecognized(outcome: CaptureOutcome, capture: LightweightCapture, amount: Long) {
-        if (outcome.confidence >= AUTO_RECORD_CONFIDENCE) {
-            autoRecord(outcome, capture, amount)
-        } else {
-            showQuickConfirm(capture, amount, outcome)
+        scope.launch {
+            val duplicate = runCatching {
+                entryPoint.autoRecord().findRecentDuplicate(amount, outcome.merchant)
+            }.getOrNull()
+            if (duplicate != null) {
+                com.azu.bookkeeper.core.CaptureLog.i(
+                    applicationContext, "CAPTURE",
+                    "疑似重复 amount=$amount merchant=${outcome.merchant} 命中 billId=${duplicate.billId}"
+                )
+                showDuplicateConfirm(capture, outcome, amount, duplicate)
+                return@launch
+            }
+            if (outcome.confidence >= AUTO_RECORD_CONFIDENCE) {
+                autoRecord(outcome, capture, amount)
+            } else {
+                showQuickConfirm(capture, amount, outcome)
+            }
+        }
+    }
+
+    /** 疑似重复：把「已有那一笔」的时间与金额摆给用户看，点「仍然记账」才落库。 */
+    private fun showDuplicateConfirm(
+        capture: LightweightCapture,
+        outcome: CaptureOutcome,
+        amount: Long,
+        duplicate: com.azu.bookkeeper.domain.usecase.bill.DuplicateHint
+    ) {
+        val whenText = com.azu.bookkeeper.core.DateTimeUtils.format(
+            duplicate.billTime, "MM-dd HH:mm"
+        )
+        val detail = "已有一笔：$whenText · ${Money.format(duplicate.amountFen)}" +
+            if (duplicate.remark.isNotBlank()) " · ${duplicate.remark}" else ""
+        val launched = runCatching {
+            startActivity(
+                QuickConfirmActivity.intent(
+                    this,
+                    amount,
+                    outcome.merchant,
+                    outcome.confidence,
+                    goods = outcome.goods,
+                    duplicate = detail
+                )
+            )
+        }.isSuccess
+        if (!launched) {
+            openCaptureForm(capture, amount, outcome.remark, "这笔可能记过了，请确认后再保存")
         }
     }
 
@@ -207,14 +251,21 @@ class ShakeQuickAddService : Service() {
                 null
             } else {
                 runCatching {
-                    recorder(amount, outcome.merchant, outcome.confidence, outcome.rawText, outcome.captureType)
+                    recorder(
+                        amountFen = amount,
+                        merchant = outcome.merchant,
+                        goods = outcome.goods,
+                        confidence = outcome.confidence,
+                        rawText = outcome.rawText,
+                        captureType = outcome.captureType
+                    )
                 }.getOrNull()?.getOrNull()
             }
             if (billId != null) {
-                val detail = if (outcome.merchant.isNotBlank()) " · ${outcome.merchant}" else ""
+                val detail = if (outcome.remark.isNotBlank()) " · ${outcome.remark}" else ""
                 runCatching { capture.toast("记账成功 · ${Money.format(amount)}$detail") }
                 runCatching {
-                    entryPoint.captureProgress().showRecorded(amount, outcome.merchant, null)
+                    entryPoint.captureProgress().showRecorded(amount, outcome.remark, null)
                 }
                 com.azu.bookkeeper.core.CaptureLog.i(
                     applicationContext, "CAPTURE",
@@ -232,10 +283,14 @@ class ShakeQuickAddService : Service() {
     /** 轻确认弹窗：一枚小卡片，确认即记账，不用进表单。 */
     private fun showQuickConfirm(capture: LightweightCapture, amount: Long, outcome: CaptureOutcome) {
         val launched = runCatching {
-            startActivity(QuickConfirmActivity.intent(this, amount, outcome.merchant, outcome.confidence))
+            startActivity(
+                QuickConfirmActivity.intent(
+                    this, amount, outcome.merchant, outcome.confidence, goods = outcome.goods
+                )
+            )
         }.isSuccess
         if (!launched) {
-            openCaptureForm(capture, amount, outcome.merchant, "请确认金额")
+            openCaptureForm(capture, amount, outcome.remark, "请确认金额")
         }
     }
 
@@ -279,18 +334,18 @@ class ShakeQuickAddService : Service() {
     private fun openCaptureForm(
         capture: LightweightCapture,
         amountFen: Long?,
-        merchant: String,
+        remark: String,
         message: String
     ) {
         capture.toast(message)
         val launched = runCatching {
-            startActivity(capture.formIntent(amountFen, merchant))
+            startActivity(capture.formIntent(amountFen, remark))
         }.isSuccess
         if (!launched) {
             val request = QuickCaptureRequest(
                 entry = QuickEntry.SYSTEM_GESTURE,
                 amountFen = amountFen,
-                merchant = merchant
+                merchant = remark
             )
             showFullScreenFallback(request)
         }

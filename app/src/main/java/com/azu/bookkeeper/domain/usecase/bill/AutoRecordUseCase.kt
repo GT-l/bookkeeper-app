@@ -3,7 +3,9 @@ package com.azu.bookkeeper.domain.usecase.bill
 import com.azu.bookkeeper.core.AppError
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
+import com.azu.bookkeeper.core.composeRemark
 import com.azu.bookkeeper.core.getOrNull
+import com.azu.bookkeeper.core.normalizeRemark
 import com.azu.bookkeeper.domain.model.Bill
 import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
@@ -11,6 +13,7 @@ import com.azu.bookkeeper.domain.model.CaptureType
 import com.azu.bookkeeper.domain.model.CategoryKind
 import com.azu.bookkeeper.domain.model.VerifyStatus
 import com.azu.bookkeeper.domain.repository.AccountRepository
+import com.azu.bookkeeper.domain.repository.BillRepository
 import com.azu.bookkeeper.domain.repository.BookRepository
 import com.azu.bookkeeper.domain.repository.CategoryRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository
@@ -28,7 +31,8 @@ import javax.inject.Singleton
  * 1. 账本：settings.defaultBookId → 默认账本 → 第一个账本；
  * 2. 分类：按商户关键词猜（餐饮/购物/交通/娱乐/医疗/生活）→ settings.defaultExpenseCategoryId
  *    → 含「其他」的分类 → 第一个支出分类（无分类时先补默认分类）；
- * 3. 账户：settings.defaultAccountId → 第一个账户 → 0（账户非必填，AddBillUseCase 已放宽）。
+ * 3. 账户：settings.defaultAccountId → 第一个账户 → 0（账户非必填，AddBillUseCase 已放宽）；
+ * 4. 备注：商户 + 购买内容（能识别到时），格式「商户 · 购买内容」(composeRemark)。
  *
  * 写库走 [AddBillUseCase]，保证余额事务与手动记账走同一个入口（架构 N4 单一写入口）。
  */
@@ -38,12 +42,14 @@ class AutoRecordUseCase @Inject constructor(
     private val bookRepository: BookRepository,
     private val categoryRepository: CategoryRepository,
     private val accountRepository: AccountRepository,
+    private val billRepository: BillRepository,
     private val addBill: AddBillUseCase
 ) {
 
     suspend operator fun invoke(
         amountFen: Long,
         merchant: String,
+        goods: String = "",
         confidence: Float = 1f,
         rawText: String = "",
         captureType: CaptureType = CaptureType.ACCESSIBILITY_TEXT
@@ -69,7 +75,7 @@ class AutoRecordUseCase @Inject constructor(
             categoryId = categoryId,
             accountFrom = accountId,
             billTime = DateTimeUtils.nowMillis(),
-            remark = merchant,
+            remark = composeRemark(merchant, goods),
             source = BillSource.AUTO_CAPTURE,
             captureType = captureType,
             ocrConfidence = confidence,
@@ -77,6 +83,41 @@ class AutoRecordUseCase @Inject constructor(
             verifyStatus = VerifyStatus.AUTO_PASSED
         )
         return addBill(bill)
+    }
+
+    /**
+     * 疑似重复查询：近 [DUPLICATE_WINDOW_MILLIS] 内是否有「同商户 + 同金额」的一笔。
+     *
+     * 命中后**不丢弃、不自动写库**，交给上层弹轻确认让用户决定（用户要求）。
+     * 商户为空 / 金额非正 / 查库异常一律返回 null（宁可不提示，也不能卡住记账）。
+     *
+     * 用既有的 [BillRepository.findByTimeRange] 在内存里比对，而不是新增一条 DAO 查询：
+     * 24 小时的账单量（通常几十到几百条）对内存过滤毫无压力，却省掉一次 schema 相关的改库风险。
+     */
+    suspend fun findRecentDuplicate(amountFen: Long, merchant: String): DuplicateHint? {
+        val name = merchant.normalizeRemark()
+        if (amountFen <= 0L || name.length < 2) return null
+        val bookId = resolveBookId()
+        if (bookId <= 0L) return null
+        val now = System.currentTimeMillis()
+        val bills = runCatching {
+            billRepository.findByTimeRange(bookId, now - DUPLICATE_WINDOW_MILLIS, now).getOrNull()
+        }.getOrNull().orEmpty()
+        val hit = bills.filter { bill ->
+            bill.amountFen == amountFen && matchesMerchant(bill.remark, name)
+        }.maxByOrNull { it.billTime } ?: return null
+        return DuplicateHint(
+            billId = hit.billId,
+            amountFen = hit.amountFen,
+            remark = hit.remark,
+            billTime = hit.billTime
+        )
+    }
+
+    /** 备注是否属于这个商户：自动记账写的是「商户 · 购买内容」，所以商户是前缀。 */
+    private fun matchesMerchant(remark: String, merchant: String): Boolean {
+        val text = remark.normalizeRemark()
+        return text == merchant || text.startsWith(merchant)
     }
 
     private suspend fun resolveBookId(): Long {
@@ -135,6 +176,9 @@ class AutoRecordUseCase @Inject constructor(
     }
 
     private companion object {
+        /** 疑似重复的回溯窗口：24 小时（跨零点也认，避免半夜前后两笔漏判）。 */
+        const val DUPLICATE_WINDOW_MILLIS = 24L * 60 * 60 * 1000
+
         val CATERING = listOf(
             "餐", "饭", "食", "咖啡", "奶茶", "茶", "火锅", "烧烤", "面", "粉", "饺",
             "肯德基", "麦当劳", "星巴克", "瑞幸", "汉堡", "寿司", "烘焙", "小吃"
@@ -146,3 +190,11 @@ class AutoRecordUseCase @Inject constructor(
         val LIVING = listOf("话费", "宽带", "流量", "电费", "水费", "燃气", "物业", "快递")
     }
 }
+
+/** 疑似重复命中信息：展示给用户「什么时候记过一笔同样的」。 */
+data class DuplicateHint(
+    val billId: Long,
+    val amountFen: Long,
+    val remark: String,
+    val billTime: Long
+)

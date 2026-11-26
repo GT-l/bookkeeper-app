@@ -103,4 +103,59 @@ class PaymentTextAnalyzerTest {
         assertEquals("", r.merchant)
         assertEquals(0f, r.confidence)
     }
+
+    @Test
+    fun `购买内容 - 商品说明同行且去掉商户前缀`() {
+        val text = """
+            支付成功
+            ¥32.00
+            收款方 瑞幸咖啡
+            商品说明 瑞幸咖啡-生椰拿铁（大杯）
+            支付方式 零钱
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals("瑞幸咖啡", r.merchant)
+        assertEquals("生椰拿铁（大杯）", r.goods)
+    }
+
+    @Test
+    fun `购买内容 - 标签独占一行时取下一行`() {
+        val text = """
+            交易成功
+            ¥15.00
+            商户 全家便利店
+            商品说明
+            关东煮套餐
+            交易时间 2026-11-26 08:12
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals("全家便利店", r.merchant)
+        assertEquals("关东煮套餐", r.goods)
+    }
+
+    @Test
+    fun `购买内容 - 商品总价不能被当成商品名`() {
+        val text = """
+            交易成功
+            商品总价 ¥9.90
+            运费 ¥5.00
+            实付款 ¥14.90
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(1490L, r.amountFen)
+        assertEquals("", r.goods)
+    }
+
+    @Test
+    fun `购买内容 - 识别不到时为空串且不影响金额商户`() {
+        val text = """
+            支付成功
+            ¥9.90
+            收款方 地铁
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(990L, r.amountFen)
+        assertEquals("地铁", r.merchant)
+        assertEquals("", r.goods)
+    }
 }

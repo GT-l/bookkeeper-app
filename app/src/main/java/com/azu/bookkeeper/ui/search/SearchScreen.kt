@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.azu.bookkeeper.ui.common.AppTopBar
+import com.azu.bookkeeper.ui.common.CuteTextField
 import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.ui.home.BillRow
@@ -45,11 +46,12 @@ fun SearchScreen(
 
     Scaffold(topBar = { AppTopBar("搜索与筛选") }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            OutlinedTextField(
+            CuteTextField(
                 value = state.keyword,
                 onValueChange = viewModel::setKeyword,
-                label = { Text("备注 / 分类 / 原文 / 标签") },
-                singleLine = true,
+                label = "搜索",
+                placeholder = "备注 / 分类 / 原文 / 标签",
+                leadingEmoji = "🔍",
                 modifier = Modifier.fillMaxWidth()
             )
             Row(modifier = Modifier.padding(top = 8.dp)) {

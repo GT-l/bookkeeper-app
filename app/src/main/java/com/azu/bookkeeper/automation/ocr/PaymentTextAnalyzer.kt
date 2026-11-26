@@ -1,8 +1,7 @@
 package com.azu.bookkeeper.automation.ocr
 
-import com.azu.bookkeeper.core.SafeRegex
-
 import com.azu.bookkeeper.core.Money
+import com.azu.bookkeeper.core.SafeRegex
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,7 +18,10 @@ import javax.inject.Singleton
  *    - 硬性淘汰：7 位以上无小数整数（订单号/卡号）、手机号、日期时间片段、0 元。
  * 2. 商户候选：优先「收款方/商户/商家/交易对方/付款给」标签行；排除键名行
  *    （付款方式/支付方式/订单号等）；无标签时按商户后缀词（店/公司/超市/便利…）兜底。
- * 3. 状态检测：出现「支付成功/扣款成功/交易成功」→ 提升置信度；
+ * 3. 购买内容候选：优先「商品说明/商品名称/订单标题/购买内容/支付说明」等标签
+ *    （支持「标签 值」同行与「标签独占一行、值在下一行」两种版式）。
+ *    **识别不出来一律返回空串**，不弹窗、不打扰用户——这是明确的产品要求。
+ * 4. 状态检测：出现「支付成功/扣款成功/交易成功」→ 提升置信度；
  *    「待支付/支付失败/已退款」→ 降低置信度并标记。
  */
 @Singleton
@@ -32,6 +34,7 @@ class PaymentTextAnalyzer @Inject constructor() {
 
         val amountFen = extractBestAmount(lines, paidConfirmed)
         val merchant = extractBestMerchant(lines)
+        val goods = extractBestGoods(lines, merchant)
 
         var confidence = 0f
         if (amountFen != null) confidence += 0.5f
@@ -42,6 +45,7 @@ class PaymentTextAnalyzer @Inject constructor() {
         return PaymentAnalysis(
             amountFen = amountFen,
             merchant = merchant,
+            goods = goods,
             paidConfirmed = paidConfirmed,
             confidence = confidence.coerceIn(0f, 1f)
         )
@@ -124,6 +128,56 @@ class PaymentTextAnalyzer @Inject constructor() {
         return true
     }
 
+    // ---------- 购买内容 ----------
+
+    /**
+     * 购买内容（商品名）识别。两条路：
+     * 1) 「商品说明 生椰拿铁」这类标签同行；
+     * 2) 「商品说明」独占一行、值在下一行（支付宝账单详情常见）。
+     *
+     * 任何一步拿不准就返回空串：宁可没有购买内容，也不能给用户塞一条错的内容
+     * （错误内容会被写进备注，用户还得手动改，比不填更烦）。
+     */
+    private fun extractBestGoods(lines: List<String>, merchant: String): String {
+        for (line in lines) {
+            val match = GOODS_LABELLED.find(line) ?: continue
+            val cleaned = normalizeGoods(match.groupValues.getOrNull(1).orEmpty(), merchant)
+            if (cleaned.isNotBlank()) return cleaned
+        }
+        for ((index, line) in lines.withIndex()) {
+            if (line !in GOODS_BARE_LABELS) continue
+            val next = lines.getOrNull(index + 1).orEmpty()
+            val cleaned = normalizeGoods(next, merchant)
+            if (cleaned.isNotBlank()) return cleaned
+        }
+        return ""
+    }
+
+    /** 校验 + 清洗：长度、纯数字、金额/状态词、与商户重复。不合格返回空串。 */
+    private fun normalizeGoods(raw: String, merchant: String): String {
+        var value = raw.trim().trim('：', ':', '-', '—', '·', '|', '，', ',').trim()
+        if (value.length !in 2..40) return ""
+        if (value.none { it.isLetter() }) return ""
+        if (LONG_DIGITS.containsMatchIn(value)) return ""
+        if (GOODS_EXCLUDES.any { it in value }) return ""
+        val name = merchant.trim()
+        if (name.length >= 2 && value.startsWith(name)) {
+            value = value.removePrefix(name).trim(' ', '-', '—', '·', '：', ':', '（', '(')
+        }
+        // 只去掉「多余」的右括号：正常商品名「生椰拿铁（大杯）」必须完整保留
+        var tail = value.trim()
+        while (tail.endsWith("）") && tail.count { it == '）' } > tail.count { it == '（' }) {
+            tail = tail.dropLast(1).trim()
+        }
+        while (tail.endsWith(")") && tail.count { it == ')' } > tail.count { it == '(' }) {
+            tail = tail.dropLast(1).trim()
+        }
+        if (tail.length !in 2..40) return ""
+        if (name.isNotBlank() && tail == name) return ""
+        if (GOODS_EXCLUDES.any { it in tail }) return ""
+        return tail
+    }
+
     companion object {
         // 全部走 SafeRegex：任何一条正则在本机 ICU 上编译失败，都会让本类初始化失败，
         // 进而让「注入本类的 ViewModel」创建即闪退（真实事故见 SafeRegex 注释）。
@@ -156,6 +210,29 @@ class PaymentTextAnalyzer @Inject constructor() {
 
         private val PHONE_REGEX = SafeRegex.of("1[3-9]\\d{9}")
         private val DATE_REGEX = SafeRegex.of("20\\d{2}[-/年]\\d{1,2}[-/月]\\d{1,2}")
+
+        /** 购买内容标签：长标签在前，避免「商品」抢先匹配掉「商品说明」。 */
+        private val GOODS_LABELLED = SafeRegex.of(
+            """(?:商品说明|商品名称|商品信息|订单标题|订单名称|购买内容|购买商品|套餐名称|服务名称|支付说明|付款说明|转账说明|交易说明|商品)\s*[:：]?\s*([^，。；;：:]{2,40})"""
+        )
+
+        /** 标签独占一行时的精确匹配（下一行才是值）。 */
+        private val GOODS_BARE_LABELS = setOf(
+            "商品说明", "商品名称", "商品信息", "订单标题", "订单名称",
+            "购买内容", "购买商品", "支付说明", "付款说明", "转账说明", "交易说明"
+        )
+
+        /** 出现这些词说明抓到的不是商品名（金额、状态、按钮文案等）。 */
+        private val GOODS_EXCLUDES = listOf(
+            "金额", "价格", "总价", "单价", "数量", "小计", "合计", "优惠", "红包", "积分",
+            "支付成功", "付款成功", "扣款", "订单号", "交易号", "流水号", "时间", "状态",
+            "成功", "失败", "退款", "余额", "卡号", "¥", "￥",
+            "查看", "详情", "账单", "客服", "投诉", "评价", "完成", "返回", "确认", "取消",
+            "分享", "更多", "到账", "收款方", "商户", "商家"
+        )
+
+        /** 一串 7 位以上连续数字基本是订单号/卡号，不可能出现在商品名里。 */
+        private val LONG_DIGITS = SafeRegex.of("\\d{7,}")
     }
 }
 
@@ -163,6 +240,8 @@ class PaymentTextAnalyzer @Inject constructor() {
 data class PaymentAnalysis(
     val amountFen: Long?,
     val merchant: String,
+    /** 购买内容 / 商品名；识别不出来时为 ""（不确认、不打扰）。 */
+    val goods: String = "",
     val paidConfirmed: Boolean,
     val confidence: Float
 )

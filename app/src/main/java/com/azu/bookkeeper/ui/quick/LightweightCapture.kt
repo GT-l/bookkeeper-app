@@ -7,6 +7,7 @@ import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import com.azu.bookkeeper.core.CaptureDiagnostics
+import com.azu.bookkeeper.core.composeRemark
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
 import com.azu.bookkeeper.core.DiagnosticStep
@@ -29,6 +30,7 @@ import javax.inject.Singleton
  *
  * [confidence] 是「抽取置信度」（金额 0.5 / 商户 +0.3 / 支付成功 +0.2），不是 OCR 引擎置信度。
  * 上层用它决定后续动作：高 → 直接记账，中 → 弹小弹窗确认，低 → 打开完整表单。
+ * [goods] 是购买内容（商品名）；识别不出来就是空串，不提示、不确认，直接当成没有。
  */
 data class CaptureOutcome(
     val amountFen: Long?,
@@ -37,9 +39,13 @@ data class CaptureOutcome(
     val detail: String = "",
     val confidence: Float = 0f,
     val captureType: CaptureType = CaptureType.NONE,
-    val rawText: String = ""
+    val rawText: String = "",
+    val goods: String = ""
 ) {
     val success: Boolean get() = reason == null
+
+    /** 写进账单备注的文本：「商户 · 购买内容」，只有一项时就是那一项。 */
+    val remark: String get() = composeRemark(merchant, goods)
 }
 
 /**
@@ -109,20 +115,26 @@ class LightweightCapture @Inject constructor(
             suspend fun succeed(
                 amountFen: Long,
                 merchant: String,
+                goods: String,
                 confidence: Float,
                 rawText: String,
                 captureType: CaptureType
             ) {
+                val remark = composeRemark(merchant, goods)
                 steps += DiagnosticStep(
                     "提取金额", merchant.isNotBlank(),
-                    "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }} / conf=${"%.2f".format(confidence)}"
+                    "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }}" +
+                        " / 内容=${goods.ifBlank { "无" }} / conf=${"%.2f".format(confidence)}"
                 )
                 com.azu.bookkeeper.core.CaptureLog.i(
                     context, "CAPTURE",
-                    "识别成功 amount=$amountFen merchant=${merchant.ifBlank { "-" }} conf=$confidence"
+                    "识别成功 amount=$amountFen merchant=${merchant.ifBlank { "-" }}" +
+                        " goods=${goods.ifBlank { "-" }} conf=$confidence"
                 )
                 record(null, rawText)
-                runCatching { progress.showResult(amountFen, merchant, resultIntent(amountFen, merchant)) }
+                runCatching {
+                    progress.showResult(amountFen, remark, resultIntent(amountFen, remark))
+                }
                 withContext(mainDispatcher) {
                     onResult(
                         CaptureOutcome(
@@ -130,7 +142,8 @@ class LightweightCapture @Inject constructor(
                             merchant = merchant,
                             confidence = confidence,
                             captureType = captureType,
-                            rawText = rawText
+                            rawText = rawText,
+                            goods = goods
                         )
                     )
                 }
@@ -153,11 +166,11 @@ class LightweightCapture @Inject constructor(
                             "${snapshot.nodeCount} 个文本节点 / ${snapshot.text.length} 字 / ${snapshot.packageName}"
                         )
                         runCatching { progress.showStage(CaptureProgressNotifier.Stage.EXTRACT) }
-                        val amountFen = extractAmount(rawText)
+                        val fields = extract(rawText)
+                        val amountFen = fields.amountFen
                         if (amountFen != null) {
-                            val merchant = extractMerchant(rawText)
                             succeed(
-                                amountFen, merchant, confidenceOf(rawText), rawText,
+                                amountFen, fields.merchant, fields.goods, fields.confidence, rawText,
                                 CaptureType.ACCESSIBILITY_TEXT
                             )
                             return@launch
@@ -202,11 +215,12 @@ class LightweightCapture @Inject constructor(
                         return@launch
                     }
                     rawText = listOf(rawText, payload.text).filter { it.isNotBlank() }.joinToString("\n")
-                    val amountFen = extractAmount(rawText)
+                    val ocrFields = extract(rawText)
+                    val amountFen = ocrFields.amountFen
                     if (amountFen != null) {
                         // 统一用抽取置信度做分流依据（OCR 引擎置信度只反映字符清晰度，不代表字段抽对）
                         succeed(
-                            amountFen, extractMerchant(rawText), confidenceOf(rawText), rawText,
+                            amountFen, ocrFields.merchant, ocrFields.goods, ocrFields.confidence, rawText,
                             CaptureType.PROJECTION_IMAGE
                         )
                         return@launch
@@ -236,39 +250,39 @@ class LightweightCapture @Inject constructor(
         }
     }
 
-    /** 统一提取金额：智能分析器优先，旧正则兜底。 */
-    private fun extractAmount(text: String): Long? {
+    /** 一次分析同时拿到金额 / 商户 / 购买内容 / 置信度，避免同一段文本重复跑三遍正则。 */
+    private fun extract(text: String): ScreenFields {
+        if (text.isBlank()) return ScreenFields()
         val analysis = runCatching { analyzer.analyze(text) }.getOrNull()
-        if (analysis?.amountFen != null) return analysis.amountFen
-        return runCatching { extractor.extract(text, System.currentTimeMillis()).amountFen }.getOrNull()
+        val fallback = runCatching {
+            extractor.extract(text, System.currentTimeMillis())
+        }.getOrNull()
+        return ScreenFields(
+            amountFen = analysis?.amountFen ?: fallback?.amountFen,
+            merchant = analysis?.merchant?.takeIf { it.isNotBlank() }
+                ?: fallback?.merchant.orEmpty(),
+            goods = analysis?.goods.orEmpty(),
+            confidence = analysis?.confidence ?: 0f
+        )
     }
 
-    private fun extractMerchant(text: String): String {
-        val fromAnalyzer = runCatching { analyzer.analyze(text).merchant }.getOrDefault("")
-        if (fromAnalyzer.isNotBlank()) return fromAnalyzer
-        return runCatching { extractor.extract(text, System.currentTimeMillis()).merchant }.getOrDefault("")
-    }
-
-    private fun confidenceOf(text: String): Float =
-        runCatching { analyzer.analyze(text).confidence }.getOrDefault(0f)
-
-    /** 构造打开表单的 Intent（带预填）。 */
-    fun formIntent(amountFen: Long?, merchant: String): android.content.Intent {
+    /** 构造打开表单的 Intent（带预填备注：商户 · 购买内容）。 */
+    fun formIntent(amountFen: Long?, remark: String): android.content.Intent {
         val request = QuickCaptureRequest(
             entry = QuickEntry.SYSTEM_GESTURE,
             amountFen = amountFen,
-            merchant = merchant
+            merchant = remark
         )
         return QuickCaptureLauncher.intent(context, request)
     }
 
-    private fun resultIntent(amountFen: Long?, merchant: String): android.app.PendingIntent =
+    private fun resultIntent(amountFen: Long?, remark: String): android.app.PendingIntent =
         QuickCaptureLauncher.pendingIntent(
             context,
             QuickCaptureRequest(
                 entry = QuickEntry.SYSTEM_GESTURE,
                 amountFen = amountFen,
-                merchant = merchant
+                merchant = remark
             ),
             REQUEST_CODE_RESULT
         )
@@ -289,3 +303,11 @@ class LightweightCapture @Inject constructor(
         const val REQUEST_CODE_FAILED = 2006
     }
 }
+
+/** 识屏抽出来的四个字段（内部用，不外传）。 */
+private data class ScreenFields(
+    val amountFen: Long? = null,
+    val merchant: String = "",
+    val goods: String = "",
+    val confidence: Float = 0f
+)

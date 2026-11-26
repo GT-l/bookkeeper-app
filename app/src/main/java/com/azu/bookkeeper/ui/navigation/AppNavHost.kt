@@ -1,5 +1,19 @@
+@file:OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
+
 package com.azu.bookkeeper.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -15,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -55,6 +70,47 @@ private val bottomTabs = listOf(
     BottomTab(Screen.Statistics.route, "统计", R.drawable.ic_tab_stats),
     BottomTab(Screen.Profile.route, "我的", R.drawable.ic_tab_settings)
 )
+
+/**
+ * 页面切换动效。
+ *
+ * Navigation Compose 的默认值是一整屏 700ms 淡入淡出 —— 点一下要等半秒多才「换完」，
+ * 中间那段既没位移也没层次，看起来就像 App 卡了一下。这里按两种场景分别处理：
+ *
+ * - **二级页面（进 / 退）**：200ms 左右的「小幅横移 + 淡入」，方向与用户手势一致，
+ *   位移只有屏幕宽度的 1/8，够表达层级但不拖时间；
+ * - **四个主 tab 之间**：只做 120ms 交叉淡入，不横移——tab 是平级切换，横向滑会显得绕路。
+ *
+ * 所有时长都控制在 220ms 以内，点击到画面开始变化几乎是即时的。
+ */
+private const val PUSH_MS = 220
+private const val POP_MS = 180
+private const val TAB_MS = 120
+
+private val pushEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(tween(140)) + slideInHorizontally(tween(PUSH_MS, easing = FastOutSlowInEasing)) { it / 8 }
+}
+
+private val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(tween(140)) + slideInHorizontally(tween(POP_MS, easing = FastOutSlowInEasing)) { -it / 8 }
+}
+
+private val pageExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(tween(110))
+}
+
+private val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(tween(110)) + slideOutHorizontally(tween(POP_MS, easing = FastOutSlowInEasing)) { it / 10 }
+}
+
+/** tab 之间：纯交叉淡入，最快也最不打扰。 */
+private val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(tween(TAB_MS))
+}
+
+private val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(tween(TAB_MS))
+}
 
 /** 可爱风底部栏：奶油白容器 + 浅粉胶囊指示条 + 主色图标 tint。 */
 @Composable
@@ -121,7 +177,13 @@ fun AppNavHost(
         // 底部导航栏自身仍会消费系统导航栏 inset。
         contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         bottomBar = {
-            if (showBottomBar) {
+            // 进二级页面时底栏收得「有过程」：直接消失会让内容高度瞬间跳一下，
+            // 视觉上很像卡顿；这里用 140ms 滑出，和页面动效同时收尾。
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = fadeIn(tween(140)) + slideInVertically(tween(140)) { it / 3 },
+                exit = fadeOut(tween(110)) + slideOutVertically(tween(110)) { it / 3 }
+            ) {
                 CuteBottomBar(currentRoute = currentRoute) { route ->
                     navController.navigate(route) {
                         launchSingleTop = true
@@ -136,9 +198,20 @@ fun AppNavHost(
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.padding(padding),
+            enterTransition = pushEnter,
+            exitTransition = pageExit,
+            popEnterTransition = popEnter,
+            popExitTransition = popExit
         ) {
-            composable(Screen.Home.route) { HomeScreen(navController) }
+            // 四个主 tab 覆盖成纯淡入，避免平级切换也横移
+            composable(
+                route = Screen.Home.route,
+                enterTransition = tabEnter,
+                exitTransition = tabExit,
+                popEnterTransition = tabEnter,
+                popExitTransition = tabExit
+            ) { HomeScreen(navController) }
 
             composable(
                 route = Screen.BillEdit.route,
@@ -170,16 +243,34 @@ fun AppNavHost(
                 arguments = listOf(navArgument(Screen.ARG_ACCOUNT_ID) { type = NavType.LongType })
             ) { AccountEditScreen(navController) }
 
-            composable(Screen.Budget.route) { BudgetScreen() }
+            composable(
+                route = Screen.Budget.route,
+                enterTransition = tabEnter,
+                exitTransition = tabExit,
+                popEnterTransition = tabEnter,
+                popExitTransition = tabExit
+            ) { BudgetScreen() }
             composable(Screen.Search.route) { SearchScreen(navController) }
             composable(Screen.Unlock.route) { AppLockScreen(navController) }
-            composable(Screen.Profile.route) { ProfileScreen(navController) }
+            composable(
+                route = Screen.Profile.route,
+                enterTransition = tabEnter,
+                exitTransition = tabExit,
+                popEnterTransition = tabEnter,
+                popExitTransition = tabExit
+            ) { ProfileScreen(navController) }
             composable(Screen.Settings.route) { SettingsScreen(navController) }
             composable(Screen.StorageAudit.route) { StorageAuditScreen() }
             composable(Screen.About.route) { AboutScreen() }
 
             composable(Screen.Import.route) { ImportWizardScreen() }
-            composable(Screen.Statistics.route) { StatisticsScreen(navController) }
+            composable(
+                route = Screen.Statistics.route,
+                enterTransition = tabEnter,
+                exitTransition = tabExit,
+                popEnterTransition = tabEnter,
+                popExitTransition = tabExit
+            ) { StatisticsScreen(navController) }
             composable(Screen.Export.route) { ExportScreen() }
             composable(Screen.Backup.route) { BackupScreen() }
             composable(Screen.AutomationSettings.route) { AutomationSettingsScreen(navController) }

@@ -40,6 +40,8 @@ class AutomationSettingsViewModel @Inject constructor(
         val enabled: Boolean = false,
         val serviceRunning: Boolean = false,
         val accessibilityGranted: Boolean = false,
+        /** 读屏服务是否真的连上过（系统开关在部分 ROM 上显示不准）。 */
+        val accessibilityServiceConnected: Boolean = false,
         val notificationListenerGranted: Boolean = false,
         val overlayGranted: Boolean = false,
         val notificationGranted: Boolean = false,
@@ -110,6 +112,7 @@ class AutomationSettingsViewModel @Inject constructor(
 
     private fun applyPermissionsState(state: UiState): UiState = state.copy(
         accessibilityGranted = permissionGuide.isAccessibilityEnabled(),
+        accessibilityServiceConnected = permissionGuide.accessibilityServiceEverConnected(),
         notificationListenerGranted = permissionGuide.isNotificationListenerEnabled(),
         overlayGranted = permissionGuide.canDrawOverlays(),
         notificationGranted = permissionGuide.hasNotificationPermission(),

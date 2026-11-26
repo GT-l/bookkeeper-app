@@ -26,7 +26,6 @@ import com.azu.bookkeeper.domain.model.QuickEntry
 import com.azu.bookkeeper.ui.quick.QuickCaptureLauncher
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
-import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineDispatcher
@@ -36,7 +35,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
 
 /**
  * 无障碍读屏捕获（主架构 §5.1 主路径，AC-4）：
@@ -48,13 +46,23 @@ import javax.inject.Inject
  * 「无障碍按钮」选项已移除——ColorOS 会把它渲染成系统悬浮球，造成困扰。
  * 所有手势回调只做轻动作，异常一律降级，绝不让无障碍服务崩掉（它崩了读屏也没了）。
  */
-@AndroidEntryPoint
 class PaymentAccessibilityService : AccessibilityService() {
 
-    @Inject lateinit var parser: AccessibilityCaptureParser
-    @Inject lateinit var tagger: DouyinBusinessTagger
-    @Inject lateinit var coordinator: CaptureCoordinator
-    @Inject @IoDispatcher lateinit var ioDispatcher: CoroutineDispatcher
+    /**
+     * 关键：这里绝不使用 @AndroidEntryPoint 字段注入。
+     *
+     * 字段注入发生在 onCreate 之前，一旦 CaptureCoordinator 那套重依赖
+     * （OCR / Room / 校验视图 / 多 Repository）中任何一环构造失败，
+     * 服务会在系统绑定阶段直接崩溃；很多 ROM（尤其 ColorOS / Orange 等定制系统）
+     * 检测到无障碍服务崩溃后会自动把它关掉 —— 表现就是「开完返回再进来，
+     * 读屏服务被自动取消」。改为惰性取 + 每个回调全链路 runCatching，
+     * 最坏情况只是这一次没识别，服务本身永远活着。
+     */
+    private val deps by lazy {
+        EntryPointAccessors.fromApplication(
+            applicationContext, AccessibilityDepsEntryPoint::class.java
+        )
+    }
 
     private val scope = CoroutineScope(SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -74,6 +82,11 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // 心跳：主进程读这个标记判断服务是否真的连上（系统开关状态在部分 ROM 上不可靠）
+        runCatching {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putLong(KEY_LAST_CONNECTED, System.currentTimeMillis()).apply()
+        }
         // 手势选择从持久化值回填；设置页改动会通过 QuickGestureCache 立即同步（同进程）
         scope.launch {
             runCatching {
@@ -84,21 +97,31 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // 整个回调必须零异常逃出：无障碍服务一崩，ROM 就可能自动禁用它
+        runCatching { handleEvent(event) }.onFailure { t ->
+            timber.log.Timber.w(t, "accessibility event failed (service kept alive)")
+        }
+    }
+
+    private fun handleEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        val packageName = event.packageName?.toString().orEmpty()
+        val packageName = runCatching { event.packageName?.toString().orEmpty() }.getOrDefault("")
         if (packageName !in Constants.PAYMENT_PACKAGES) return
 
         val now = System.currentTimeMillis()
         if (packageName == lastPackage && now - lastEventAt < Constants.CAPTURE_DEBOUNCE_MS) return
 
-        val root = event.source ?: rootInActiveWindow ?: return
-        val text = parser.collectText(root)
-        if (text.isBlank() || !parser.isPaymentComplete(text)) return
+        val root = runCatching { event.source ?: rootInActiveWindow }.getOrNull() ?: return
+        val parser = runCatching { deps.parser() }.getOrNull() ?: return
+        val text = runCatching { parser.collectText(root) }.getOrDefault("")
+        if (text.isBlank() || !runCatching { parser.isPaymentComplete(text) }.getOrDefault(false)) return
 
         lastEventAt = now
         lastPackage = packageName
         val eventId = generateEventId(packageName, text)
-        val businessTag: BusinessTag = tagger.tag(packageName, text)
+        val tagger = runCatching { deps.tagger() }.getOrNull()
+        val businessTag: BusinessTag = tagger?.let { runCatching { it.tag(packageName, text) }.getOrNull() }
+            ?: BusinessTag.NONE
         val captureEvent = parser.buildEvent(
             eventId = eventId,
             packageName = packageName,
@@ -106,8 +129,11 @@ class PaymentAccessibilityService : AccessibilityService() {
             eventTime = now,
             businessTag = businessTag
         )
+        val coordinator = runCatching { deps.coordinator() }.getOrNull() ?: return
+        val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
         scope.launch {
-            withContext(ioDispatcher) { coordinator.onCapture(captureEvent) }
+            runCatching { withContext(dispatcher) { coordinator.onCapture(captureEvent) } }
+                .onFailure { timber.log.Timber.w(it, "capture coordinator failed (service kept alive)") }
         }
     }
 
@@ -182,6 +208,10 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         runCatching {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putLong(KEY_LAST_CONNECTED, 0L).apply()
+        }
+        runCatching {
             fingerprintCallback?.let { fingerprintController?.unregisterFingerprintGestureCallback(it) }
         }
         scope.cancel()
@@ -190,6 +220,8 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val GESTURE_COOLDOWN_MS = 2_500L
+        const val PREFS = "accessibility_service_status"
+        const val KEY_LAST_CONNECTED = "last_connected_at"
     }
 }
 
@@ -198,4 +230,14 @@ class PaymentAccessibilityService : AccessibilityService() {
 @InstallIn(SingletonComponent::class)
 interface QuickGestureEntryPoint {
     fun automationSettings(): AutomationSettingsDataStore
+}
+
+/** 读屏服务的惰性依赖入口：字段注入会让服务在 ROM 崩溃后自动被禁用。 */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface AccessibilityDepsEntryPoint {
+    fun parser(): AccessibilityCaptureParser
+    fun tagger(): DouyinBusinessTagger
+    fun coordinator(): CaptureCoordinator
+    @IoDispatcher fun ioDispatcher(): CoroutineDispatcher
 }

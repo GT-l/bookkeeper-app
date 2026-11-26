@@ -208,6 +208,21 @@ fun AutomationSettingsScreen(
             )
 
             Text("权限与引导", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+            if (state.accessibilityGranted && !state.accessibilityServiceConnected) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Text(
+                        "系统显示已开启读屏服务，但服务尚未成功连接（部分机型会自动关闭）。" +
+                            "请在系统无障碍设置里关闭再重新打开一次「少花点儿」。",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
             PermissionStatusCard(
                 title = "无障碍读屏",
                 description = "读取支付完成页金额/商家/时间，主识别路径",

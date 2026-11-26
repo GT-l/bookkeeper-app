@@ -29,8 +29,25 @@ class PermissionGuide @Inject constructor(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ).orEmpty()
-        return services.split(':').any { it.contains(context.packageName) && it.contains(PaymentAccessibilityService::class.simpleName.orEmpty()) }
+        return services.split(':').any {
+            it.contains(context.packageName) &&
+                it.contains(PaymentAccessibilityService::class.simpleName.orEmpty(), ignoreCase = true)
+        }
     }
+
+    /**
+     * 服务是否真的连上过（心跳）。部分 ROM 会把系统开关显示成开、但服务已被杀掉，
+     * 或反过来在用户返回后自动关掉服务。设置页用这个给用户更准确的提示。
+     */
+    fun accessibilityServiceEverConnected(): Boolean = runCatching {
+        context.getSharedPreferences(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.PREFS,
+            Context.MODE_PRIVATE
+        ).getLong(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_LAST_CONNECTED,
+            0L
+        ) > 0L
+    }.getOrDefault(false)
 
     fun isNotificationListenerEnabled(): Boolean {
         val listeners = Settings.Secure.getString(

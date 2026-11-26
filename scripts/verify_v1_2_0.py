@@ -94,6 +94,13 @@ files = [
 for f in files:
     check(f"T-FILE-{os.path.basename(f)}", os.path.isfile(f))
 
+# ---------- 6.1 新增回归测试与 CI 步骤 ----------
+check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_0.py" in workflow)
+check("T-TEST-YOY 同比单测存在",
+      "同比按去年同月" in read("app/src/test/java/com/azu/bookkeeper/domain/usecase/stats/StatsEnhanceCalculatorTest.kt"))
+check("T-TEST-CARD 提醒配置单测存在",
+      "信用卡提醒配置天数范围" in read("app/src/test/java/com/azu/bookkeeper/domain/model/FinanceModelsTest.kt"))
+
 # ---------- 7. 业务逻辑回归 ----------
 debt = read("app/src/main/java/com/azu/bookkeeper/domain/model/Debt.kt")
 check("T-LOGIC-01 债务剩余不为负", ".coerceAtLeast(0L)" in debt)

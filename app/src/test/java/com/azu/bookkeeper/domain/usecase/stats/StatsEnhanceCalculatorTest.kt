@@ -86,6 +86,22 @@ class StatsEnhanceCalculatorTest {
     }
 
     @Test
+    fun `同比按去年同月计算且排除校准`() {
+        val now = Instant.parse("2026-11-20T10:00:00Z").toEpochMilli()
+        val bills = listOf(
+            bill(200.0, LocalDate.of(2026, 11, 10)),
+            bill(300.0, LocalDate.of(2025, 11, 10)),
+            bill(999.0, LocalDate.of(2025, 11, 11), source = BillSource.ADJUSTMENT),
+            bill(500.0, LocalDate.of(2025, 10, 10))
+        )
+        val r = calculator.yearOverYear(bills, now)
+        assertEquals(200_00L, r.currentFen)
+        assertEquals(300_00L, r.baseFen)
+        assertEquals(200f / 300f, r.ratio ?: 0f, 0.001f)
+        assertFalse(r.increased)
+    }
+
+    @Test
     fun `年度支出排除校准流水`() {
         val bills = listOf(
             bill(100.0, LocalDate.of(2026, 1, 1)),

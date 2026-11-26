@@ -59,6 +59,14 @@ class FinanceModelsTest {
     }
 
     @Test
+    fun `信用卡提醒配置天数范围`() {
+        assertTrue(CardReminder(accountId = 1L, billDay = 5, dueDay = 25, enabled = true).configured)
+        assertFalse(CardReminder(accountId = 1L, billDay = 0, dueDay = 25, enabled = true).configured)
+        assertFalse(CardReminder(accountId = 1L, billDay = 29, dueDay = 25, enabled = true).configured)
+        assertFalse(CardReminder(accountId = 1L, billDay = 5, dueDay = 25, enabled = false).configured)
+    }
+
+    @Test
     fun `报销状态编码往返`() {
         assertEquals(ReimburseStatus.SUBMITTED, ReimburseStatus.fromCode(1))
         assertEquals(ReimburseStatus.RECEIVED, ReimburseStatus.fromCode(2))

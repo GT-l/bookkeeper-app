@@ -75,6 +75,10 @@ jobs:
           fi
           chmod +x gradlew
 
+      - name: Static consistency tests (v1.2.0)
+        shell: bash
+        run: python3 scripts/verify_v1_2_0.py
+
       - name: Build debug APK
         shell: bash
         run: |
@@ -177,8 +181,15 @@ jobs:
               with open("build.log", encoding="utf-8", errors="ignore") as f:
                   text = f.read()
           errors = re.findall(r"^e: .+", text, re.M)
-          msg = errors[0][:90] if errors else "unknown-compile-error"
-          msg = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff_.\-]", "", msg)
+          if errors:
+              matched = re.match(r"^e: file:///\S+?:(\d+):(\d+): (.*)$", errors[0])
+              if matched:
+                  msg = "L%sC%s_%s" % (matched.group(1), matched.group(2), matched.group(3)[:70])
+              else:
+                  msg = errors[0][-90:]
+          else:
+              msg = "unknown-compile-error"
+          msg = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff_.\-]", "", msg)[:100]
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
               f.write("BUILD_ERROR=%s\n" % msg)
           print("BUILD ERROR:", msg)

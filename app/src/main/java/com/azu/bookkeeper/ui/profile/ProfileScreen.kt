@@ -109,7 +109,7 @@ fun ProfileScreen(
                         Entry("#️⃣", "标签管理", "给账单打标签，方便复盘", Screen.Tags.route),
                         Entry("💳", "资产账户", "银行卡、微信、支付宝余额", Screen.Accounts.route)
                     ),
-                    onNavigate = navController::navigate
+                    onNavigate = { route -> navController.navigate(route) }
                 )
             }
 
@@ -122,7 +122,7 @@ fun ProfileScreen(
                         Entry("🔔", "通知设置", "自动记账提示与校对提醒", Screen.NotificationSettings.route),
                         Entry("🧪", "识屏自检", "读屏节点、截图、权限逐项体检", Screen.CaptureDiagnostics.route)
                     ),
-                    onNavigate = navController::navigate
+                    onNavigate = { route -> navController.navigate(route) }
                 )
             }
 
@@ -136,7 +136,7 @@ fun ProfileScreen(
                         Entry("🧹", "存储排查", "看看历史遗留的数据库和文件", Screen.StorageAudit.route),
                         Entry("🩺", "崩溃日志", "闪退时把栈复制给我", "debug:crash_log")
                     ),
-                    onNavigate = navController::navigate,
+                    onNavigate = { route -> navController.navigate(route) },
                     onExtra = { route ->
                         if (route == "debug:crash_log") {
                             // 零依赖日志页：依赖图或 Compose 崩了也能打开
@@ -159,7 +159,7 @@ fun ProfileScreen(
                     entries = listOf(
                         Entry("✨", "关于与更新介绍", "v${BuildConfig.VERSION_NAME} · 最近改了什么", Screen.About.route)
                     ),
-                    onNavigate = navController::navigate
+                    onNavigate = { route -> navController.navigate(route) }
                 )
             }
 

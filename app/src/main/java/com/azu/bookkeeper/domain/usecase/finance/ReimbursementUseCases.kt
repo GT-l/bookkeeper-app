@@ -88,7 +88,7 @@ class UpdateReimbursementUseCase @Inject constructor(private val dao: Reimbursem
         }.getOrElse { Result.Error(AppError.from(it)) }
     }
 
-    suspend fun delete(id: Long): Result<Unit> = runCatching {
+    suspend fun deleteRecord(id: Long): Result<Unit> = runCatching {
         dao.deleteById(id)
         Result.Success(Unit)
     }.getOrElse { Result.Error(AppError.from(it)) }

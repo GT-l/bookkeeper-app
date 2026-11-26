@@ -58,7 +58,7 @@ class DebtsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val add: AddDebtUseCase,
     private val repay: RepayDebtUseCase,
-    private val delete: DeleteDebtUseCase
+    private val deleteDebt: DeleteDebtUseCase
 ) : ViewModel() {
     data class UiState(
         val debts: List<Debt> = emptyList(),
@@ -145,7 +145,7 @@ class DebtsViewModel @Inject constructor(
     }
 
     fun delete(id: Long) = viewModelScope.launch {
-        val r = delete(id)
+        val r = deleteDebt(id)
         _uiState.update { it.copy(message = if (r.isSuccess) "已删除债务记录" else "删除失败") }
     }
 }

@@ -41,7 +41,6 @@ import com.azu.bookkeeper.domain.model.CycleType
 import com.azu.bookkeeper.domain.model.ImportTask
 import com.azu.bookkeeper.domain.model.Installment
 import com.azu.bookkeeper.domain.model.InstallmentPayment
-import com.azu.bookkeeper.domain.model.InstallmentPaymentStatus
 import com.azu.bookkeeper.domain.model.ImportTemplate
 import com.azu.bookkeeper.domain.model.Refund
 import com.azu.bookkeeper.domain.model.ReimburseStatus
@@ -346,6 +345,11 @@ fun Installment.toEntity(): InstallmentEntity = InstallmentEntity(
 )
 
 fun InstallmentPaymentEntity.toDomain(): InstallmentPayment = InstallmentPayment(
+    paymentId = paymentId, installmentId = installmentId, periodIndex = periodIndex,
+    amountFen = amountFen, payTime = payTime, billId = billId
+)
+
+fun InstallmentPayment.toEntity(): InstallmentPaymentEntity = InstallmentPaymentEntity(
     paymentId = paymentId, installmentId = installmentId, periodIndex = periodIndex,
     amountFen = amountFen, payTime = payTime, billId = billId
 )

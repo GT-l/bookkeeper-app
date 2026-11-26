@@ -28,6 +28,10 @@ class BatchAddBillsUseCase @Inject constructor(
                 createAt = base,
                 updateAt = base
             )
+            if (bill.billTime <= 0L) {
+                failures.add("第${index + 1}笔时间无效")
+                return@forEachIndexed
+            }
             if (bill.amountFen <= 0L || bill.bookId <= 0L) {
                 failures.add("第${index + 1}笔金额或账本无效")
                 return@forEachIndexed

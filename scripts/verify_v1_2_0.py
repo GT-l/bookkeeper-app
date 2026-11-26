@@ -96,6 +96,19 @@ for f in files:
 
 # ---------- 6.1 新增回归测试与 CI 步骤 ----------
 check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_0.py" in workflow)
+mapper = read("app/src/main/java/com/azu/bookkeeper/data/mapper/EntityMappers.kt")
+check("T-IMPORT-01 无幽灵导入 InstallmentPaymentStatus",
+      "InstallmentPaymentStatus" not in mapper)
+check("T-MAP-01 分期流水 domain→entity 映射存在",
+      "fun InstallmentPayment.toEntity()" in mapper)
+check("T-BATCH-TIME 批量表单提供 billTime",
+      "billTime = 0L" in read("app/src/main/java/com/azu/bookkeeper/ui/finance/BatchAddScreen.kt"))
+check("T-NO-RECUR-01 债务删除不递归",
+      "val r = deleteDebt(id)" in read("app/src/main/java/com/azu/bookkeeper/ui/finance/DebtsScreen.kt"))
+check("T-NO-RECUR-02 分期删除不递归",
+      "val r = deleteInstallment(id)" in read("app/src/main/java/com/azu/bookkeeper/ui/finance/InstallmentsScreen.kt"))
+check("T-NO-RECUR-03 报销删除不递归",
+      "val r = update.deleteRecord(id)" in read("app/src/main/java/com/azu/bookkeeper/ui/finance/ReimbursementsScreen.kt"))
 check("T-TEST-YOY 同比单测存在",
       "同比按去年同月" in read("app/src/test/java/com/azu/bookkeeper/domain/usecase/stats/StatsEnhanceCalculatorTest.kt"))
 check("T-TEST-CARD 提醒配置单测存在",

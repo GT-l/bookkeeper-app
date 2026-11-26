@@ -53,7 +53,7 @@ class InstallmentsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val add: AddInstallmentUseCase,
     private val pay: PayInstallmentUseCase,
-    private val delete: DeleteInstallmentUseCase
+    private val deleteInstallment: DeleteInstallmentUseCase
 ) : ViewModel() {
     data class UiState(
         val plans: List<Installment> = emptyList(),
@@ -121,7 +121,7 @@ class InstallmentsViewModel @Inject constructor(
     }
 
     fun delete(id: Long) = viewModelScope.launch {
-        val r = delete(id)
+        val r = deleteInstallment(id)
         _uiState.update { it.copy(message = if (r.isSuccess) "已删除分期计划" else "删除失败") }
     }
 }

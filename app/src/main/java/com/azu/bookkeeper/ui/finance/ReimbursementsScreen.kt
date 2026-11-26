@@ -126,7 +126,7 @@ class ReimbursementsViewModel @Inject constructor(
     }
 
     fun delete(id: Long) = viewModelScope.launch {
-        val r = update.delete(id)
+        val r = update.deleteRecord(id)
         _uiState.update { it.copy(message = if (r.isSuccess) "已删除报销单" else "删除失败") }
     }
 }

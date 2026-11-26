@@ -116,6 +116,8 @@ class BatchAddViewModel @Inject constructor(
                 amountFen = fen,
                 categoryId = s.selectedCategory,
                 accountFrom = s.selectedAccount,
+                // 0 表示交给 BatchAddBillsUseCase 按统一基准逐笔错开 1 秒，避免去重键冲突
+                billTime = 0L,
                 remark = draft.remark.trim()
             )
         }

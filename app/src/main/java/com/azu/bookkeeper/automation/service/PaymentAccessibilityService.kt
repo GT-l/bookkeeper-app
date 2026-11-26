@@ -301,6 +301,64 @@ class PaymentAccessibilityService : AccessibilityService() {
 
         fun current(): PaymentAccessibilityService? = instance
 
+        /** 屏幕文本快照：包名 + 拼好的文本 + 文本节点数（诊断用）。 */
+        data class ScreenTextSnapshot(
+            val packageName: String,
+            val text: String,
+            val nodeCount: Int
+        )
+
+        /**
+         * 读取当前活动窗口的可见文本。
+         *
+         * 这是主流记账 App（钱迹等）在 Android 上的通用做法：**不截屏、不做 OCR**，
+         * 直接把页面节点树里的 text / contentDescription 读出来再解析。
+         *
+         * 相比截图 OCR 的优势：
+         * - 不需要录屏授权、不依赖 MediaProjection 会话；
+         * - 不受目标页面 FLAG_SECURE 影响（读节点和截屏是两套机制）；
+         * - 纯粹读 Binder 数据，不会 native 崩溃；
+         * - 支付宝/微信支付结果页的「¥xx.xx」「收款方」本来就在节点里。
+         *
+         * 全程 runCatching：读不到只返回 null，绝不影响服务存活。
+         */
+        fun readScreenSnapshot(): ScreenTextSnapshot? = runCatching {
+            val service = instance ?: return@runCatching null
+            val root = service.rootInActiveWindow ?: return@runCatching null
+            val sb = StringBuilder()
+            val count = collectNodeText(root, sb, 0)
+            val text = sb.toString()
+            if (text.isBlank()) return@runCatching null
+            val pkg = runCatching { root.packageName?.toString().orEmpty() }.getOrDefault("")
+            ScreenTextSnapshot(pkg, text, count)
+        }.getOrNull()
+
+        /** 深度优先收集文本节点（限制深度 50，防止极端页面栈过深）。 */
+        private fun collectNodeText(
+            node: android.view.accessibility.AccessibilityNodeInfo?,
+            out: StringBuilder,
+            depth: Int
+        ): Int {
+            if (node == null || depth > 50) return 0
+            var count = 0
+            runCatching {
+                val text = node.text?.toString()?.trim().orEmpty()
+                if (text.isNotEmpty()) {
+                    out.append(text).append('\n')
+                    count++
+                }
+                val desc = node.contentDescription?.toString()?.trim().orEmpty()
+                if (desc.isNotEmpty() && desc != text) {
+                    out.append(desc).append('\n')
+                    count++
+                }
+                for (i in 0 until node.childCount) {
+                    count += collectNodeText(node.getChild(i), out, depth + 1)
+                }
+            }
+            return count
+        }
+
         /** 是否具备无障碍截屏能力（API 30+ 且 CAPABILITY_CAN_TAKE_SCREENSHOT）。 */
         fun canCaptureScreen(): Boolean {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false

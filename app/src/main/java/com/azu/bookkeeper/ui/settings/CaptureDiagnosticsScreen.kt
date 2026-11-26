@@ -72,12 +72,12 @@ fun CaptureDiagnosticsScreen(
         ) {
             SoftCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("识屏链路：双通道截屏 → 中文 OCR → 智能提取", style = MaterialTheme.typography.titleSmall)
+                    Text("识屏链路：无障碍节点读屏 → 智能提取（截图 OCR 仅兜底）", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "通道 1 无障碍截屏（Android 11+，免录屏授权，首选）；通道 2 媒体投影（需授权，兜底）。" +
-                            "点「开始自检」会真实抓一帧屏幕并识别，逐项告诉你哪一环失败、怎么修；" +
-                            "若是「页面禁止截屏（FLAG_SECURE）」，属系统限制，只能手动记或用通知/短信通道。" +
-                            "环境检查永远不会截屏、不会闪退；真实截屏测试若导致崩溃，会自动停用该通道并在下次启动时显示原因。",
+                        "主路径和钱迹等主流记账 App 一致：摇一摇时直接读取当前页面节点树里的文字，" +
+                            "从中提取金额与商户。不需要录屏授权，也不受「页面禁止截屏（FLAG_SECURE）」影响。" +
+                            "只有节点读不到金额时，才会尝试截图 OCR 兜底。" +
+                            "「环境检查（安全）」完全不截屏、不会闪退，其中的「读屏节点」一项就是主路径体检。",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp)
                     )

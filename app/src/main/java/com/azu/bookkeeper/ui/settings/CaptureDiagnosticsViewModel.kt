@@ -214,6 +214,41 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         )
     }
 
+    /**
+     * 节点读屏体检：这是识屏的主路径（钱迹等主流记账 App 的做法）。
+     * 读的是本页自身的文字——只要能读到，就证明「摇一摇识屏」的取文本环节是通的。
+     */
+    private suspend fun readScreenCheck(): CheckItem {
+        val connected = channels.accessibilityServiceConnected()
+        if (!connected) {
+            return CheckItem(
+                name = "读屏节点（识屏主路径）",
+                ok = false,
+                detail = "无障碍服务未连接，节点读屏不可用",
+                advice = "设置 → 无障碍 → 少花点儿，打开服务后重新检查"
+            )
+        }
+        val snapshot = runCatching {
+            withContext(io) { com.azu.bookkeeper.automation.service.PaymentAccessibilityService.readScreenSnapshot() }
+        }.getOrNull()
+        return if (snapshot == null) {
+            CheckItem(
+                name = "读屏节点（识屏主路径）",
+                ok = false,
+                detail = "服务已连接，但当前页面没有读到任何文本节点",
+                advice = "停在支付宝/微信支付结果页再试一次；本页若为纯图片也会读不到"
+            )
+        } else {
+            CheckItem(
+                name = "读屏节点（识屏主路径）",
+                ok = true,
+                detail = "${snapshot.nodeCount} 个文本节点 / ${snapshot.text.length} 字 / " +
+                    "页面=${snapshot.packageName.ifBlank { "未知" }}",
+                advice = ""
+            )
+        }
+    }
+
     /** 恢复被熔断的截屏通道（用户手动确认后再试）。 */
     fun resetBreakers() {
         channels.resetBreakers()
@@ -394,7 +429,9 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         publish(notificationCheck())
         publish(accessibilityChannelCheck())
         publish(projectionChannelCheck())
-        val ready = channels.anyChannelReady()
+        // 识屏主力通道体检：节点读屏（不截屏、不授权），读当前页面文本
+        publish(readScreenCheck())
+        val ready = channels.accessibilityServiceConnected() || channels.anyChannelReady()
         publish(
             CheckItem(
                 name = "通道结论",

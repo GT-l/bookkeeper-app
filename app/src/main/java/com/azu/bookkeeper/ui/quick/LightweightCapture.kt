@@ -5,6 +5,7 @@ import android.widget.Toast
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
 import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
+import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
@@ -33,15 +34,24 @@ data class CaptureOutcome(
 }
 
 /**
- * 快捷入口专用的轻量识屏器。
+ * 快捷入口识屏器。
  *
- * 链路：截屏（带原因）→ 中文 OCR → 智能提取 → 打开带预填的表单让用户确认。
+ * **主链路已改为「无障碍节点读屏」**（这也是钱迹等主流记账 App 在 Android 上的做法）：
+ * 摇一摇/悬浮球命中 → 直接读当前页面节点树里的 text/contentDescription →
+ * 用 [PaymentTextAnalyzer] 提取金额与商户 → 打开带预填的表单让用户确认。
+ *
+ * 为什么换掉「截屏 + OCR」当主路径：
+ * - 截屏要录屏授权、Android 14 还不能复用会话；
+ * - 支付宝/微信账单页普遍 FLAG_SECURE，截出来是全黑；
+ * - 部分 ROM 的 takeScreenshot 会 native 崩溃，Java 层接不住。
+ * 而读节点是纯 Binder 数据，不需要授权、不怕 FLAG_SECURE、不会崩。
+ *
+ * 截屏 OCR 降级为**兜底**：只有在节点读不到金额、且截图通道确实可用时才尝试。
  * 任何一步失败都会：
  * 1) 记录完整步骤到 [CaptureDiagnostics]（自检页可查）；
  * 2) 进度通知改成「识屏失败：<具体原因>」；
  * 3) Toast 一句话原因；
  * 4) 自动打开记账表单让用户手动输入。
- * 这样用户不需要猜，能直接知道卡在哪一环。
  */
 @Singleton
 class LightweightCapture @Inject constructor(
@@ -54,122 +64,163 @@ class LightweightCapture @Inject constructor(
     @MainDispatcher private val mainDispatcher: CoroutineDispatcher,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
-    /** 两条截屏通道（无障碍截屏 / 媒体投影）都不可用时才需要引导授权。 */
-    fun needsAuthorization(): Boolean = channels.needsAuthorization()
+    /**
+     * 是否需要先引导授权。
+     *
+     * 现在主链路是节点读屏：只要无障碍服务连着就能识屏，**不需要任何截屏授权**。
+     * 只有「无障碍服务没连 + 截图通道也不可用」时才需要引导。
+     */
+    fun needsAuthorization(): Boolean =
+        !channels.accessibilityServiceConnected() && channels.needsAuthorization()
 
     fun captureIntoForm(scope: CoroutineScope, onResult: (CaptureOutcome) -> Unit) {
         scope.launch {
             val steps = mutableListOf<DiagnosticStep>()
             val startedAt = System.currentTimeMillis()
 
-            fun fail(reason: CaptureFailReason, detail: String) {
-                com.azu.bookkeeper.core.CaptureLog.w(context, "CAPTURE", "失败 ${reason.name}：$detail")
-                steps += DiagnosticStep(reason.title, false, detail)
-                Timber.w("识屏失败: %s | %s", reason.name, detail)
+            fun record(reason: CaptureFailReason?, rawText: String) {
                 runCatching {
                     CaptureDiagnostics.record(
                         context,
-                        CaptureReport(startedAt, reason, steps.toList())
+                        CaptureReport(startedAt, reason, steps.toList(), rawText)
                     )
                 }
+            }
+
+            fun fail(reason: CaptureFailReason, detail: String, rawText: String = "") {
+                com.azu.bookkeeper.core.CaptureLog.w(context, "CAPTURE", "失败 ${reason.name}：$detail")
+                steps += DiagnosticStep(reason.title, false, detail)
+                Timber.w("识屏失败: %s | %s", reason.name, detail)
+                record(reason, rawText)
                 runCatching { progress.showFailed(manualEntryIntent(), reason) }
                 runCatching { toast("识屏失败：${reason.title}") }
                 onResult(CaptureOutcome(null, "", reason, detail))
             }
 
-            steps += DiagnosticStep(
-                "截屏通道",
-                !needsAuthorization(),
-                "无障碍截屏=${if (channels.accessibilityReady()) "可用" else "不可用"}，" +
-                    "媒体投影=${if (channels.projectionReady()) "可用" else "不可用"}"
-            )
-            if (needsAuthorization()) {
-                fail(CaptureFailReason.NO_CHANNEL, "无障碍截屏与媒体投影均不可用")
-                return@launch
-            }
-
-            runCatching {
-                progress.showStage(CaptureProgressNotifier.Stage.CAPTURE)
-                // 双通道：无障碍截屏（免授权）优先，媒体投影兜底；内部已做黑帧/FLAG_SECURE 判定
-                com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=截屏")
-                val frame = withContext(ioDispatcher) { channels.capture() }
-                val bitmap = frame.bitmap
-                if (bitmap == null) {
-                    val detail = frame.attempts.joinToString("；").ifBlank { frame.detail }
-                    fail(frame.reason ?: CaptureFailReason.UNKNOWN, detail)
-                    return@launch
-                }
-                steps += DiagnosticStep("截屏（${frame.channel}）", true, frame.detail)
-
-                progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE)
-                com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=OCR（独立进程）")
-                // OCR 放到 :ocr 独立进程执行：ML Kit 原生库崩溃不会带走主进程
-                val ipc = withContext(ioDispatcher) { ocrIpc.recognize(bitmap) }
-                runCatching { bitmap.recycle() }
-                val ocrPayload = ipc.payload
-                if (ocrPayload == null) {
-                    fail(CaptureFailReason.OCR_PROCESS_FAILED, ipc.error ?: "unknown")
-                    return@launch
-                }
-                if (ocrPayload.text.isBlank()) {
-                    fail(CaptureFailReason.OCR_EMPTY, "empty text, confidence=${ocrPayload.confidence}")
-                    return@launch
-                }
-                val ocrText = ocrPayload.text
-                steps += DiagnosticStep(
-                    "OCR（独立进程）", true,
-                    "${ocrText.length} 字 / ${ocrPayload.blocks} 块 / conf=${"%.2f".format(ocrPayload.confidence)}"
-                )
-
-                progress.showStage(CaptureProgressNotifier.Stage.EXTRACT)
-                com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=提取")
-                val analysis = analyzer.analyze(ocrText)
-                val fallback = extractor.extract(ocrText, System.currentTimeMillis())
-                val amountFen = analysis.amountFen ?: fallback.amountFen
-                val merchant = analysis.merchant.ifBlank { fallback.merchant }
-
-                if (amountFen == null) {
-                    steps += DiagnosticStep("提取金额", false, "无候选金额，文本前 40 字：${ocrText.take(40)}")
-                    runCatching {
-                        CaptureDiagnostics.record(
-                            context,
-                            CaptureReport(
-                                startedAt, CaptureFailReason.EXTRACT_EMPTY, steps.toList(),
-                                textPreview = ocrText
-                            )
-                        )
-                    }
-                    runCatching { progress.showFailed(manualEntryIntent(), CaptureFailReason.EXTRACT_EMPTY) }
-                    runCatching { toast("没识别到金额，已打开表单请手动输入") }
-                    onResult(CaptureOutcome(null, merchant, CaptureFailReason.EXTRACT_EMPTY, "no amount candidate"))
-                    return@launch
-                }
-
-                com.azu.bookkeeper.core.CaptureLog.i(
-                    context, "CAPTURE",
-                    "识别结果 amount=${amountFen} merchant=${merchant.ifBlank { "-" }} conf=${analysis.confidence}"
-                )
+            suspend fun succeed(amountFen: Long, merchant: String, confidence: Float, rawText: String) {
                 steps += DiagnosticStep(
                     "提取金额", merchant.isNotBlank(),
-                    "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }} / conf=${"%.2f".format(analysis.confidence)}"
+                    "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }} / conf=${"%.2f".format(confidence)}"
                 )
-                steps += DiagnosticStep("进度通知", true, "已投递")
-                runCatching {
-                    CaptureDiagnostics.record(
-                        context,
-                        CaptureReport(startedAt, null, steps.toList(), ocrText)
+                com.azu.bookkeeper.core.CaptureLog.i(
+                    context, "CAPTURE",
+                    "识别成功 amount=$amountFen merchant=${merchant.ifBlank { "-" }} conf=$confidence"
+                )
+                record(null, rawText)
+                runCatching { progress.showResult(amountFen, merchant, resultIntent(amountFen, merchant)) }
+                withContext(mainDispatcher) { onResult(CaptureOutcome(amountFen, merchant)) }
+            }
+
+            try {
+                var rawText = ""
+
+                // ---------- 阶段 1：无障碍节点读屏（主路径，不截屏、不授权、不崩） ----------
+                if (channels.accessibilityServiceConnected()) {
+                    runCatching { progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE) }
+                    com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=节点读屏")
+                    val snapshot = withContext(ioDispatcher) {
+                        PaymentAccessibilityService.readScreenSnapshot()
+                    }
+                    if (snapshot != null && snapshot.text.isNotBlank()) {
+                        rawText = snapshot.text
+                        steps += DiagnosticStep(
+                            "读屏节点", true,
+                            "${snapshot.nodeCount} 个文本节点 / ${snapshot.text.length} 字 / ${snapshot.packageName}"
+                        )
+                        runCatching { progress.showStage(CaptureProgressNotifier.Stage.EXTRACT) }
+                        val amountFen = extractAmount(rawText)
+                        if (amountFen != null) {
+                            val merchant = extractMerchant(rawText)
+                            succeed(amountFen, merchant, confidenceOf(rawText), rawText)
+                            return@launch
+                        }
+                        steps += DiagnosticStep(
+                            "读屏提取", false,
+                            "节点文本里没有金额候选，前 40 字：${rawText.take(40)}"
+                        )
+                    } else {
+                        steps += DiagnosticStep("读屏节点", false, "当前页面没有可读文本（自绘页面/WebView 常见）")
+                    }
+                } else {
+                    steps += DiagnosticStep(
+                        "读屏节点", false,
+                        "无障碍服务未连接（设置 → 无障碍 → 少花点儿 打开后即可免截屏识屏）"
                     )
                 }
-                progress.showResult(amountFen, merchant, resultIntent(amountFen, merchant))
-                withContext(mainDispatcher) { onResult(CaptureOutcome(amountFen, merchant)) }
-            }.onFailure { e ->
-                Timber.w(e, "lightweight capture failed")
-                fail(CaptureFailReason.UNKNOWN, "${e.javaClass.simpleName}: ${e.message}")
+
+                // ---------- 阶段 2：截图 OCR 兜底（需通道可用，可选） ----------
+                if (channels.anyChannelReady()) {
+                    runCatching { progress.showStage(CaptureProgressNotifier.Stage.CAPTURE) }
+                    com.azu.bookkeeper.core.CaptureLog.i(context, "CAPTURE", "阶段=截屏兜底")
+                    val frame = withContext(ioDispatcher) { channels.capture() }
+                    val bitmap = frame.bitmap
+                    if (bitmap == null) {
+                        val detail = frame.attempts.joinToString("；").ifBlank { frame.detail }
+                        if (rawText.isNotBlank()) {
+                            fail(CaptureFailReason.EXTRACT_EMPTY, "读屏与截屏都没提取到金额：$detail", rawText)
+                        } else {
+                            fail(frame.reason ?: CaptureFailReason.UNKNOWN, detail)
+                        }
+                        return@launch
+                    }
+                    steps += DiagnosticStep("截屏（${frame.channel}）", true, frame.detail)
+
+                    runCatching { progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE) }
+                    val ipc = withContext(ioDispatcher) { ocrIpc.recognize(bitmap) }
+                    runCatching { bitmap.recycle() }
+                    val payload = ipc.payload
+                    if (payload == null) {
+                        fail(CaptureFailReason.OCR_PROCESS_FAILED, ipc.error ?: "unknown", rawText)
+                        return@launch
+                    }
+                    rawText = listOf(rawText, payload.text).filter { it.isNotBlank() }.joinToString("\n")
+                    val amountFen = extractAmount(rawText)
+                    if (amountFen != null) {
+                        succeed(amountFen, extractMerchant(rawText), payload.confidence, rawText)
+                        return@launch
+                    }
+                    fail(
+                        CaptureFailReason.EXTRACT_EMPTY,
+                        "截图 OCR 完成但没找到金额（当前页可能不是支付结果页）",
+                        rawText
+                    )
+                    return@launch
+                }
+
+                // ---------- 两条路都不可用 ----------
+                if (rawText.isNotBlank()) {
+                    fail(CaptureFailReason.EXTRACT_EMPTY, "读到页面文字但没有金额候选", rawText)
+                } else {
+                    fail(CaptureFailReason.NO_CHANNEL, "无障碍节点读屏与截图通道都不可用")
+                }
+            } catch (t: Throwable) {
+                // 任何异常都不许逃出：抛出会让前台服务/进程崩掉
+                fail(
+                    CaptureFailReason.UNKNOWN,
+                    "${t.javaClass.simpleName}: ${t.message}",
+                    ""
+                )
             }
         }
     }
 
-    /** 构造打开表单的 Intent（带 OCR 预填）。 */
+    /** 统一提取金额：智能分析器优先，旧正则兜底。 */
+    private fun extractAmount(text: String): Long? {
+        val analysis = runCatching { analyzer.analyze(text) }.getOrNull()
+        if (analysis?.amountFen != null) return analysis.amountFen
+        return runCatching { extractor.extract(text, System.currentTimeMillis()).amountFen }.getOrNull()
+    }
+
+    private fun extractMerchant(text: String): String {
+        val fromAnalyzer = runCatching { analyzer.analyze(text).merchant }.getOrDefault("")
+        if (fromAnalyzer.isNotBlank()) return fromAnalyzer
+        return runCatching { extractor.extract(text, System.currentTimeMillis()).merchant }.getOrDefault("")
+    }
+
+    private fun confidenceOf(text: String): Float =
+        runCatching { analyzer.analyze(text).confidence }.getOrDefault(0f)
+
+    /** 构造打开表单的 Intent（带预填）。 */
     fun formIntent(amountFen: Long?, merchant: String): android.content.Intent {
         val request = QuickCaptureRequest(
             entry = QuickEntry.SYSTEM_GESTURE,

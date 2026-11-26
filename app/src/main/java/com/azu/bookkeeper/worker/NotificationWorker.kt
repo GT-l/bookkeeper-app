@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ListenableWorker.Result as WorkResult
@@ -76,11 +75,8 @@ class NotificationWorker @AssistedInject constructor(
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
-        try {
-            NotificationManagerCompat.from(applicationContext).notify(notificationId, notification)
-        } catch (_: SecurityException) {
-            // Android 13+ 未授予 POST_NOTIFICATIONS 时静默降级，不崩溃
-        }
+        // 统一守卫：部分 OEM ROM 在无通知权限时不抛 SecurityException 而是阻塞主线程（ANR）
+        com.azu.bookkeeper.core.NotifyGuard.safeNotify(applicationContext, notificationId, notification)
     }
 
     private fun createChannel(channelId: String) {

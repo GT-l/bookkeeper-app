@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import com.azu.bookkeeper.MainActivity
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Constants
@@ -78,11 +77,8 @@ class VerificationNotifier @Inject constructor(
     }
 
     private fun notifySafe(id: Int, notification: android.app.Notification) {
-        try {
-            NotificationManagerCompat.from(context).notify(id, notification)
-        } catch (_: SecurityException) {
-            // Android 13+ 未授予 POST_NOTIFICATIONS 时静默降级
-        }
+        // 统一守卫：先查权限再投递（部分 OEM ROM 无权限时阻塞主线程），投递异常吞掉
+        com.azu.bookkeeper.core.NotifyGuard.safeNotify(context, id, notification)
     }
 
     private fun immutableFlag(): Int =

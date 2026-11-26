@@ -10,13 +10,13 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.capture.AccessibilityCaptureParser
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
 import com.azu.bookkeeper.automation.classify.BusinessTag
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.core.di.IoDispatcher
@@ -195,7 +195,9 @@ class PaymentAccessibilityService : AccessibilityService() {
             .setAutoCancel(true)
             .setContentIntent(QuickCaptureLauncher.pendingIntent(this, request, 2001))
             .build()
-        NotificationManagerCompat.from(this).notify(2001, notification)
+        // 手势兜底通知走统一守卫：无障碍服务里抛 SecurityException 的后果最严重——
+        // ROM 会直接把读屏服务禁用且不再自动恢复（Orange 7 实测），必须在这里掐断。
+        NotifyGuard.safeNotify(this, 2001, notification)
     }
 
     /** 稳定 eventId：包名 + 文本哈希 + 秒，避免同一完成页连发重复建单（与去重键一致）。 */

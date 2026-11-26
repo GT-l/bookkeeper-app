@@ -129,9 +129,13 @@ class AutoCaptureForegroundService : Service() {
             START_STICKY
         } catch (_: Exception) {
             // 失败状态必须同步落盘后再 stopSelf，否则 onDestroy 取消 scope 会丢掉失败计数。
-            runBlocking {
-                withTimeoutOrNull(STATE_WRITE_TIMEOUT_MS) {
-                    AutoCaptureForegroundService.handleStartFailure(this@AutoCaptureForegroundService, automationSettings)
+            // 落盘本身再兜一层：DataStore 写入异常（磁盘 / ROM 限制）绝不能把崩溃抛回系统，
+            // 否则就是「开启通知权限 → startForeground 失败 → 状态落盘失败 → App 闪退」。
+            runCatching {
+                runBlocking {
+                    withTimeoutOrNull(STATE_WRITE_TIMEOUT_MS) {
+                        AutoCaptureForegroundService.handleStartFailure(this@AutoCaptureForegroundService, automationSettings)
+                    }
                 }
             }
             stopSelf()
@@ -404,8 +408,9 @@ class AutoCaptureForegroundService : Service() {
                 .build()
             try {
                 NotificationManagerCompat.from(context).notify(AUTO_DISABLED_NOTIFICATION_ID, notification)
-            } catch (_: SecurityException) {
-                // 无通知权限时静默降级；开关状态已在 DataStore 中关闭。
+            } catch (_: Exception) {
+                // 无通知权限时静默降级（部分 ROM 阻塞主线程而非抛 SecurityException，一并吞掉）；
+                // 开关状态已在 DataStore 中关闭。
             }
         }
 

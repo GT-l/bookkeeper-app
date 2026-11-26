@@ -17,11 +17,11 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.azu.bookkeeper.MainActivity
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.ShakeActions
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
@@ -69,10 +69,8 @@ class ShakeQuickAddService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_REFRESH -> {
-                runCatching {
-                    NotificationManagerCompat.from(this)
-                        .notify(NOTIFICATION_ID, buildNotification())
-                }
+                // 未授予通知权限时部分 ROM 会抛 SecurityException 甚至阻塞主线程（ANR）→ 统一走守卫
+                NotifyGuard.safeNotify(this, NOTIFICATION_ID, buildNotification())
                 return START_NOT_STICKY
             }
         }
@@ -198,11 +196,13 @@ class ShakeQuickAddService : Service() {
     }
 
     private fun showFullScreenFallback(request: QuickCaptureRequest) {
-        runCatching {
-            ensureGestureChannel()
+        runCatching { ensureGestureChannel() }
+        // 全屏通知兜底也走守卫：通知权限被关时部分 ROM 会阻塞甚至抛 SecurityException
+        val posted = runCatching {
             val pending = QuickCaptureLauncher.pendingIntent(this, request, 2002)
-            NotificationManagerCompat.from(this).notify(2002, buildFullScreenNotification(pending))
-        }.onFailure { Timber.w(it, "full screen fallback failed") }
+            NotifyGuard.safeNotify(this, 2002, buildFullScreenNotification(pending))
+        }.getOrDefault(false)
+        if (!posted) Timber.w("full screen fallback not posted (notification permission off / ROM blocked)")
     }
 
     private fun buildFullScreenNotification(pending: PendingIntent): android.app.Notification =
@@ -230,16 +230,21 @@ class ShakeQuickAddService : Service() {
         }
     }
 
+    /**
+     * 摇一摇常驻通知改用独立低重要级渠道。
+     * 不再复用 CHANNEL_AUTO_CAPTURE：自动化服务（LOW）、校对通知（DEFAULT）、
+     * 摇一摇（HIGH）三方抢建同一渠道时，重要级以先建者为准且系统永久保留，
+     * 会出现「有时响铃有时静音」的不稳定表现——这就是用户反馈的操作异常之一。
+     */
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        val existing = manager.getNotificationChannel(Constants.CHANNEL_AUTO_CAPTURE)
-        if (existing == null) {
+        if (manager.getNotificationChannel(ONGOING_CHANNEL_ID) == null) {
             manager.createNotificationChannel(
                 NotificationChannel(
-                    Constants.CHANNEL_AUTO_CAPTURE,
-                    getString(R.string.notification_channel_auto_capture),
-                    NotificationManager.IMPORTANCE_HIGH
+                    ONGOING_CHANNEL_ID,
+                    "摇一摇快捷记账",
+                    NotificationManager.IMPORTANCE_LOW
                 )
             )
         }
@@ -275,7 +280,7 @@ class ShakeQuickAddService : Service() {
             flags
         )
         val action = ShakeActions.label(QuickGestureCache.shakeAction)
-        return NotificationCompat.Builder(this, Constants.CHANNEL_AUTO_CAPTURE)
+        return NotificationCompat.Builder(this, ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_quick_add)
             .setContentTitle("摇一摇记一笔运行中")
             .setContentText("当前动作：$action · 摇动手机触发")
@@ -302,6 +307,7 @@ class ShakeQuickAddService : Service() {
         const val ACTION_STOP = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_STOP"
         const val ACTION_REFRESH = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_REFRESH"
         private const val NOTIFICATION_ID = 1020
+        private const val ONGOING_CHANNEL_ID = "shake_ongoing"
         private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
         private const val SHAKE_THRESHOLD = 24f
         private const val COOLDOWN_MS = 1_200L

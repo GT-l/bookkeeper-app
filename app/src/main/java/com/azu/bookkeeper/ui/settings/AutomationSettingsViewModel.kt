@@ -128,7 +128,14 @@ class AutomationSettingsViewModel @Inject constructor(
             _uiState.update { it.copy(message = "已关闭自动记账与常驻通知") }
             return@launch
         }
-        val requested = AutoCaptureForegroundService.start(context)
+        var requested = AutoCaptureForegroundService.start(context)
+        // OrangeOS / ColorOS 已知问题：权限弹窗（通知/无障碍等）刚关闭的瞬间，
+        // 系统会把应用短暂判为「后台」，startForegroundService 被拒（StartNotAllowed）。
+        // 延迟重试一次；仍失败时用户回到本页 onResume 还会再补一次。
+        if (!requested) {
+            kotlinx.coroutines.delay(500)
+            requested = AutoCaptureForegroundService.start(context)
+        }
         // start() 只代表系统受理了启动请求；服务真正进入前台后才会异步写 serviceRunning。
         // 之前在这里立刻读一次 serviceRunning.first()，读到的必然是旧值 false，
         // 于是刚刚开启成功也会误报「服务可能被系统限制」——改为带超时地等待写入。

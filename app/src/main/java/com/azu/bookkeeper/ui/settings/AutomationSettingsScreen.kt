@@ -146,6 +146,28 @@ fun AutomationSettingsScreen(
                 }
             }
 
+            // OrangeOS / ColorOS 专项提示：国产 ROM 上「权限给了也不生效」绝大多数是这三项没开
+            if (com.azu.bookkeeper.core.RomCompat.needsOppoGuidance()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("OrangeOS / ColorOS 用户请确认", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "① 系统设置 → 应用管理 → 少花点儿 → 自启动：允许；" +
+                                "② 通知管理：允许通知；③ 电池：允许后台运行（不限制）。" +
+                                "缺任何一项，常驻通知与手势都可能被系统拦截。" +
+                                "权限弹窗后若服务没启动，回到本页会自动重试。",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                }
+            }
+
             // 总开关：与「通知权限」是两件事。用户只开通知权限时服务不会启动，通知栏自然什么都没有，
             // 所以开启总开关时顺手把 POST_NOTIFICATIONS 要下来（Android 13+），拿到权限后立即启动前台服务。
             SettingSwitch("启用自动记账", state.enabled) { enabled ->

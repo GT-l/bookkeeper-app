@@ -65,6 +65,8 @@ class BookkeeperApp : Application(), Configuration.Provider {
         // WorkManager / 种子数据 / 识别规则，更要避免两个进程同时打开 SQLCipher 库。
         // Hilt 组件已在 super.onCreate() 里建好，这里提前返回不影响 EntryPointAccessors。
         if (!com.azu.bookkeeper.core.CrashGuard.isMainProcess(this)) return
+        // 截屏通道对账：上次调用没收尾（进程被杀）→ 自动熔断该通道，避免反复闪退
+        runCatching { com.azu.bookkeeper.core.CaptureBreakerStore.reconcile(this) }
         val workManager = WorkManager.getInstance(this)
         workManager.enqueueUniquePeriodicWork(
             "recurring_bills",

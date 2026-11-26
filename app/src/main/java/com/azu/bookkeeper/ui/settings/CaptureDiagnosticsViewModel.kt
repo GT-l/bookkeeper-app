@@ -8,6 +8,7 @@ import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
+import com.azu.bookkeeper.core.CaptureChannel
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
@@ -134,6 +135,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     private fun accessibilityChannelCheck(): CheckItem {
         val connected = channels.accessibilityServiceConnected()
         val ready = channels.accessibilityReady()
+        val disabled = channels.isChannelDisabled(CaptureChannel.ACCESSIBILITY)
         val lastConnected = permissionGuide.accessibilityLastConnectedAt()
         val lastDisconnected = permissionGuide.accessibilityLastDisconnectedAt()
         val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
@@ -141,12 +143,14 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         val killedAfterConnect = lastDisconnected > lastConnected && lastConnected > 0L
 
         val detail = when {
+            disabled -> "已自动停用（上次使用该通道时进程崩溃） · 最后连接 $connectedText"
             ready -> "可用 · 最后连接 $connectedText"
             !connected && killedAfterConnect -> "服务未连接 · 上次 $connectedText 连上后被系统解绑"
             !connected -> "服务未连接 · 最后连接 $connectedText"
             else -> "服务已连但缺少截屏能力（canTakeScreenshot 未生效） · $connectedText"
         }
         val advice = when {
+            disabled -> "点下方「恢复截屏通道」可重新启用（若再次崩溃会再次停用）"
             ready -> ""
             !connected -> "设置 → 无障碍 → 少花点儿，打开服务；打开后回到本页应显示「可用」"
             else -> "关闭无障碍服务再重新打开一次，让截屏能力重新注册"
@@ -157,12 +161,28 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     /** 通道 2：媒体投影（需系统录屏授权，覆盖 Android 8~10 与无障碍不可用场景）。 */
     private fun projectionChannelCheck(): CheckItem {
         val active = channels.projectionReady()
+        val disabled = channels.isChannelDisabled(CaptureChannel.PROJECTION)
         return CheckItem(
             name = "媒体投影通道",
             ok = active,
-            detail = if (active) "会话有效" else "无会话（重启 App 后失效，Android 14+ 规则）",
-            advice = if (active) "" else "点下方「授权截屏」完成一次系统录屏授权"
+            detail = when {
+                disabled -> "已自动停用（上次使用该通道时进程崩溃）"
+                active -> "会话有效"
+                else -> "无会话（重启 App 后失效，Android 14+ 规则）"
+            },
+            advice = when {
+                disabled -> "点下方「恢复截屏通道」可重新启用"
+                active -> ""
+                else -> "点下方「授权截屏」完成一次系统录屏授权"
+            }
         )
+    }
+
+    /** 恢复被熔断的截屏通道（用户手动确认后再试）。 */
+    fun resetBreakers() {
+        channels.resetBreakers()
+        _state.update { it.copy(message = "已恢复截屏通道，可重新尝试真实截屏测试") }
+        refresh()
     }
 
     fun createCaptureIntent(): Intent = screenCapture.createCaptureIntent()

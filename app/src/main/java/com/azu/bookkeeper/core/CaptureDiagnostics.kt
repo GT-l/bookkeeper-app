@@ -66,6 +66,10 @@ enum class CaptureFailReason(val title: String, val advice: String) {
         "识别到文字但没找到扣款金额",
         "当前页面可能不是支付结果页；打开支付成功页再摇一摇"
     ),
+    CHANNEL_DISABLED(
+        "截屏通道已自动停用",
+        "上次使用该通道时进程崩溃，已熔断保护；确认后可在自检页点「恢复截屏通道」再试"
+    ),
     NO_CHANNEL(
         "两条截屏通道都不可用",
         "打开无障碍服务（推荐，免录屏授权）或到设置页授权截屏后重试"

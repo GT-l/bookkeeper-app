@@ -133,6 +133,8 @@ class AccessibilityScreenshotSource @Inject constructor(
             CaptureFailReason.SCREENSHOT_THROTTLED to "INTERVAL_TIME_SHORT(3)：333ms 内重复截屏被拒"
         AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_WINDOW ->
             CaptureFailReason.SECURE_WINDOW to "INVALID_WINDOW(5)：窗口禁止截屏（FLAG_SECURE）"
+        // API 34 新增：窗口含安全内容（FLAG_SECURE 的显式错误码）
+        6 -> CaptureFailReason.SECURE_WINDOW to "SECURE_WINDOW(6)：窗口含安全内容，禁止截屏"
         AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS ->
             CaptureFailReason.ACCESSIBILITY_NOT_CONNECTED to "NO_ACCESSIBILITY_ACCESS(2)：无障碍权限丢失"
         AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY ->

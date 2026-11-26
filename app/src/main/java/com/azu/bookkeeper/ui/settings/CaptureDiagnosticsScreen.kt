@@ -64,7 +64,7 @@ fun CaptureDiagnosticsScreen(
                         "通道 1 无障碍截屏（Android 11+，免录屏授权，首选）；通道 2 媒体投影（需授权，兜底）。" +
                             "点「开始自检」会真实抓一帧屏幕并识别，逐项告诉你哪一环失败、怎么修；" +
                             "若是「页面禁止截屏（FLAG_SECURE）」，属系统限制，只能手动记或用通知/短信通道。" +
-                            "如果点「开始自检」会闪退，请先点「仅环境检查」，并到下方查看崩溃记录。",
+                            "环境检查永远不会截屏、不会闪退；真实截屏测试若导致崩溃，会自动停用该通道并在下次启动时显示原因。",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp)
                     )
@@ -73,20 +73,26 @@ fun CaptureDiagnosticsScreen(
 
             Row(modifier = Modifier.padding(top = 12.dp)) {
                 CutePrimaryButton(
-                    onClick = { if (!state.running) viewModel.runSelfCheck() },
+                    onClick = { if (!state.running) viewModel.runEnvironmentOnlyCheck() },
                     modifier = Modifier.weight(1f)
-                ) { Text(if (state.running) "自检中…" else "开始自检") }
+                ) { Text(if (state.running) "检查中…" else "环境检查（安全）") }
                 OutlinedButton(
                     onClick = { authLauncher.launch(viewModel.createCaptureIntent()) },
                     modifier = Modifier.padding(start = 8.dp)
                 ) { Text("授权截屏") }
             }
 
-            // 安全模式：完全不截屏，只查权限与通道——「点自检就闪退」时先用它排除环境问题
+            // 真实截屏测试单独放：它可能触发本机 native 崩溃，必须由用户明确点击；
+            // 但已加熔断保护——真崩了会自动停用该通道，下次不会再崩。
             OutlinedButton(
-                onClick = { if (!state.running) viewModel.runEnvironmentOnlyCheck() },
+                onClick = { if (!state.running) viewModel.runSelfCheck() },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("仅环境检查（安全模式，不截屏）") }
+            ) { Text("真实截屏测试（可能崩溃，已加熔断保护）") }
+
+            OutlinedButton(
+                onClick = { viewModel.resetBreakers() },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("恢复截屏通道（清除熔断）") }
 
             // 一键复制诊断信息：不方便连 adb 时，把这段发给开发者即可定位
             OutlinedButton(

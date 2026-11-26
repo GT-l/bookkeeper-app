@@ -1,9 +1,14 @@
 package com.azu.bookkeeper.automation.capture
 
+import android.content.Context
 import android.graphics.Bitmap
 import com.azu.bookkeeper.automation.service.AccessibilityScreenshotSource
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
+import com.azu.bookkeeper.core.CaptureBreakerStore
+import com.azu.bookkeeper.core.CaptureChannel
 import com.azu.bookkeeper.core.CaptureFailReason
+import com.azu.bookkeeper.core.CaptureGate
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import javax.inject.Inject
@@ -23,31 +28,38 @@ data class ChannelCaptureResult(
 /**
  * 双通道截屏调度：无障碍截屏（API 30+，免授权）优先，MediaProjection 兜底。
  *
- * 为什么双通道：
- * - 无障碍截屏不需要录屏授权、不受投影会话失效影响，是识屏最稳的一条路；
- * - MediaProjection 覆盖 Android 8~10（无无障碍截屏）与无障碍被系统关闭的场景；
- * - 两条都失败时，把两条通道的具体失败原因一起交给诊断页，用户一眼看出是
- *   「没开无障碍」「没授权录屏」还是「页面禁止截屏（FLAG_SECURE）」。
- *
- * 附加：黑帧检测（FLAG_SECURE / 视频层保护截出来是全黑），命中后直接给
- * 「页面禁止截屏」的明确结论，而不是让用户看到「OCR 没识别到文字」。
+ * 每一路都带「熔断」：调用前写 in-flight 标记，正常结束清除；
+ * 若上次调用把进程干掉（native 崩溃），标记会残留，下次启动由
+ * [CaptureBreakerStore.reconcile] 自动停用该通道——不会再让用户反复闪退。
  */
 @Singleton
 class CaptureChannels @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val accessibility: AccessibilityScreenshotSource,
     private val projection: ScreenCaptureManager
 ) {
 
-    /** 任一通道可用即可识屏；都不可用时才需要引导用户去授权。 */
-    fun anyChannelReady(): Boolean = accessibility.isReady() || projection.hasActiveSession()
+    fun accessibilityServiceConnected(): Boolean = accessibility.isServiceConnected()
+
+    /** 无障碍通道「具备能力」且「未被熔断」。 */
+    fun accessibilityReady(): Boolean =
+        accessibility.isReady() && !CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)
+
+    /** 无障碍有截屏能力（不考虑熔断），用于自检页区分「没能力」和「被停用」。 */
+    fun accessibilityCapable(): Boolean = accessibility.isReady()
+
+    fun projectionReady(): Boolean =
+        projection.hasActiveSession() && !CaptureBreakerStore.isOpen(context, CaptureChannel.PROJECTION)
+
+    fun isChannelDisabled(channel: CaptureChannel): Boolean =
+        CaptureBreakerStore.isOpen(context, channel)
+
+    fun anyChannelReady(): Boolean = accessibilityReady() || projectionReady()
 
     fun needsAuthorization(): Boolean = !anyChannelReady()
 
-    fun accessibilityReady(): Boolean = accessibility.isReady()
-
-    fun accessibilityServiceConnected(): Boolean = accessibility.isServiceConnected()
-
-    fun projectionReady(): Boolean = projection.hasActiveSession()
+    /** 自检页「恢复截屏通道」：清掉熔断后重新评估。 */
+    fun resetBreakers() = CaptureBreakerStore.reset(context)
 
     suspend fun capture(): ChannelCaptureResult {
         val attempts = mutableListOf<String>()
@@ -55,13 +67,21 @@ class CaptureChannels @Inject constructor(
         var accessibilityDetail = ""
 
         // ---- 通道 1：无障碍截屏（API 30+，免授权）----
-        if (accessibility.isReady()) {
+        if (CaptureGate.shouldAttempt(
+                accessibility.isReady(),
+                CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)
+            )
+        ) {
+            CaptureBreakerStore.markInflight(context, CaptureChannel.ACCESSIBILITY)
             var shot = accessibility.capture()
             // 333ms 节流：稍等再来一次
             if (shot.errorCode == 3) {
                 delay(400)
                 shot = accessibility.capture()
             }
+            // 走到这里说明调用返回了（无论成功失败），清除 in-flight 标记
+            CaptureBreakerStore.clearInflight(context, CaptureChannel.ACCESSIBILITY)
+
             val bitmap = shot.bitmap?.let { downscale(it) }
             when {
                 bitmap != null && !isBlackFrame(bitmap) -> {
@@ -71,7 +91,6 @@ class CaptureChannels @Inject constructor(
                 bitmap != null -> {
                     attempts += "无障碍截屏：截到黑帧"
                     runCatching { bitmap.recycle() }
-                    // 黑帧基本就是 FLAG_SECURE，投影通道同样会黑，不必再等
                     return ChannelCaptureResult(
                         null, "无障碍截屏", CaptureFailReason.BLACK_FRAME,
                         "截到全黑画面（多半是页面禁止截屏）", attempts
@@ -81,7 +100,6 @@ class CaptureChannels @Inject constructor(
                     accessibilityReason = shot.reason
                     accessibilityDetail = shot.detail
                     attempts += "无障碍截屏：${shot.reason?.title ?: "失败"}（${shot.detail}）"
-                    // 明确是禁止截屏：投影也不会有画面，直接给结论
                     if (shot.reason == CaptureFailReason.SECURE_WINDOW) {
                         return ChannelCaptureResult(
                             null, "无障碍截屏", CaptureFailReason.SECURE_WINDOW, shot.detail, attempts
@@ -90,12 +108,23 @@ class CaptureChannels @Inject constructor(
                 }
             }
         } else {
-            attempts += "无障碍截屏：不可用（${if (accessibility.isServiceConnected()) "服务已连但无截屏能力" else "服务未连接"}）"
+            attempts += if (CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)) {
+                "无障碍截屏：已自动停用（上次使用导致崩溃）"
+            } else {
+                "无障碍截屏：不可用（${if (accessibility.isServiceConnected()) "服务已连但无截屏能力" else "服务未连接"}）"
+            }
         }
 
         // ---- 通道 2：MediaProjection（需授权，覆盖旧系统/无障碍不可用）----
-        if (projection.hasActiveSession()) {
+        if (CaptureGate.shouldAttempt(
+                projection.hasActiveSession(),
+                CaptureBreakerStore.isOpen(context, CaptureChannel.PROJECTION)
+            )
+        ) {
+            CaptureBreakerStore.markInflight(context, CaptureChannel.PROJECTION)
             val frame = projection.captureBitmapScaled()
+            CaptureBreakerStore.clearInflight(context, CaptureChannel.PROJECTION)
+
             val bitmap = frame.bitmap
             if (bitmap != null) {
                 if (isBlackFrame(bitmap)) {
@@ -112,11 +141,17 @@ class CaptureChannels @Inject constructor(
             attempts += "媒体投影：${frame.reason?.title ?: "失败"}（${frame.detail}）"
             Timber.w("projection capture failed: %s", frame.detail)
         } else {
-            attempts += "媒体投影：无授权会话"
+            attempts += if (CaptureBreakerStore.isOpen(context, CaptureChannel.PROJECTION)) {
+                "媒体投影：已自动停用（上次使用导致崩溃）"
+            } else {
+                "媒体投影：无授权会话"
+            }
         }
 
         val reason = when {
             accessibilityReason != null && accessibilityReason != CaptureFailReason.UNKNOWN -> accessibilityReason
+            CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY) &&
+                CaptureBreakerStore.isOpen(context, CaptureChannel.PROJECTION) -> CaptureFailReason.CHANNEL_DISABLED
             else -> CaptureFailReason.NO_CHANNEL
         }
         return ChannelCaptureResult(

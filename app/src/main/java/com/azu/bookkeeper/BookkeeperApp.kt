@@ -56,6 +56,8 @@ class BookkeeperApp : Application(), Configuration.Provider {
         // 崩溃自愈必须最先执行：检测「上次启动即崩」的循环（如强杀导致 SQLCipher 库损坏），
         // 备份并重建数据库，保证用户永远能打开 App。内部已自兜底，不允许抛出。
         runCatching { com.azu.bookkeeper.core.CrashGuard.install(this) }
+        // 全局崩溃栈落盘：任何 Java 崩溃都会写文件，下次进「识屏自检」页可直接复制
+        runCatching { com.azu.bookkeeper.core.CrashLog.install(this) }
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }

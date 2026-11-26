@@ -62,17 +62,21 @@ class AccessibilityScreenshotSource @Inject constructor(
                 "无障碍服务未连接（设置 → 无障碍 → 少花点儿 未开启或已被系统关闭）"
             )
         return suspendCancellableCoroutine { cont ->
-            runCatching { requestShot(service) { result ->
-                if (cont.isActive) cont.resume(result)
-            } }.onFailure { t ->
-                Timber.w(t, "takeScreenshot invoke failed")
-                if (cont.isActive) {
-                    cont.resume(
-                        AccessibilityShotResult(
-                            null, -102, CaptureFailReason.UNKNOWN,
-                            "${t.javaClass.simpleName}: ${t.message}"
+            // takeScreenshot 走系统 binder，且服务实例的生命周期在主线程序列——
+            // 统一在主线程发起，避免线程约束导致的系统级异常。
+            context.mainExecutor.execute {
+                runCatching { requestShot(service) { result ->
+                    if (cont.isActive) cont.resume(result)
+                } }.onFailure { t ->
+                    Timber.w(t, "takeScreenshot invoke failed")
+                    if (cont.isActive) {
+                        cont.resume(
+                            AccessibilityShotResult(
+                                null, -102, CaptureFailReason.UNKNOWN,
+                                "${t.javaClass.simpleName}: ${t.message}"
+                            )
                         )
-                    )
+                    }
                 }
             }
         }

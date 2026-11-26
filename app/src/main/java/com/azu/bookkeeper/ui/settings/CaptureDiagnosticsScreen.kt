@@ -63,7 +63,8 @@ fun CaptureDiagnosticsScreen(
                     Text(
                         "通道 1 无障碍截屏（Android 11+，免录屏授权，首选）；通道 2 媒体投影（需授权，兜底）。" +
                             "点「开始自检」会真实抓一帧屏幕并识别，逐项告诉你哪一环失败、怎么修；" +
-                            "若是「页面禁止截屏（FLAG_SECURE）」，属系统限制，只能手动记或用通知/短信通道。",
+                            "若是「页面禁止截屏（FLAG_SECURE）」，属系统限制，只能手动记或用通知/短信通道。" +
+                            "如果点「开始自检」会闪退，请先点「仅环境检查」，并到下方查看崩溃记录。",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp)
                     )
@@ -80,6 +81,12 @@ fun CaptureDiagnosticsScreen(
                     modifier = Modifier.padding(start = 8.dp)
                 ) { Text("授权截屏") }
             }
+
+            // 安全模式：完全不截屏，只查权限与通道——「点自检就闪退」时先用它排除环境问题
+            OutlinedButton(
+                onClick = { if (!state.running) viewModel.runEnvironmentOnlyCheck() },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("仅环境检查（安全模式，不截屏）") }
 
             // 一键复制诊断信息：不方便连 adb 时，把这段发给开发者即可定位
             OutlinedButton(

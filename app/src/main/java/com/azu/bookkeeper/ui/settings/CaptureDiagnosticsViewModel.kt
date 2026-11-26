@@ -11,6 +11,7 @@ import com.azu.bookkeeper.automation.service.ScreenCaptureManager
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
+import com.azu.bookkeeper.core.CrashLog
 import com.azu.bookkeeper.core.DiagnosticStep
 import com.azu.bookkeeper.core.SelfCheckGuard
 import com.azu.bookkeeper.core.di.IoDispatcher
@@ -74,6 +75,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
                 last = last,
                 textPreview = last?.textPreview.orEmpty(),
                 items = buildList {
+                    crashCheck()?.let { add(it) }
                     if (interrupted != null) add(interruptedCheck(interrupted))
                     add(notificationCheck())
                     add(accessibilityChannelCheck())
@@ -81,6 +83,32 @@ class CaptureDiagnosticsViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    /**
+     * 最近一次 Java 崩溃（全局捕获器写盘）。用户报告「一点就闪退」时，
+     * 这里会直接给出异常类型与栈首行——这是最硬的证据。
+     */
+    private fun crashCheck(): CheckItem? {
+        val raw = CrashLog.last(context) ?: return null
+        val time = raw.lineSequence().firstOrNull { it.startsWith("time=") }
+            ?.removePrefix("time=")?.toLongOrNull()
+        val process = raw.lineSequence().firstOrNull { it.startsWith("process=") }?.removePrefix("process=").orEmpty()
+        val exceptionLine = raw.lineSequence()
+            .firstOrNull { it.contains("Exception") || it.contains("Error") || it.contains("Throwable") }
+            ?.trim()
+            ?.take(180)
+            .orEmpty()
+        val timeText = time?.let {
+            java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it))
+        } ?: "未知时间"
+        return CheckItem(
+            name = "最近一次崩溃记录",
+            ok = false,
+            detail = "$timeText${if (process.isNotBlank()) " · $process" else ""}：" +
+                (exceptionLine.ifBlank { "已记录，详情见「复制诊断信息」" }),
+            advice = "点「复制诊断信息」把完整栈发我；点「清除记录」可清空"
+        )
     }
 
     /** 上次自检过程中进程被杀：这是 native 崩溃/OOM 的直接证据，必须显式展示。 */
@@ -164,6 +192,15 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     /** 主动自检：真实执行一次截屏 + OCR + 提取，逐项实时显示。 */
     fun runSelfCheck() = viewModelScope.launch {
         if (_state.value.running) return@launch
+        // 上次如果崩在截屏步骤，直接再跑一次大概率再次闪退 → 自动降级为安全模式
+        val lastInterrupted = SelfCheckGuard.lastInterruptedStep(context)
+        if (lastInterrupted != null && lastInterrupted.contains("截屏")) {
+            environmentCheck(
+                note = "上次自检在「$lastInterrupted」步骤被系统终止，本次已自动切换为环境检查（不截屏）。" +
+                    "可先确认通道状态；如需定位截屏崩溃，请把「复制诊断信息」的内容反馈。"
+            )
+            return@launch
+        }
         _state.update {
             it.copy(running = true, items = emptyList(), currentStep = "准备中", message = null)
         }
@@ -264,11 +301,46 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 安全模式自检：只做环境检查（权限/通道），完全不截屏。
+     * 用于「点开始自检就闪退」时先确认基础状态，排除截屏环节。
+     */
+    fun runEnvironmentOnlyCheck() = viewModelScope.launch {
+        if (_state.value.running) return@launch
+        environmentCheck()
+    }
+
+    private suspend fun environmentCheck(note: String? = null) {
+        _state.update {
+            it.copy(running = true, items = emptyList(), currentStep = "环境检查（安全模式）", message = null)
+        }
+        enterStep("环境检查（安全模式）")
+        note?.let { publish(CheckItem("安全模式说明", false, it, "把「复制诊断信息」的内容反馈给开发者可定位该步骤崩溃")) }
+        publish(notificationCheck())
+        publish(accessibilityChannelCheck())
+        publish(projectionChannelCheck())
+        val ready = channels.anyChannelReady()
+        publish(
+            CheckItem(
+                name = "通道结论",
+                ok = ready,
+                detail = if (ready) "至少一条截屏通道可用" else "两条通道都不可用",
+                advice = if (ready) "" else "先开启无障碍服务，或点「授权截屏」"
+            )
+        )
+        finishRun(
+            if (ready) null else CaptureFailReason.NO_CHANNEL,
+            emptyList(),
+            keepInterruptMarker = note != null
+        )
+    }
+
     /** 收尾：落盘诊断、结束监督状态。 */
     private suspend fun finishRun(
         reason: CaptureFailReason?,
         extra: List<DiagnosticStep>,
-        preview: String = ""
+        preview: String = "",
+        keepInterruptMarker: Boolean = false
     ) {
         val snapshot = _state.value.items
         runCatching {
@@ -282,7 +354,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
                 )
             )
         }
-        SelfCheckGuard.markFinished(context)
+        // 自动降级时保留中断标记：避免用户每次点都重复触发同一步崩溃
+        if (!keepInterruptMarker) SelfCheckGuard.markFinished(context)
         _state.update {
             it.copy(
                 running = false,
@@ -294,6 +367,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
 
     fun clearReport() {
         CaptureDiagnostics.clear(context)
+        CrashLog.clear(context)
+        SelfCheckGuard.clear(context)
         _state.update { it.copy(last = null, textPreview = "") }
         refresh()
     }
@@ -313,6 +388,10 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         sb.appendLine("最后连接时间：${if (lastConnected > 0) fmt.format(java.util.Date(lastConnected)) else "从未连上"}")
         sb.appendLine("上次截屏能力：${permissionGuide.accessibilityCanTakeScreenshot()}")
         s.items.forEach { sb.appendLine("${if (it.ok) "✓" else "✗"} ${it.name}：${it.detail}") }
+        CrashLog.last(context)?.let { crash ->
+            sb.appendLine("--- 最近一次崩溃 ---")
+            sb.appendLine(crash.take(3000))
+        }
         s.last?.let { report ->
             sb.appendLine("--- 最近一次识屏 ---")
             sb.appendLine("时间：${fmt.format(java.util.Date(report.timeMillis))}")

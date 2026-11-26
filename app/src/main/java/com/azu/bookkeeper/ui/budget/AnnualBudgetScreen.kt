@@ -134,7 +134,7 @@ fun AnnualBudgetScreen(vm: AnnualBudgetViewModel = hiltViewModel()) {
                             color = if (state.over) ExpenseRed else MaterialTheme.colorScheme.primary
                         )
                         LinearProgressIndicator(
-                            progress = state.progress,
+                            progress = { state.progress },
                             modifier = Modifier.fillMaxWidth().height(8.dp)
                         )
                         Row(Modifier.fillMaxWidth()) {

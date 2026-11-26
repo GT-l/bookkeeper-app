@@ -175,7 +175,7 @@ fun InstallmentsScreen(vm: InstallmentsViewModel = hiltViewModel()) {
                                     color = MaterialTheme.colorScheme.primary)
                             }
                             LinearProgressIndicator(
-                                progress = if (plan.periods > 0) plan.paidPeriods.toFloat() / plan.periods else 0f,
+                                progress = { if (plan.periods > 0) plan.paidPeriods.toFloat() / plan.periods else 0f },
                                 modifier = Modifier.fillMaxWidth().height(6.dp)
                             )
                             Text("已还 ${plan.paidPeriods}/${plan.periods} 期${if (plan.finished) " · 已结清" else ""}",

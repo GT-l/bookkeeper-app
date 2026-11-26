@@ -209,7 +209,7 @@ fun DebtsScreen(vm: DebtsViewModel = hiltViewModel()) {
                                     color = MaterialTheme.colorScheme.primary)
                             }
                             LinearProgressIndicator(
-                                progress = debt.settledPercent / 100f,
+                                progress = { debt.settledPercent / 100f },
                                 modifier = Modifier.fillMaxWidth().height(6.dp)
                             )
                             Text("已还 ${debt.settledPercent}% · ${debt.status.label}",

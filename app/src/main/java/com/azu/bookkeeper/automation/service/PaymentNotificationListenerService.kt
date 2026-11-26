@@ -66,7 +66,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 
         val entry = deps
         val tagger: DouyinBusinessTagger = runCatching { entry.tagger() }.getOrNull() ?: return
-        val parser: NotificationCaptureParser = runCatching { entry.parser() }.getOrNull() ?: return
+        val parser: NotificationCaptureParser = runCatching { entry.notificationParser() }.getOrNull() ?: return
         val coordinator: CaptureCoordinator = runCatching { entry.coordinator() }.getOrNull() ?: return
         val io: CoroutineDispatcher = runCatching { entry.ioDispatcher() }.getOrNull()
             ?: kotlinx.coroutines.Dispatchers.IO
@@ -89,7 +89,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface NotificationDepsEntryPoint {
-    fun parser(): NotificationCaptureParser
+    fun notificationParser(): NotificationCaptureParser
     fun tagger(): DouyinBusinessTagger
     fun coordinator(): CaptureCoordinator
     @IoDispatcher fun ioDispatcher(): CoroutineDispatcher

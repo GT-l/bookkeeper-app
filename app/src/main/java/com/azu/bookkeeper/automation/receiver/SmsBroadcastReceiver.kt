@@ -50,7 +50,7 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
         val entry = runCatching {
             EntryPointAccessors.fromApplication(context.applicationContext, SmsDepsEntryPoint::class.java)
         }.getOrNull() ?: return
-        val parser = runCatching { entry.parser() }.getOrNull() ?: return
+        val parser = runCatching { entry.smsParser() }.getOrNull() ?: return
         val coordinator = runCatching { entry.coordinator() }.getOrNull() ?: return
         val automationSettings = runCatching { entry.automationSettings() }.getOrNull() ?: return
         val settings = runCatching { entry.settings() }.getOrNull() ?: return
@@ -133,7 +133,7 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface SmsDepsEntryPoint {
-    fun parser(): SmsCaptureParser
+    fun smsParser(): SmsCaptureParser
     fun coordinator(): CaptureCoordinator
     fun automationSettings(): AutomationSettingsDataStore
     fun settings(): SettingsRepository

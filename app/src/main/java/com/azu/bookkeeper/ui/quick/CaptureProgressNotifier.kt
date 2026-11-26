@@ -74,17 +74,35 @@ class CaptureProgressNotifier @Inject constructor(
         )
     }
 
-    /** 失败：点击手动记一笔（失败时同时会自动打开表单，通知是兜底入口）。 */
-    fun showFailed(contentIntent: PendingIntent) {
+    /** 失败：标题直接写明失败原因，点击手动记一笔（失败时同时会自动打开表单）。 */
+    fun showFailed(contentIntent: PendingIntent, reason: com.azu.bookkeeper.core.CaptureFailReason? = null) {
+        val title = reason?.let { "识屏失败：${it.title}" } ?: "识屏失败 · 点击手动记一笔"
+        val text = reason?.advice ?: "截屏授权或识别未完成，可手动输入金额"
         post(
             NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_quick_add)
-                .setContentTitle("识屏失败 · 点击手动记一笔")
-                .setContentText("截屏授权或识别未完成，可手动输入金额")
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setOngoing(false)
                 .setAutoCancel(true)
                 .setContentIntent(contentIntent)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build()
+        )
+    }
+
+    /** 没有截屏授权：引导用户点通知去授权（后台无法直接弹系统的授权对话框）。 */
+    fun showNeedAuth(authIntent: PendingIntent) {
+        post(
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_quick_add)
+                .setContentTitle("识屏需要截屏授权")
+                .setContentText("点这里授权，授权后会自动继续识屏")
+                .setOngoing(false)
+                .setAutoCancel(true)
+                .setContentIntent(authIntent)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build()
         )
     }

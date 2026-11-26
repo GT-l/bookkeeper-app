@@ -110,14 +110,31 @@ class AutoCaptureForegroundService : Service() {
         return try {
             val notification = buildNotification()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // API 34+ 只声明 specialUse；mediaProjection 会话按需另行处理，
-                // 不在无投影时混用类型，避免严格 ROM 校验失败。
-                ServiceCompat.startForeground(
-                    this,
-                    Constants.FOREGROUND_SERVICE_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                )
+                // Android 14+：调用 createVirtualDisplay 前必须有 mediaProjection 类型的 FGS 在跑。
+                // 识屏链路会先发 ACTION_START_PROJECTION，这里按需把类型并上去；
+                // ROM 若拒绝（未授权投影等），回退为纯 specialUse，保证服务本身不崩。
+                val needsProjection = intent?.action == ACTION_START_PROJECTION
+                val specialUse = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                val started = if (needsProjection) {
+                    runCatching {
+                        ServiceCompat.startForeground(
+                            this,
+                            Constants.FOREGROUND_SERVICE_ID,
+                            notification,
+                            specialUse or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                        )
+                    }.isSuccess
+                } else {
+                    false
+                }
+                if (!started) {
+                    ServiceCompat.startForeground(
+                        this,
+                        Constants.FOREGROUND_SERVICE_ID,
+                        notification,
+                        specialUse
+                    )
+                }
             } else {
                 startForeground(Constants.FOREGROUND_SERVICE_ID, notification)
             }
@@ -178,6 +195,9 @@ class AutoCaptureForegroundService : Service() {
         const val ACTION_START = "com.azu.bookkeeper.action.AUTO_CAPTURE_START"
         const val ACTION_STOP = "com.azu.bookkeeper.action.AUTO_CAPTURE_STOP"
 
+        /** 识屏前把服务以 mediaProjection 类型拉起（Android 14+ createVirtualDisplay 的前置条件）。 */
+        const val ACTION_START_PROJECTION = "com.azu.bookkeeper.action.AUTO_CAPTURE_START_PROJECTION"
+
         private const val AUTO_DISABLED_NOTIFICATION_ID = 1004
         private const val STATE_WRITE_TIMEOUT_MS = 500L
 
@@ -200,6 +220,23 @@ class AutoCaptureForegroundService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, AutoCaptureForegroundService::class.java).setAction(ACTION_STOP)
             context.stopService(intent)
+        }
+
+        /**
+         * 以 mediaProjection 类型拉起（或升级）前台服务；失败不抛异常。
+         * Android 14+ 若没有该类型的前台服务，createVirtualDisplay 会直接 SecurityException。
+         */
+        fun startForProjection(context: Context): Boolean = try {
+            val intent = Intent(context, AutoCaptureForegroundService::class.java)
+                .setAction(ACTION_START_PROJECTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            true
+        } catch (_: Exception) {
+            false
         }
 
         /** 通知是否真正可见（Android 13+ 等价于 POST_NOTIFICATIONS 是否授予）。 */

@@ -84,6 +84,13 @@
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- 截屏授权中转页：摇一摇缺授权时自动拉起，只弹系统授权对话框 -->
+        <activity
+            android:name=".ui.quick.ScreenCaptureAuthActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- T4：导出文件 / 失败明细 CSV / 备份包经 FileProvider 临时授权分享 -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -6,6 +6,10 @@ import com.azu.bookkeeper.automation.ocr.FieldExtractor
 import com.azu.bookkeeper.automation.ocr.OcrEngine
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
+import com.azu.bookkeeper.core.CaptureDiagnostics
+import com.azu.bookkeeper.core.CaptureFailReason
+import com.azu.bookkeeper.core.CaptureReport
+import com.azu.bookkeeper.core.DiagnosticStep
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.core.di.MainDispatcher
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
@@ -19,22 +23,26 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** 识屏结果：失败时带可读原因，供 Toast / 通知 / 自检页展示。 */
+data class CaptureOutcome(
+    val amountFen: Long?,
+    val merchant: String,
+    val reason: CaptureFailReason? = null,
+    val detail: String = ""
+) {
+    val success: Boolean get() = reason == null
+}
+
 /**
  * 快捷入口专用的轻量识屏器。
  *
- * 为什么单独做：原来的 [com.azu.bookkeeper.ui.quick.QuickCaptureTrigger] 依赖
- * CaptureCoordinator 全家桶（OCR + 分类 + 去重 + 校验弹窗 + 多个 Repository + 数据库事务）。
- * 从前台服务里通过 Hilt EntryPoint 取它时，只要依赖图里任何一环构造失败（常见于
- * 权限刚变更、进程被系统重启、数据库尚未就绪），getOrNull() 就返回 null，
- * 用户看到的是「识屏组件不可用」而不是表单 —— 这个体验很糟。
- *
- * 这里只保留「截屏 → OCR → 智能提取 → 打开带预填的表单让用户确认」这条最短路径，
- * 依赖极轻（四个无状态单例 + 进度通知），不写库、不弹校对窗，因此不会因重型依赖构造失败而罢工。
- * 用户确认后保存仍走既有 AddBillUseCase，数据完整性不变。
- *
- * 进度反馈（灵动岛适配）：截屏/识别/提取各阶段通过 [CaptureProgressNotifier] 投递
- * ongoing 进度通知——小米焦点通知 / 华为荣耀实况窗 / OPPO 流体云会自动聚合成顶部胶囊，
- * 其余 ROM 显示通知栏进度；失败时同时自动打开表单让用户手动记一笔。
+ * 链路：截屏（带原因）→ 中文 OCR → 智能提取 → 打开带预填的表单让用户确认。
+ * 任何一步失败都会：
+ * 1) 记录完整步骤到 [CaptureDiagnostics]（自检页可查）；
+ * 2) 进度通知改成「识屏失败：<具体原因>」；
+ * 3) Toast 一句话原因；
+ * 4) 自动打开记账表单让用户手动输入。
+ * 这样用户不需要猜，能直接知道卡在哪一环。
  */
 @Singleton
 class LightweightCapture @Inject constructor(
@@ -50,69 +58,96 @@ class LightweightCapture @Inject constructor(
     /** 没有 MediaProjection 会话：需要用户先授权截屏。 */
     fun needsAuthorization(): Boolean = !screenCapture.hasActiveSession()
 
-    /**
-     * 触发一次轻量识屏。
-     * @param onOpenForm 拿到预填值（或空值）后在主线程打开表单；amountFen 为 null 表示没识别到
-     */
-    fun captureIntoForm(
-        scope: CoroutineScope,
-        onOpenForm: (amountFen: Long?, merchant: String) -> Unit
-    ) {
+    fun captureIntoForm(scope: CoroutineScope, onResult: (CaptureOutcome) -> Unit) {
         scope.launch {
+            val steps = mutableListOf<DiagnosticStep>()
+            val startedAt = System.currentTimeMillis()
+
+            fun fail(reason: CaptureFailReason, detail: String) {
+                steps += DiagnosticStep(reason.title, false, detail)
+                Timber.w("识屏失败: %s | %s", reason.name, detail)
+                runCatching {
+                    CaptureDiagnostics.record(
+                        context,
+                        CaptureReport(startedAt, reason, steps.toList())
+                    )
+                }
+                runCatching { progress.showFailed(manualEntryIntent(), reason) }
+                runCatching { toast("识屏失败：${reason.title}") }
+                onResult(CaptureOutcome(null, "", reason, detail))
+            }
+
+            steps += DiagnosticStep(
+                "截屏授权会话",
+                !needsAuthorization(),
+                if (needsAuthorization()) "无会话" else "已授权"
+            )
+            if (needsAuthorization()) {
+                fail(CaptureFailReason.NO_SESSION, "hasActiveSession == false")
+                return@launch
+            }
+
             runCatching {
                 progress.showStage(CaptureProgressNotifier.Stage.CAPTURE)
-                val path = withContext(ioDispatcher) { screenCapture.capture() }
-                if (path == null) {
-                    Timber.w("lightweight capture: screen frame unavailable")
-                    onFail(onOpenForm)
+                val frame = withContext(ioDispatcher) { screenCapture.captureWithReason() }
+                if (!frame.success) {
+                    fail(frame.reason ?: CaptureFailReason.UNKNOWN, frame.detail)
                     return@launch
                 }
+                steps += DiagnosticStep("截屏", true, frame.detail)
+                val path = frame.path!!
+
                 progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE)
                 val result = withContext(ioDispatcher) { ocr.recognizeFromFile(path) }
-                progress.showStage(CaptureProgressNotifier.Stage.EXTRACT)
-                // 智能分析器优先（多因子打分）；极端情况（识别到旧格式文案）退回早期提取器
-                val analysis = analyzer.analyze(result.rawText)
-                val amountFen = analysis.amountFen
-                    ?: extractor.extract(result.rawText, System.currentTimeMillis()).amountFen
-                val merchant = analysis.merchant.ifBlank {
-                    extractor.extract(result.rawText, System.currentTimeMillis()).merchant
+                if (result.rawText.isBlank()) {
+                    fail(CaptureFailReason.OCR_EMPTY, "empty text, confidence=${result.confidence}")
+                    return@launch
                 }
-                Timber.i(
-                    "lightweight capture ok: ocrConf=%.2f extractConf=%.2f paid=%b amount=%s merchant=%s",
-                    result.confidence, analysis.confidence, analysis.paidConfirmed,
-                    amountFen?.toString() ?: "null", merchant.ifBlank { "-" }
+                steps += DiagnosticStep(
+                    "OCR", true, "${result.rawText.length} 字 / ${result.blockCount} 块 / conf=${"%.2f".format(result.confidence)}"
                 )
-                progress.showResult(
-                    amountFen,
-                    merchant,
-                    QuickCaptureLauncher.pendingIntent(
+
+                progress.showStage(CaptureProgressNotifier.Stage.EXTRACT)
+                val analysis = analyzer.analyze(result.rawText)
+                val fallback = extractor.extract(result.rawText, System.currentTimeMillis())
+                val amountFen = analysis.amountFen ?: fallback.amountFen
+                val merchant = analysis.merchant.ifBlank { fallback.merchant }
+
+                if (amountFen == null) {
+                    steps += DiagnosticStep("提取金额", false, "无候选金额，文本前 40 字：${result.rawText.take(40)}")
+                    runCatching {
+                        CaptureDiagnostics.record(
+                            context,
+                            CaptureReport(
+                                startedAt, CaptureFailReason.EXTRACT_EMPTY, steps.toList(),
+                                textPreview = result.rawText
+                            )
+                        )
+                    }
+                    runCatching { progress.showFailed(manualEntryIntent(), CaptureFailReason.EXTRACT_EMPTY) }
+                    runCatching { toast("没识别到金额，已打开表单请手动输入") }
+                    onResult(CaptureOutcome(null, merchant, CaptureFailReason.EXTRACT_EMPTY, "no amount candidate"))
+                    return@launch
+                }
+
+                steps += DiagnosticStep(
+                    "提取金额", merchant.isNotBlank(),
+                    "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }} / conf=${"%.2f".format(analysis.confidence)}"
+                )
+                steps += DiagnosticStep("进度通知", true, "已投递")
+                runCatching {
+                    CaptureDiagnostics.record(
                         context,
-                        QuickCaptureRequest(
-                            entry = QuickEntry.SYSTEM_GESTURE,
-                            amountFen = amountFen,
-                            merchant = merchant
-                        ),
-                        REQUEST_CODE_RESULT
+                        CaptureReport(startedAt, null, steps.toList(), result.rawText)
                     )
-                )
-                withContext(mainDispatcher) { onOpenForm(amountFen, merchant) }
+                }
+                progress.showResult(amountFen, merchant, resultIntent(amountFen, merchant))
+                withContext(mainDispatcher) { onResult(CaptureOutcome(amountFen, merchant)) }
             }.onFailure { e ->
                 Timber.w(e, "lightweight capture failed")
-                onFail(onOpenForm)
+                fail(CaptureFailReason.UNKNOWN, "${e.javaClass.simpleName}: ${e.message}")
             }
         }
-    }
-
-    /** 失败路径：进度通知换成「点击手动记一笔」，同时自动打开空表单。 */
-    private suspend fun onFail(onOpenForm: (amountFen: Long?, merchant: String) -> Unit) {
-        progress.showFailed(
-            QuickCaptureLauncher.pendingIntent(
-                context,
-                QuickCaptureRequest(entry = QuickEntry.SYSTEM_GESTURE),
-                REQUEST_CODE_FAILED
-            )
-        )
-        withContext(mainDispatcher) { onOpenForm(null, "") }
     }
 
     /** 构造打开表单的 Intent（带 OCR 预填）。 */
@@ -124,6 +159,24 @@ class LightweightCapture @Inject constructor(
         )
         return QuickCaptureLauncher.intent(context, request)
     }
+
+    private fun resultIntent(amountFen: Long?, merchant: String): android.app.PendingIntent =
+        QuickCaptureLauncher.pendingIntent(
+            context,
+            QuickCaptureRequest(
+                entry = QuickEntry.SYSTEM_GESTURE,
+                amountFen = amountFen,
+                merchant = merchant
+            ),
+            REQUEST_CODE_RESULT
+        )
+
+    private fun manualEntryIntent(): android.app.PendingIntent =
+        QuickCaptureLauncher.pendingIntent(
+            context,
+            QuickCaptureRequest(entry = QuickEntry.SYSTEM_GESTURE),
+            REQUEST_CODE_FAILED
+        )
 
     fun toast(message: String, duration: Int = Toast.LENGTH_SHORT) {
         Toast.makeText(context, message, duration).show()

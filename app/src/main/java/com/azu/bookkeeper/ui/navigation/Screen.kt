@@ -31,6 +31,9 @@ sealed class Screen(val route: String) {
     data object NotificationSettings : Screen("notification_settings")
     data object QuickGestureSettings : Screen("quick_gesture_settings")
 
+    /** 识屏自检与失败原因诊断。 */
+    data object CaptureDiagnostics : Screen("capture_diagnostics")
+
     companion object {
         const val ARG_BILL_ID = "billId"
         const val ARG_ACCOUNT_ID = "accountId"

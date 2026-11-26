@@ -21,6 +21,10 @@ import androidx.core.app.ServiceCompat
 import com.azu.bookkeeper.MainActivity
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.CaptureDiagnostics
+import com.azu.bookkeeper.core.CaptureFailReason
+import com.azu.bookkeeper.core.CaptureReport
+import com.azu.bookkeeper.core.DiagnosticStep
 import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.ShakeActions
@@ -94,6 +98,8 @@ class ShakeQuickAddService : Service() {
             }
             registerSensor()
             isRunning = true
+            // 授权完成后由授权页发 ACTION_CAPTURE_NOW 回来继续识屏（必须在 startForeground 之后）
+            if (intent?.action == ACTION_CAPTURE_NOW) runCatching { triggerScreenCapture() }
             START_NOT_STICKY
         } catch (t: Throwable) {
             Timber.e(t, "ShakeQuickAddService start failed")
@@ -139,28 +145,68 @@ class ShakeQuickAddService : Service() {
     }
 
     /**
-     * 摇一摇 → 轻量识屏：截屏 + OCR + 提取金额/商家 → 带预填打开表单。
-     * 不再走 CaptureCoordinator 重型管线，避免依赖图构造失败导致「识屏组件不可用」。
-     * 未授权截屏或识别失败都直接打开表单让用户手动输入。
+     * 摇一摇 → 轻量识屏：截屏 + OCR + 智能提取 → 带预填打开表单。
+     *
+     * 多重提醒：
+     * - 没有截屏授权：自动拉起透明授权页；被 ROM 拦下则发「点击授权」通知；
+     * - 任一环节失败：Toast 明确原因 + 进度通知标题写明原因 + 自检页留痕 + 自动打开表单。
      */
     private fun triggerScreenCapture() {
         val capture = runCatching { entryPoint.lightweightCapture() }.getOrNull()
         if (capture == null) {
-            openForm("识屏暂不可用，已打开记一笔，请手动输入")
+            recordDiagnostic(
+                CaptureFailReason.UNKNOWN,
+                listOf(DiagnosticStep("依赖注入", false, "LightweightCapture 取不到"))
+            )
+            openForm("识屏组件加载失败，已打开记一笔")
             return
         }
         if (capture.needsAuthorization()) {
-            openForm("请先完成一次截屏授权，已打开记一笔")
+            requestCaptureAuthorization(capture)
             return
         }
-        capture.toast("正在识别屏幕…")
-        capture.captureIntoForm(scope) { amountFen, merchant ->
-            val message = if (amountFen != null && amountFen > 0L) {
-                "识别完成，请确认金额后保存"
-            } else {
-                "没有识别到金额，请手动输入"
+        capture.captureIntoForm(scope) { outcome ->
+            val message = when {
+                outcome.amountFen != null && outcome.amountFen > 0L -> "识别完成，请确认金额后保存"
+                !outcome.success -> "识屏失败：${outcome.reason?.title}，请手动输入"
+                else -> "没有识别到金额，请手动输入"
             }
-            openCaptureForm(capture, amountFen, merchant, message)
+            openCaptureForm(capture, outcome.amountFen, outcome.merchant, message)
+        }
+    }
+
+    /** 没有截屏授权：优先拉起透明授权页；被 ROM 拦截则发可点击的「去授权」通知兜底。 */
+    private fun requestCaptureAuthorization(capture: LightweightCapture) {
+        val authIntent = Intent(this, ScreenCaptureAuthActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launched = runCatching { startActivity(authIntent) }.isSuccess
+        if (launched) {
+            capture.toast("请允许屏幕捕获，授权后会自动继续识屏")
+            return
+        }
+        recordDiagnostic(
+            CaptureFailReason.NEED_AUTH_LAUNCH_FAILED,
+            listOf(DiagnosticStep("拉起授权页", false, "后台启动 Activity 被系统拦截"))
+        )
+        runCatching {
+            val pi = PendingIntent.getActivity(
+                this,
+                2007,
+                authIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            entryPoint.captureProgress().showNeedAuth(pi)
+        }
+        openForm("识屏需要截屏授权，已打开记一笔")
+    }
+
+    /** 统一记录诊断（自检页展示最近一次失败步骤）。 */
+    private fun recordDiagnostic(reason: CaptureFailReason, steps: List<DiagnosticStep>) {
+        runCatching {
+            CaptureDiagnostics.record(
+                applicationContext,
+                CaptureReport(System.currentTimeMillis(), reason, steps)
+            )
         }
     }
 
@@ -306,6 +352,9 @@ class ShakeQuickAddService : Service() {
     companion object {
         const val ACTION_STOP = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_STOP"
         const val ACTION_REFRESH = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_REFRESH"
+
+        /** 截屏授权完成后继续识屏。 */
+        const val ACTION_CAPTURE_NOW = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_CAPTURE_NOW"
         private const val NOTIFICATION_ID = 1020
         private const val ONGOING_CHANNEL_ID = "shake_ongoing"
         private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
@@ -342,6 +391,19 @@ class ShakeQuickAddService : Service() {
                 context.stopService(Intent(context, ShakeQuickAddService::class.java).setAction(ACTION_STOP))
             }
         }
+
+        /** 授权完成后继续识屏；服务没在跑时顺带拉起（onStartCommand 内会先 startForeground）。 */
+        fun captureNow(context: Context) {
+            runCatching {
+                val intent = Intent(context, ShakeQuickAddService::class.java)
+                    .setAction(ACTION_CAPTURE_NOW)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }
+        }
     }
 }
 
@@ -351,4 +413,5 @@ class ShakeQuickAddService : Service() {
 interface ShakeActionEntryPoint {
     fun automationSettings(): AutomationSettingsDataStore
     fun lightweightCapture(): LightweightCapture
+    fun captureProgress(): CaptureProgressNotifier
 }

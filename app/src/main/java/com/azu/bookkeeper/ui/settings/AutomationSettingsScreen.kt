@@ -195,6 +195,11 @@ fun AutomationSettingsScreen(
                 onClick = { navController.navigate(Screen.NotificationSettings.route) },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             ) { Text("通知栏显示内容") }
+            // 识屏失败时用户能直接看到原因与修复建议（不用再猜「识屏不可用」）
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.CaptureDiagnostics.route) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) { Text("识屏自检 / 查看失败原因") }
 
             if (state.safeModeActive) {
                 Card(

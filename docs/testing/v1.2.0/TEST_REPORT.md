@@ -1,7 +1,7 @@
 # v1.2.0 测试报告：问题清单、修复方案与风险点
 
 日期：2026-11-27
-对象：`31727bb..79a74ef`（数据库 v1→v2；统计增强；退款 / 报销 / 批量 / 债务 / 分期 / 年度预算 / 信用卡提醒；CI 错误摘要）
+对象：`31727bb` 起、含本轮全部修复提交（数据库 v1→v2；统计增强；退款 / 报销 / 批量 / 债务 / 分期 / 年度预算 / 信用卡提醒；CI 错误摘要与编译修复）
 
 ## 一、测试环境与方法
 
@@ -34,7 +34,7 @@
 |---|---|---|---|---|---|
 | 1 | Release 正文表达式超过 21000 字符 | GitHub Actions 解析 workflow 失败，run 未真正开始构建 | 把 `body:` 模板压缩为精简版，只保留本版新增、已有能力、隐私、反馈要求 | 正文细节减少；完整说明留在仓库 `README.md` 与 `docs/testing/` | 已修（`d6851dd`） |
 | 2 | Material3 `LinearProgressIndicator.progress` 需要 lambda | Kotlin 编译报类型不匹配，3 处（预算 / 债务 / 分期） | 三处统一改为 `progress = { value }` 的 lambda 形式 | 低风险，仅 API 适配；静态脚本已锁住 3 个文件 | 已修（`f43c327`） |
-| 3 | CI 编译失败原因无法从公开 API 直接读取 | 失败 run 的 `logs` 与 artifact 下载端点需要鉴权，本地 `gh` 不可用 | 新增 `Summarize build errors` 步骤，把首条 `e: ...` 清洗后写进 artifact 名，公开 API 可读 | artifact 名有长度限制，只保留首条错误的前 90 字符；完整日志仍需用户在 Actions 页下载 | 已修（`79a74ef`），用于定位剩余错误 |
+| 3 | CI 编译失败原因无法从公开 API 直接读取 | 失败 run 的 `logs` 与 artifact 下载端点需要鉴权，本地 `gh` 不可用 | 新增 `Summarize build errors` 步骤，把首条 `e: ...` 清洗后写进 artifact 名，公开 API 可读 | artifact 名有长度限制，只保留首条错误的行号 + 消息前 70 字符；完整日志仍需用户在 Actions 页下载 | 已修（`79a74ef`），用于定位剩余错误 |
 | 4 | 新增业务可能绕过余额单一事务入口 | 退款 / 报销 / 债务 / 分期 / 批量如果直写 `balance_fen`，会出现两处写余额、对不上账 | 全部走 `BillRepository.addWithBalanceTx / updateWithBalanceTx / deleteWithBalanceTx`；静态检查 `T-TX-*` 禁止出现 `updateBalance(` 与 `balance_fen` | 逐笔调用带来部分成功语义，UI 需返回成功数并提示失败项 | 已修（架构约束 + 静态锁死） |
 | 5 | 数据库升级可能重复建表 / 重复加列 | 老用户升级、或迁移被重试 | `CREATE TABLE IF NOT EXISTS`；加列前 `PRAGMA table_info` 查列；`addMigrations(MIGRATION_1_2)` 显式注册 | 迁移不可逆；升级前建议用户导出备份（已在真机清单第 1、10 条覆盖） | 已修 |
 | 6 | 统计增强把余额校准与转账算成支出 | 资产校准后年度预算、热力图、同比环比虚增 | `StatsEnhanceCalculator` 统一过滤 `isAdjustment` 与 `BillType.TRANSFER`；JVM 单测覆盖 | 与旧统计口径保持一致；下钻明细仍可看到转账（灰色无符号） | 已修 |

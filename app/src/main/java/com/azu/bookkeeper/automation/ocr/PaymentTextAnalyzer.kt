@@ -140,8 +140,14 @@ class PaymentTextAnalyzer @Inject constructor() {
      */
     private fun extractBestGoods(lines: List<String>, merchant: String): String {
         for (line in lines) {
+            // 「商品说明」独占一行时，正则的 `商品` 备选会把 `说明` 当成值（长度恰好 2），
+            // 于是返回假商品名「说明」，真正的值在下一行却永远没机会读。
+            // 先把纯标签行排除，交给下面的「取下一行」分支处理。
+            if (line in GOODS_BARE_LABELS) continue
             val match = GOODS_LABELLED.find(line) ?: continue
-            val cleaned = normalizeGoods(match.groupValues.getOrNull(1).orEmpty(), merchant)
+            val captured = match.groupValues.getOrNull(1).orEmpty().trim()
+            if (captured in GOODS_BARE_LABELS) continue
+            val cleaned = normalizeGoods(captured, merchant)
             if (cleaned.isNotBlank()) return cleaned
         }
         for ((index, line) in lines.withIndex()) {

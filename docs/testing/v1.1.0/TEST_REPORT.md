@@ -19,7 +19,7 @@
 | 测试 | 初测结果 | 修复后结果 |
 |---|---|---|
 | `python3 scripts/verify_v1_1_0.py` | 45/46 通过，1 项失败（删除提示被刷新抹掉） | **59/59 通过** |
-| 新增 JVM 单测（StorageAuditLogicTest 7 例 + ProfileSummaryLogicTest 6 例） | **130 例中 1 例失败**：`assertEquals(0.25f, ...)` 命中 JUnit 4 已废弃的二参数浮点重载，测试代码问题，非产品缺陷 | 改为 `assertEquals(0.25f, ratio, 0.0001f)` 后 CI 全绿；统计写进 artifact 名 |
+| 新增 JVM 单测（StorageAuditLogicTest 7 例 + ProfileSummaryLogicTest 6 例） | **130 例中 1 例失败**：`assertEquals(0.25f, ...)` 命中 JUnit 4 已废弃的二参数浮点重载（测试代码问题）；修正后又暴露 1 个**真实产品缺陷**：商品标签行被当成商品名 | 浮点断言改为带 delta；商品标签缺陷按「先排除纯标签行」修复；统计写进 artifact 名 |
 | 逐函数 / 逐流程走查 | 记录 14 个问题（1 个 P1 逻辑错误、5 个 P1 功能/数据问题、8 个 P2 体验或风险） | 14 个问题均已修复并加回归断言 |
 | 真机流程 | 未执行（环境限制） | 见 `TEST_CASES.md` 第三节回归清单，需用户确认 |
 
@@ -34,6 +34,7 @@
 | 3 | tab 复用导致统计页数据不刷新 | `saveState/restoreState` 复用 ViewModel，`init` 不重跑；换账本后回统计仍是旧数据 | **订阅数据源 + 页面进入刷新**：监听 `settings.defaultBookId`，并加 `refresh()` 由 `LaunchedEffect(Unit)` 触发 | 首次进入会重复触发一次加载；用 `loadJob.cancel()` 串行化，旧请求不会覆盖新结果 | 已修 |
 | 4 | 「我的」页把余额校准流水算进收支 | `applyBills` 只过滤 `amountFen>0`，ADJUSTMENT 被计入支出/预算 | **统一统计口径**：排除 `isAdjustment` 与 `TRANSFER`，与 `GetStatisticsUseCase` 对齐 | 记账天数与第一笔时间会随之变化，属预期 | 已修 |
 | 5 | 跨月范围套用起始月预算导致假超支 | 「本年」用 1 月预算 5000 对比全年支出 6 万，显示「超支 5.5 万」 | **同月才取预算**：`monthKey(start)==monthKey(end)` 才读预算，否则 `budgetLimitFen=0` 走无预算分支 | 跨月但恰好整月（6/1–6/30）仍视为同月；`monthKey` 为 `yyyyMM` 已含年份 | 已修 |
+| 15 | 「商品说明」独占一行时被识别成商品名「说明」 | CI 单测 `购买内容 - 标签独占一行时取下一行` 失败：`GOODS_LABELLED` 的 `商品` 备选中了「商品说明」前两字，把「说明」当作值返回，下一行真正商品名永远读不到 | **先排除纯标签行**：同行匹配前跳过 `line in GOODS_BARE_LABELS`，且捕获值仍为标签时也跳过；值由「取下一行」分支处理 | 极端场景下商品名真的叫「说明」会被忽略（概率极低，且原本就无法与标签区分） | 已修 |
 | 6 | 删除成功提示看不见 | `deleteSelected()` 写 message 后同步 `rescan()`，`rescan` 把 message 清成 null；StateFlow 只保留最终值 | **刷新保留提示**：`rescan(clearMessage=false)`，手动点重新扫描仍清空 | 保留旧提示可能误导；手动刷新走默认 `clearMessage=true` | 已修 |
 
 ### P2（体验 / 稳定性风险）
@@ -69,6 +70,6 @@
 ## 六、结论
 
 - 静态测试 **59/59 通过**（修复后）。
-- 走查发现的 14 个问题均已按业界常用方式修复，并为每一项补了回归断言。
-- JVM 单测共 130 例（含本轮新增 13 例）随 CI 执行；首轮暴露 1 例测试代码写法问题并已修正，最终以 GitHub Actions 状态为准。
+- 走查与 CI 共发现的 15 个问题均已按业界常用方式修复，并为每一项补了回归断言。
+- JVM 单测共 130 例（含本轮新增 13 例）随 CI 执行；共发现 15 个问题（14 个走查 + 1 个 CI 单测暴露的真实识别缺陷），均已修复并补回归断言，最终以 GitHub Actions 状态为准。
 - 真机层面的 UI 正确性仍需用户按清单回归；本报告不将未执行项记为通过。

@@ -197,6 +197,12 @@ check("T-FIX-10 首页错误提示自动消失", "viewModel.consumeMessage()" in
 check("T-FIX-11 底栏不再用 AnimatedVisibility", "AnimatedVisibility(" not in navhost)
 check("T-FIX-12 预算百分比两页统一", "val percent =" in summary_cards)
 check("T-FIX-13 PIN 校验纯数字", "pin.all { it.isDigit() }" in settings_vm)
+analyzer = read("app/src/main/java/com/azu/bookkeeper/automation/ocr/PaymentTextAnalyzer.kt")
+check(
+    "T-FIX-14 纯商品标签行不再被当作商品名",
+    "if (line in GOODS_BARE_LABELS) continue" in analyzer
+    and "if (captured in GOODS_BARE_LABELS) continue" in analyzer,
+)
 
 # ---------- 输出 ----------
 failed = [r for r in results if not r[1]]

@@ -63,8 +63,9 @@ object CrashLog {
     }
 
     private fun processName(context: Context): String = runCatching {
+        // processName 是 Application 的属性（API 28+），Context 本身没有该属性
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            context.processName
+            (context.applicationContext as? android.app.Application)?.processName.orEmpty()
         } else {
             ""
         }

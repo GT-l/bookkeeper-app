@@ -182,9 +182,11 @@ jobs:
                   text = f.read()
           errors = re.findall(r"^e: .+", text, re.M)
           if errors:
-              matched = re.match(r"^e: file:///\S+?:(\d+):(\d+): (.*)$", errors[0])
+              matched = re.match(r"^e: file:///(\S+?):(\d+):(\d+): (.*)$", errors[0])
               if matched:
-                  msg = "L%sC%s_%s" % (matched.group(1), matched.group(2), matched.group(3)[:70])
+                  msg = "%s_L%s_%s" % (
+                      os.path.basename(matched.group(1)), matched.group(2), matched.group(4)[:55]
+                  )
               else:
                   msg = errors[0][-90:]
           else:

@@ -19,9 +19,9 @@
 | 测试 | 初测结果 | 修复后结果 |
 |---|---|---|
 | `python3 scripts/verify_v1_2_0.py` | 89/89 通过 | **89/89 通过**（本地复跑确认） |
-| CI `assembleDebug` | 连续 3 次失败：Release 正文表达式超长、Material3 `LinearProgressIndicator` API 变更、另有 1 项编译错误待定位 | 见下方「CI 结论」 |
-| CI `testDebugUnitTest` | 未跑到（编译先失败） | 见下方「CI 结论」 |
-| 逐函数 / 逐流程走查 | 记录 6 类风险点（见第三节） | 均已按主流方案修复并补静态断言 |
+| CI `assembleDebug` | 连续多次失败：Release 正文表达式超长、Material3 `LinearProgressIndicator` API 变更、6 处编译 / 导入 / 构造函数问题 | 见下方「CI 结论」 |
+| CI `testDebugUnitTest` | 初测因编译失败未跑到 | 见下方「CI 结论」 |
+| 逐函数 / 逐流程走查 | 记录 14 项问题（见第三节） | 均已按主流方案修复并补静态断言 |
 | 真机全流程 | 未执行（环境限制） | 见 `TEST_CASES.md` 第三节，需用户确认 |
 
 ### CI 结论

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.azu.bookkeeper.automation.service.AccessibilityScreenshotSource
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
+import com.azu.bookkeeper.core.A11yShotOptIn
 import com.azu.bookkeeper.core.CaptureBreakerStore
 import com.azu.bookkeeper.core.CaptureChannel
 import com.azu.bookkeeper.core.CaptureFailReason
@@ -41,9 +42,17 @@ class CaptureChannels @Inject constructor(
 
     fun accessibilityServiceConnected(): Boolean = accessibility.isServiceConnected()
 
-    /** 无障碍通道「具备能力」且「未被熔断」。 */
+    /** 无障碍截图实验开关是否开启（默认关闭，见 [A11yShotOptIn]）。 */
+    fun accessibilityEnabledByUser(): Boolean = A11yShotOptIn.isEnabled(context)
+
+    /**
+     * 无障碍通道可用 = 服务具备截屏能力 + 未被熔断 + **用户显式开启实验开关**。
+     * 默认关闭：部分 ROM 上该通道会 native 崩溃，不能让用户被动承受闪退。
+     */
     fun accessibilityReady(): Boolean =
-        accessibility.isReady() && !CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)
+        A11yShotOptIn.isEnabled(context) &&
+            accessibility.isReady() &&
+            !CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)
 
     /** 无障碍有截屏能力（不考虑熔断），用于自检页区分「没能力」和「被停用」。 */
     fun accessibilityCapable(): Boolean = accessibility.isReady()
@@ -75,7 +84,7 @@ class CaptureChannels @Inject constructor(
 
         // ---- 通道 1：无障碍截屏（API 30+，免授权）----
         if (CaptureGate.shouldAttempt(
-                accessibility.isReady(),
+                accessibility.isReady() && A11yShotOptIn.isEnabled(context),
                 CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)
             )
         ) {
@@ -120,10 +129,13 @@ class CaptureChannels @Inject constructor(
                 }
             }
         } else {
-            attempts += if (CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY)) {
-                "无障碍截屏：已自动停用（上次使用导致崩溃）"
-            } else {
-                "无障碍截屏：不可用（${if (accessibility.isServiceConnected()) "服务已连但无截屏能力" else "服务未连接"}）"
+            attempts += when {
+                CaptureBreakerStore.isOpen(context, CaptureChannel.ACCESSIBILITY) ->
+                    "无障碍截屏：已自动停用（上次使用导致崩溃）"
+                !A11yShotOptIn.isEnabled(context) ->
+                    "无障碍截屏：未开启（实验功能，默认关闭）"
+                else ->
+                    "无障碍截屏：不可用（${if (accessibility.isServiceConnected()) "服务已连但无截屏能力" else "服务未连接"}）"
             }
         }
 

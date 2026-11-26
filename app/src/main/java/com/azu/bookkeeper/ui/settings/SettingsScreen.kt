@@ -132,6 +132,7 @@ fun SettingsScreen(
                 "标签管理" to Screen.Tags.route,
                 "账本管理" to Screen.Books.route,
                 "自动化设置（T5）" to Screen.AutomationSettings.route,
+                "识屏诊断与日志（可复制）" to Screen.CaptureDiagnostics.route,
                 "导入（T4）" to Screen.Import.route,
                 "统计（T4）" to Screen.Statistics.route,
                 "备份与恢复（T4）" to Screen.Backup.route

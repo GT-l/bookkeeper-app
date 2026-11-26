@@ -192,6 +192,21 @@ fun CaptureDiagnosticsScreen(
                 }
             }
 
+            // 最显眼位置放「复制全部」：用户找不到日志入口是真实反馈，这里放第一屏
+            OutlinedButton(
+                onClick = {
+                    val clipboard = context.getSystemService(
+                        android.content.Context.CLIPBOARD_SERVICE
+                    ) as? android.content.ClipboardManager
+                    val text = viewModel.buildReportText() + "\n\n--- 识屏日志（最近400行）---\n" + viewModel.logPreview(400)
+                    clipboard?.setPrimaryClip(
+                        android.content.ClipData.newPlainText("识屏诊断与日志", text)
+                    )
+                    Toast.makeText(context, "已复制：诊断信息 + 识屏日志，直接粘贴发送", Toast.LENGTH_LONG).show()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+            ) { Text("① 复制全部（诊断 + 日志）← 反馈问题点这里") }
+
             state.message?.let { msg ->
                 Text(
                     msg,

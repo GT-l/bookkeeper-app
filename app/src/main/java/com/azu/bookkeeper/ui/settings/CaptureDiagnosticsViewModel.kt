@@ -137,6 +137,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         val connected = channels.accessibilityServiceConnected()
         val ready = channels.accessibilityReady()
         val disabled = channels.isChannelDisabled(CaptureChannel.ACCESSIBILITY)
+        val optIn = channels.accessibilityEnabledByUser()
+        val capable = channels.accessibilityCapable()
         val lastConnected = permissionGuide.accessibilityLastConnectedAt()
         val lastDisconnected = permissionGuide.accessibilityLastDisconnectedAt()
         val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
@@ -145,6 +147,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
 
         val detail = when {
             disabled -> "已自动停用（上次使用该通道时进程崩溃） · 最后连接 $connectedText"
+            !optIn && capable -> "服务已连且具备截屏能力，但「无障碍截屏（实验）」未开启，当前走媒体投影 · $connectedText"
             ready -> "可用 · 最后连接 $connectedText"
             !connected && killedAfterConnect -> "服务未连接 · 上次 $connectedText 连上后被系统解绑"
             !connected -> "服务未连接 · 最后连接 $connectedText"
@@ -152,6 +155,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         }
         val advice = when {
             disabled -> "点下方「恢复截屏通道」可重新启用（若再次崩溃会再次停用）"
+            !optIn && capable -> "如需免录屏授权截屏，可在自动化设置打开「无障碍截屏（实验）」；若本机曾闪退则不建议开启"
             ready -> ""
             !connected -> "设置 → 无障碍 → 少花点儿，打开服务；打开后回到本页应显示「可用」"
             else -> "关闭无障碍服务再重新打开一次，让截屏能力重新注册"

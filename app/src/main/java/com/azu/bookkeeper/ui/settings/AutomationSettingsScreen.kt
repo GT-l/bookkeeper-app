@@ -199,7 +199,31 @@ fun AutomationSettingsScreen(
             OutlinedButton(
                 onClick = { navController.navigate(Screen.CaptureDiagnostics.route) },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            ) { Text("识屏自检 / 查看失败原因") }
+            ) { Text("识屏诊断与日志（复制日志给开发者）") }
+
+            // 无障碍截屏属于实验能力：部分 ROM 会 native 崩溃，必须由用户显式开启
+            var a11yShotOptIn by remember {
+                mutableStateOf(com.azu.bookkeeper.core.A11yShotOptIn.isEnabled(context))
+            }
+            SettingSwitch(
+                "无障碍截屏（实验，部分机型会闪退）",
+                a11yShotOptIn
+            ) { enabled ->
+                a11yShotOptIn = enabled
+                com.azu.bookkeeper.core.A11yShotOptIn.setEnabled(context, enabled)
+                com.azu.bookkeeper.core.CaptureBreakerStore.reset(context)
+                Toast.makeText(
+                    context,
+                    if (enabled) "已开启无障碍截屏；若出现闪退会自动停用" else "已关闭无障碍截屏，改用媒体投影",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            Text(
+                "默认关闭：无障碍截屏无需录屏授权，但在部分国产 ROM 上会直接崩溃，故改为实验开关。" +
+                    "关闭时识屏走「媒体投影」（需一次性录屏授权，稳定）。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             if (state.safeModeActive) {
                 Card(

@@ -19,14 +19,20 @@
 | 测试 | 初测结果 | 修复后结果 |
 |---|---|---|
 | `python3 scripts/verify_v1_2_0.py` | 89/89 通过 | **89/89 通过**（本地复跑确认） |
-| CI `assembleDebug` | 连续多次失败：Release 正文表达式超长、Material3 `LinearProgressIndicator` API 变更、6 处编译 / 导入 / 构造函数问题 | 见下方「CI 结论」 |
-| CI `testDebugUnitTest` | 初测因编译失败未跑到 | 见下方「CI 结论」 |
+| CI `assembleDebug` | 连续多次失败：Release 正文表达式超长、Material3 API 变更、多起编译 / 导入 / 类型 / 递归问题 | **成功**（run #100，3m45s，仅 2 条 Actions 版本弃用警告） |
+| CI `testDebugUnitTest` | 初测因编译失败未跑到 | **T144-F0-E0-S0**，144 例全过 |
 | 逐函数 / 逐流程走查 | 记录 15 项问题（见第三节） | 均已按主流方案修复并补静态断言 |
 | 真机全流程 | 未执行（环境限制） | 见 `TEST_CASES.md` 第三节，需用户确认 |
 
 ### CI 结论
 
-> 待本轮 CI 完成后填入：run ID、结论、artifact 名（T/F/E/S 与编译错误摘要）。
+**GitHub Actions run #100**（id `45873971486`，提交 `c45441d`）：**Success**，耗时 3m45s。
+
+- `bookkeeper-debug-apk`：52.7 MB（SHA256 `31b95d69b9057e852201994fbd418fb212f388504397c7d09943de93aeee1b89`）。
+- `unit-test-reports-T144-F0-E0-S0`：144 例通过，0 失败、0 错误、0 跳过。
+- `build-log-`：空错误摘要产物（构建成功，无编译错误）。
+- Release `v1.2.0-debug` 已由该 run 创建，正文为 v1.2.0 新模板，APK 附件随 Release 发布。
+- 仅 2 条非阻断警告：`actions/*` 仍用 Node 20、`setup-java@v4` 已弃用；不影响构建与测试。
 
 ## 三、问题清单、修复方案与风险点
 
@@ -69,5 +75,5 @@
 ## 六、结论
 
 - 静态一致性 **89/89 通过**；走查与 CI 编译暴露的 15 项问题均已修复并补回归断言。
-- 编译与单测的最终结论以本轮 GitHub Actions 为准（见「CI 结论」）；未拿到绿色结论前不宣称发布成功。
+- GitHub Actions run #100 已绿色：`assembleDebug` 成功、单测 144/144 通过、Release `v1.2.0-debug` 与 APK 已发布。
 - 真机 10 条全流程清单需用户确认；在此之前，本报告只覆盖静态、JVM 与代码走查层面。

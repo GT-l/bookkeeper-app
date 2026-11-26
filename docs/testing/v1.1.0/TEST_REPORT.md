@@ -19,7 +19,7 @@
 | 测试 | 初测结果 | 修复后结果 |
 |---|---|---|
 | `python3 scripts/verify_v1_1_0.py` | 45/46 通过，1 项失败（删除提示被刷新抹掉） | **59/59 通过** |
-| 新增 JVM 单测（StorageAuditLogicTest 7 例 + ProfileSummaryLogicTest 6 例） | 本机无法执行 | CI 执行中，结果见 Release 对应构建的 `unit-test-reports-T*-F*-E*-S*` artifact 名 |
+| 新增 JVM 单测（StorageAuditLogicTest 7 例 + ProfileSummaryLogicTest 6 例） | **130 例中 1 例失败**：`assertEquals(0.25f, ...)` 命中 JUnit 4 已废弃的二参数浮点重载，测试代码问题，非产品缺陷 | 改为 `assertEquals(0.25f, ratio, 0.0001f)` 后 CI 全绿；统计写进 artifact 名 |
 | 逐函数 / 逐流程走查 | 记录 14 个问题（1 个 P1 逻辑错误、5 个 P1 功能/数据问题、8 个 P2 体验或风险） | 14 个问题均已修复并加回归断言 |
 | 真机流程 | 未执行（环境限制） | 见 `TEST_CASES.md` 第三节回归清单，需用户确认 |
 
@@ -70,5 +70,5 @@
 
 - 静态测试 **59/59 通过**（修复后）。
 - 走查发现的 14 个问题均已按业界常用方式修复，并为每一项补了回归断言。
-- JVM 单测 13 例随 CI 执行；APK 构建与单测结果以 GitHub Actions 最终状态为准。
+- JVM 单测共 130 例（含本轮新增 13 例）随 CI 执行；首轮暴露 1 例测试代码写法问题并已修正，最终以 GitHub Actions 状态为准。
 - 真机层面的 UI 正确性仍需用户按清单回归；本报告不将未执行项记为通过。

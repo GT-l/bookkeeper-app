@@ -48,6 +48,6 @@ class ProfileSummaryLogicTest {
         val slice = ProfileViewModel.CategorySlice(name = "餐饮", amountFen = 2500L, ratio = 0.25f)
         assertEquals("餐饮", slice.name)
         assertEquals(2500L, slice.amountFen)
-        assertEquals(0.25f, slice.ratio)
+        assertEquals(0.25f, slice.ratio, 0.0001f)
     }
 }

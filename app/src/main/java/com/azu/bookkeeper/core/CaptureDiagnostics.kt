@@ -21,6 +21,23 @@ enum class CaptureFailReason(val title: String, val advice: String) {
         "无法自动弹出授权页",
         "系统拦截了后台弹窗，请回到 App → 自动化设置 → 点「授权截屏」"
     ),
+    ACCESSIBILITY_NOT_CONNECTED(
+        "无障碍截屏不可用",
+        "到「设置 → 无障碍 → 少花点儿」打开服务；Android 11+ 才能用无障碍截屏（无需录屏授权）"
+    ),
+    SCREENSHOT_THROTTLED(
+        "截屏太频繁被系统拒绝",
+        "系统限制约 333ms 内只能截一次，稍等一秒再试；避免连续快速摇动"
+    ),
+    SECURE_WINDOW(
+        "目标页面禁止截屏（FLAG_SECURE）",
+        "微信/支付宝/银行账单页常开启防截屏，系统层面就截不到（截出来是全黑），属系统限制；" +
+            "请手动记一笔，或用支付通知/银行短信通道"
+    ),
+    BLACK_FRAME(
+        "截到的画面是全黑",
+        "多为页面防截屏或视频层保护；确认不是锁屏状态后再试，仍黑请手动记一笔"
+    ),
     PROJECTION_INIT_FAILED(
         "投影初始化失败",
         "多为后台服务类型被 ROM 拒绝：请确认「启用自动记账」已开，并允许后台运行"
@@ -44,6 +61,10 @@ enum class CaptureFailReason(val title: String, val advice: String) {
     EXTRACT_EMPTY(
         "识别到文字但没找到扣款金额",
         "当前页面可能不是支付结果页；打开支付成功页再摇一摇"
+    ),
+    NO_CHANNEL(
+        "两条截屏通道都不可用",
+        "打开无障碍服务（推荐，免录屏授权）或到设置页授权截屏后重试"
     ),
     UNKNOWN(
         "未知异常",

@@ -54,10 +54,11 @@ fun CaptureDiagnosticsScreen(
         ) {
             SoftCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("识屏链路：授权 → 截屏 → 中文 OCR → 智能提取", style = MaterialTheme.typography.titleSmall)
+                    Text("识屏链路：双通道截屏 → 中文 OCR → 智能提取", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "点「开始自检」会真实抓一帧屏幕并识别，逐项告诉你哪一环失败、怎么修。" +
-                            "摇一摇识屏失败时，下面也会显示最近一次的失败原因。",
+                        "通道 1 无障碍截屏（Android 11+，免录屏授权，首选）；通道 2 媒体投影（需授权，兜底）。" +
+                            "点「开始自检」会真实抓一帧屏幕并识别，逐项告诉你哪一环失败、怎么修；" +
+                            "若是「页面禁止截屏（FLAG_SECURE）」，属系统限制，只能手动记或用通知/短信通道。",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp)
                     )

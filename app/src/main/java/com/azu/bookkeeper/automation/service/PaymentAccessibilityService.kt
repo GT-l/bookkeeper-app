@@ -82,6 +82,8 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
+        runCatching { ensureScreenshotCapability() }
         // 心跳：主进程读这个标记判断服务是否真的连上（系统开关状态在部分 ROM 上不可靠）
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -209,6 +211,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putLong(KEY_LAST_CONNECTED, 0L).apply()
@@ -224,6 +227,38 @@ class PaymentAccessibilityService : AccessibilityService() {
         private const val GESTURE_COOLDOWN_MS = 2_500L
         const val PREFS = "accessibility_service_status"
         const val KEY_LAST_CONNECTED = "last_connected_at"
+
+        /**
+         * 当前活着的服务实例。无障碍截屏（API 30+ takeScreenshot）必须由服务实例发起，
+         * 摇一摇/自检在别的组件里，通过这里拿实例；服务被杀后自动置空。
+         */
+        @Volatile
+        private var instance: PaymentAccessibilityService? = null
+
+        fun current(): PaymentAccessibilityService? = instance
+
+        /** 是否具备无障碍截屏能力（API 30+ 且 CAPABILITY_CAN_TAKE_SCREENSHOT）。 */
+        fun canCaptureScreen(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+            val service = instance ?: return false
+            return runCatching {
+                val caps = service.serviceInfo?.capabilities ?: 0
+                caps and android.accessibilityservice.AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0
+            }.getOrDefault(false)
+        }
+    }
+
+    /**
+     * XML 已配 canTakeScreenshot；这里再兜一次（部分 ROM 首连时 capability 未刷新）。
+     */
+    private fun ensureScreenshotCapability() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val info = serviceInfo ?: return
+        val canShot = android.accessibilityservice.AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT
+        if (info.capabilities and canShot == 0) {
+            info.capabilities = info.capabilities or canShot
+            setServiceInfo(info)
+        }
     }
 }
 

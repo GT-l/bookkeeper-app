@@ -5,7 +5,6 @@ import android.widget.Toast
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
 import com.azu.bookkeeper.automation.ocr.OcrEngine
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
-import com.azu.bookkeeper.automation.service.ScreenCaptureManager
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
@@ -47,7 +46,7 @@ data class CaptureOutcome(
 @Singleton
 class LightweightCapture @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val screenCapture: ScreenCaptureManager,
+    private val channels: com.azu.bookkeeper.automation.capture.CaptureChannels,
     private val ocr: OcrEngine,
     private val analyzer: PaymentTextAnalyzer,
     private val extractor: FieldExtractor,
@@ -55,8 +54,8 @@ class LightweightCapture @Inject constructor(
     @MainDispatcher private val mainDispatcher: CoroutineDispatcher,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
-    /** 没有 MediaProjection 会话：需要用户先授权截屏。 */
-    fun needsAuthorization(): Boolean = !screenCapture.hasActiveSession()
+    /** 两条截屏通道（无障碍截屏 / 媒体投影）都不可用时才需要引导授权。 */
+    fun needsAuthorization(): Boolean = channels.needsAuthorization()
 
     fun captureIntoForm(scope: CoroutineScope, onResult: (CaptureOutcome) -> Unit) {
         scope.launch {
@@ -78,25 +77,27 @@ class LightweightCapture @Inject constructor(
             }
 
             steps += DiagnosticStep(
-                "截屏授权会话",
+                "截屏通道",
                 !needsAuthorization(),
-                if (needsAuthorization()) "无会话" else "已授权"
+                "无障碍截屏=${if (channels.accessibilityReady()) "可用" else "不可用"}，" +
+                    "媒体投影=${if (channels.projectionReady()) "可用" else "不可用"}"
             )
             if (needsAuthorization()) {
-                fail(CaptureFailReason.NO_SESSION, "hasActiveSession == false")
+                fail(CaptureFailReason.NO_CHANNEL, "无障碍截屏与媒体投影均不可用")
                 return@launch
             }
 
             runCatching {
                 progress.showStage(CaptureProgressNotifier.Stage.CAPTURE)
-                // 内存抓帧 + 最长边 1280 缩放：全分辨率位图在 2K 屏上会 OOM 把进程杀掉
-                val frame = withContext(ioDispatcher) { screenCapture.captureBitmapScaled() }
+                // 双通道：无障碍截屏（免授权）优先，媒体投影兜底；内部已做黑帧/FLAG_SECURE 判定
+                val frame = withContext(ioDispatcher) { channels.capture() }
                 val bitmap = frame.bitmap
                 if (bitmap == null) {
-                    fail(frame.reason ?: CaptureFailReason.UNKNOWN, frame.detail)
+                    val detail = frame.attempts.joinToString("；").ifBlank { frame.detail }
+                    fail(frame.reason ?: CaptureFailReason.UNKNOWN, detail)
                     return@launch
                 }
-                steps += DiagnosticStep("截屏", true, frame.detail)
+                steps += DiagnosticStep("截屏（${frame.channel}）", true, frame.detail)
 
                 progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE)
                 val result = try {

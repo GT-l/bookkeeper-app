@@ -38,6 +38,7 @@ data class CheckItem(
 @HiltViewModel
 class CaptureDiagnosticsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val channels: com.azu.bookkeeper.automation.capture.CaptureChannels,
     private val screenCapture: ScreenCaptureManager,
     private val ocr: OcrEngine,
     private val analyzer: PaymentTextAnalyzer,
@@ -60,14 +61,14 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         refresh()
     }
 
-    /** 刷新环境检查项（通知权限 / 截屏授权）与最近一次留痕。 */
+    /** 刷新环境检查项（通知权限 / 截屏通道）与最近一次留痕。 */
     fun refresh() {
         val last = CaptureDiagnostics.last(context)
         _state.update {
             it.copy(
                 last = last,
                 textPreview = last?.textPreview.orEmpty(),
-                items = listOf(notificationCheck(), sessionCheck())
+                items = listOf(notificationCheck(), accessibilityChannelCheck(), projectionChannelCheck())
             )
         }
     }
@@ -82,13 +83,31 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         )
     }
 
-    private fun sessionCheck(): CheckItem {
-        val active = screenCapture.hasActiveSession()
+    /** 通道 1：无障碍截屏（API 30+，免录屏授权，首选）。 */
+    private fun accessibilityChannelCheck(): CheckItem {
+        val connected = channels.accessibilityServiceConnected()
+        val ready = channels.accessibilityReady()
+        val detail = when {
+            ready -> "可用（免授权，首选通道）"
+            !connected -> "无障碍服务未连接"
+            else -> "服务已连但缺少截屏能力（canTakeScreenshot 未生效）"
+        }
+        val advice = when {
+            ready -> ""
+            !connected -> "设置 → 无障碍 → 少花点儿，打开服务"
+            else -> "关闭无障碍服务再重新打开一次，让截屏能力重新注册"
+        }
+        return CheckItem("无障碍截屏通道", ready, detail, advice)
+    }
+
+    /** 通道 2：媒体投影（需系统录屏授权，覆盖 Android 8~10 与无障碍不可用场景）。 */
+    private fun projectionChannelCheck(): CheckItem {
+        val active = channels.projectionReady()
         return CheckItem(
-            name = "截屏授权会话",
+            name = "媒体投影通道",
             ok = active,
-            detail = if (active) "会话有效" else "无会话（重启 App 后会话必失效，Android 14+ 规则）",
-            advice = if (active) "" else "点下方「授权截屏」完成一次系统授权"
+            detail = if (active) "会话有效" else "无会话（重启 App 后失效，Android 14+ 规则）",
+            advice = if (active) "" else "点下方「授权截屏」完成一次系统录屏授权"
         )
     }
 
@@ -136,20 +155,27 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     private suspend fun runCheck() {
         val items = mutableListOf<CheckItem>()
         items += notificationCheck()
-        items += sessionCheck()
+        items += accessibilityChannelCheck()
+        items += projectionChannelCheck()
 
         var reason: CaptureFailReason? = null
         var preview = ""
 
-        if (!screenCapture.hasActiveSession()) {
-            reason = CaptureFailReason.NO_SESSION
+        if (channels.needsAuthorization()) {
+            reason = CaptureFailReason.NO_CHANNEL
         } else {
-            val frame = withContext(io) { screenCapture.captureBitmapScaled() }
+            // 双通道依次尝试：无障碍截屏优先，媒体投影兜底
+            val frame = withContext(io) { channels.capture() }
             val bitmap = frame.bitmap
             items += CheckItem(
-                name = "截屏",
+                name = "截屏（${frame.channel}）",
                 ok = bitmap != null,
-                detail = if (bitmap != null) "取帧成功 ${frame.detail}" else (frame.reason?.title ?: "失败") + "：" + frame.detail,
+                detail = if (bitmap != null) {
+                    "取帧成功 ${frame.detail}"
+                } else {
+                    (frame.reason?.title ?: "失败") + "：" +
+                        frame.attempts.joinToString("；").ifBlank { frame.detail }
+                },
                 advice = frame.reason?.advice.orEmpty()
             )
             if (bitmap == null) {

@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.ShakeActions
+import com.azu.bookkeeper.core.ShakeSensitivity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -48,6 +49,8 @@ class AutomationSettingsDataStore @Inject constructor(
         /** 系统手势触发记一笔：取值见 QuickGestureCodes；0=关闭。 */
         val QUICK_GESTURE = intPreferencesKey("quick_gesture")
         val SHAKE_ACTION = intPreferencesKey("shake_action")
+        /** 摇一摇灵敏度：取值见 ShakeSensitivity（0 稳 / 1 标准 / 2 灵敏）。 */
+        val SHAKE_SENSITIVITY = intPreferencesKey("shake_sensitivity")
     }
 
     private val store: DataStore<Preferences> get() = context.automationDataStore
@@ -185,6 +188,15 @@ class AutomationSettingsDataStore @Inject constructor(
     suspend fun setShakeAction(value: Int) {
         store.edit { it[Keys.SHAKE_ACTION] = value }
         QuickGestureCache.shakeAction = value
+    }
+
+    /** 摇一摇灵敏度：0 稳 / 1 标准 / 2 灵敏。 */
+    val shakeSensitivity: Flow<Int> =
+        store.data.map { it[Keys.SHAKE_SENSITIVITY] ?: ShakeSensitivity.STANDARD }
+
+    suspend fun setShakeSensitivity(value: Int) {
+        store.edit { it[Keys.SHAKE_SENSITIVITY] = value }
+        QuickGestureCache.shakeSensitivity = value
     }
 
     suspend fun setQuickGesture(value: Int) {

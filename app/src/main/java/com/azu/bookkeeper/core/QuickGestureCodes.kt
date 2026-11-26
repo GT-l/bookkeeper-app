@@ -47,6 +47,45 @@ object ShakeActions {
 }
 
 /**
+ * 摇一摇灵敏度：阈值即「去重力后的线性加速度」门槛（m/s²）。
+ *
+ * 为什么要有这一项：同一套阈值在不同人手上体感差别很大——手重的人觉得一碰就触发，
+ * 手轻的人摇半天没反应。市面上的摇一摇（微信/支付宝）都给「灵敏度」，
+ * 这里同样暴露三档，默认「标准」。
+ */
+object ShakeSensitivity {
+    /** 稳：需要明显用力摇。 */
+    const val STABLE = 0
+
+    /** 标准（默认）。 */
+    const val STANDARD = 1
+
+    /** 灵敏：轻轻晃就触发，适合单手轻摇的用户。 */
+    const val SENSITIVE = 2
+
+    val ALL = intArrayOf(STABLE, STANDARD, SENSITIVE)
+
+    fun label(value: Int): String = when (value) {
+        STABLE -> "稳"
+        SENSITIVE -> "灵敏"
+        else -> "标准"
+    }
+
+    fun description(value: Int): String = when (value) {
+        STABLE -> "需要明显摇动，最不容易误触"
+        SENSITIVE -> "轻轻晃一下就触发"
+        else -> "默认，日常使用推荐"
+    }
+
+    /** 线性加速度阈值（m/s²）。数值越大越难触发。 */
+    fun threshold(value: Int): Float = when (value) {
+        STABLE -> 17f
+        SENSITIVE -> 8.5f
+        else -> 12f
+    }
+}
+
+/**
  * 手势选择的进程内缓存：无障碍服务与设置页都在主进程，写设置后立刻可见，
  * 避免手势回调里做阻塞式 DataStore 读取。服务连接时会用持久化值重新初始化。
  */
@@ -56,4 +95,7 @@ object QuickGestureCache {
 
     @Volatile
     var shakeAction: Int = ShakeActions.OPEN_FORM
+
+    @Volatile
+    var shakeSensitivity: Int = ShakeSensitivity.STANDARD
 }

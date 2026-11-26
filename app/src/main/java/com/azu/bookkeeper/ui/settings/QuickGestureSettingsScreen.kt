@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.core.ShakeActions
+import com.azu.bookkeeper.core.ShakeSensitivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -126,6 +127,35 @@ fun QuickGestureSettingsScreen(
                 }
                 Text(
                     "识屏失败或未授权时会自动打开表单，让你手动输入。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    "灵敏度（容易误触就调「稳」）",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 14.dp)
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    ShakeSensitivity.ALL.forEach { level ->
+                        OutlinedButton(
+                            onClick = { viewModel.setShakeSensitivity(level) },
+                            modifier = Modifier.weight(1f).padding(end = 6.dp)
+                        ) {
+                            Text(
+                                ShakeSensitivity.label(level),
+                                color = if (state.shakeSensitivity == level) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
+                    }
+                }
+                Text(
+                    ShakeSensitivity.description(state.shakeSensitivity) +
+                        " · 只在前台亮屏时响应，熄屏不会触发",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

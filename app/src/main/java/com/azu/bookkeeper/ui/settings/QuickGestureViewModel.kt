@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.core.ShakeActions
+import com.azu.bookkeeper.core.ShakeSensitivity
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.ui.quick.ShakeQuickAddService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,6 +39,7 @@ class QuickGestureViewModel @Inject constructor(
         val options: List<Option> = emptyList(),
         val selected: Int = QuickGestureCodes.OFF,
         val shakeAction: Int = ShakeActions.OPEN_FORM,
+        val shakeSensitivity: Int = ShakeSensitivity.STANDARD,
         val accessibilityGranted: Boolean = false,
         val message: String? = null
     ) {
@@ -53,6 +55,11 @@ class QuickGestureViewModel @Inject constructor(
         viewModelScope.launch {
             automation.shakeAction.collect { action ->
                 _uiState.update { it.copy(shakeAction = action) }
+            }
+        }
+        viewModelScope.launch {
+            automation.shakeSensitivity.collect { value ->
+                _uiState.update { it.copy(shakeSensitivity = value) }
             }
         }
         viewModelScope.launch {
@@ -159,6 +166,19 @@ class QuickGestureViewModel @Inject constructor(
             it.copy(
                 shakeAction = action,
                 message = "摇一摇动作：${ShakeActions.label(action)}"
+            )
+        }
+    }
+
+    /** 摇一摇灵敏度：改完立刻生效（服务读进程内缓存的热更新阈值）。 */
+    fun setShakeSensitivity(value: Int) = viewModelScope.launch {
+        if (value !in ShakeSensitivity.ALL) return@launch
+        automation.setShakeSensitivity(value)
+        ShakeQuickAddService.refresh(context)
+        _uiState.update {
+            it.copy(
+                shakeSensitivity = value,
+                message = "摇一摇灵敏度：${ShakeSensitivity.label(value)}"
             )
         }
     }

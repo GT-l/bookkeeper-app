@@ -50,9 +50,24 @@ class BudgetViewModel @Inject constructor(
         val totalLimitDerived: Boolean = false,
         val totalLimitText: String = "",
         val categoryLimitTexts: Map<Long, String> = emptyMap(),
+        /** 各分类本月已花（分），用于分类预算进度条。 */
+        val categorySpentFen: Map<Long, Long> = emptyMap(),
+        val dayOfMonth: Int = 1,
+        val daysInMonth: Int = 30,
         val message: String? = null
     ) {
         val remainingFen: Long get() = effectiveTotalLimitFen - spentFen
+
+        /** 本月还剩几天（含今天），日均可用的分母。 */
+        val daysLeft: Int get() = (daysInMonth - dayOfMonth + 1).coerceAtLeast(1)
+
+        /** 剩余额度摊到今天以后每天还能花多少；超支时为 0。 */
+        val dailyAvailableFen: Long
+            get() = if (remainingFen <= 0L) 0L else remainingFen / daysLeft
+
+        /** 已用比例 0~1（用于进度条与文案）。 */
+        val usedPercent: Int
+            get() = if (effectiveTotalLimitFen <= 0L) 0 else ((spentFen * 100) / effectiveTotalLimitFen).toInt()
         val isOverBudget: Boolean
             get() = effectiveTotalLimitFen > 0L && spentFen > effectiveTotalLimitFen
         val progress: Float
@@ -71,7 +86,15 @@ class BudgetViewModel @Inject constructor(
             val bookId = settings.defaultBookId.first().takeIf { it > 0L }
                 ?: bookRepository.findDefault().getOrNull()?.bookId ?: 0L
             val month = DateTimeUtils.monthKey(DateTimeUtils.nowMillis())
-            _uiState.update { it.copy(bookId = bookId, month = month) }
+            val calendar = java.util.Calendar.getInstance()
+            _uiState.update {
+                it.copy(
+                    bookId = bookId,
+                    month = month,
+                    dayOfMonth = calendar.get(java.util.Calendar.DAY_OF_MONTH),
+                    daysInMonth = calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+                )
+            }
             if (bookId > 0L) load(bookId, month)
         }
     }
@@ -85,11 +108,15 @@ class BudgetViewModel @Inject constructor(
         val end = DateTimeUtils.endOfMonth(DateTimeUtils.nowMillis())
         val spent = billRepository.sumByType(bookId, start, end)
             .getOrDefault(emptyMap())[BillType.EXPENSE] ?: 0L
+        val categorySpent = billRepository.sumByCategory(bookId, BillType.EXPENSE, start, end)
+            .getOrDefault(emptyList())
+            .associate { it.categoryId to it.amountFen }
         _uiState.update { state ->
             state.copy(
                 budget = budget,
                 categories = categories,
                 spentFen = spent,
+                categorySpentFen = categorySpent,
                 effectiveTotalLimitFen = effectiveLimit,
                 totalLimitDerived = budget?.isTotalLimitDerived == true,
                 // 输入框只回显“用户显式填写”的总预算：兜底值不写回输入框，
@@ -107,6 +134,15 @@ class BudgetViewModel @Inject constructor(
 
     fun setCategoryLimit(categoryId: Long, text: String) = _uiState.update { state ->
         state.copy(categoryLimitTexts = state.categoryLimitTexts + (categoryId to text))
+    }
+
+    /**
+     * 分类预算「改完即存」：弹窗里点保存直接落库，不用再回到底部按一次保存。
+     * 先更新内存文本再 save()，保证 save 读到的是刚输入的值。
+     */
+    fun saveCategoryLimit(categoryId: Long, text: String) {
+        setCategoryLimit(categoryId, text)
+        save()
     }
 
     fun save() {

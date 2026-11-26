@@ -270,20 +270,27 @@ private fun ConfirmCard(
                         CuteOutlinedButton(
                             onClick = onDismiss,
                             modifier = Modifier.weight(1f)
-                        ) { Text("不记了") }
+                        ) { Text("NO", maxLines = 1, softWrap = false) }
                         CuteOutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f)
-                        ) { Text("修改") }
+                        ) { Text("修改", maxLines = 1, softWrap = false) }
                         CutePrimaryButton(
                             onClick = onConfirm,
                             modifier = Modifier.weight(1.35f)
-                        ) { Text("仍然记账", fontWeight = FontWeight.SemiBold) }
+                        ) {
+                            Text(
+                                "仍然记账",
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     } else {
                         CuteOutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f)
-                        ) { Text("修改") }
+                        ) { Text("修改", maxLines = 1, softWrap = false) }
                         CutePrimaryButton(
                             onClick = onConfirm,
                             modifier = Modifier.weight(1.4f)

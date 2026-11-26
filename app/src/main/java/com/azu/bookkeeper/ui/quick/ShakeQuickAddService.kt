@@ -8,8 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
@@ -30,6 +28,7 @@ import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.ShakeActions
+import com.azu.bookkeeper.core.ShakeSensitivity
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
 import com.azu.bookkeeper.domain.model.QuickEntry
@@ -41,6 +40,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -65,8 +65,11 @@ class ShakeQuickAddService : Service() {
     }
 
     private var sensorManager: SensorManager? = null
-    private var listener: SensorEventListener? = null
-    private var lastShakeAt = 0L
+    private var detector: ShakeDetector? = null
+
+    /** 一次摇动只允许走一条链路：处理未结束时再摇一律忽略（防重复调用）。 */
+    @Volatile
+    private var handling = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -77,6 +80,17 @@ class ShakeQuickAddService : Service() {
             ACTION_REFRESH -> {
                 // 未授予通知权限时部分 ROM 会抛 SecurityException 甚至阻塞主线程（ANR）→ 统一走守卫
                 NotifyGuard.safeNotify(this, NOTIFICATION_ID, buildNotification())
+                // 设置页改了「摇一摇动作/灵敏度」后热更新：不用重启服务，阈值立刻生效
+                scope.launch {
+                    runCatching {
+                        val settings = entryPoint.automationSettings()
+                        QuickGestureCache.shakeAction = settings.shakeAction.first()
+                        QuickGestureCache.shakeSensitivity = settings.shakeSensitivity.first()
+                        detector?.updateThreshold(
+                            ShakeSensitivity.threshold(QuickGestureCache.shakeSensitivity)
+                        )
+                    }.onFailure { Timber.w(it, "refresh shake settings failed") }
+                }
                 return START_NOT_STICKY
             }
         }
@@ -96,6 +110,12 @@ class ShakeQuickAddService : Service() {
             scope.launch {
                 runCatching {
                     QuickGestureCache.shakeAction = entryPoint.automationSettings().shakeAction.first()
+                    QuickGestureCache.shakeSensitivity =
+                        entryPoint.automationSettings().shakeSensitivity.first()
+                    // 注册传感器时可能还没读到持久化值，这里补一次阈值热更新
+                    detector?.updateThreshold(
+                        ShakeSensitivity.threshold(QuickGestureCache.shakeSensitivity)
+                    )
                 }.onFailure { Timber.w(it, "read shake action failed") }
             }
             registerSensor()
@@ -116,37 +136,55 @@ class ShakeQuickAddService : Service() {
         val manager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
         val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
         sensorManager = manager
-        val callback = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event == null) return
-                val x = event.values.getOrNull(0) ?: return
-                val y = event.values.getOrNull(1) ?: return
-                val z = event.values.getOrNull(2) ?: return
-                // 静止时合加速度≈9.8（重力）；24≈2.4g，配合冷却避免走路误触
-                val magnitude = kotlin.math.sqrt(x * x + y * y + z * z)
-                val now = System.currentTimeMillis()
-                if (magnitude > SHAKE_THRESHOLD && now - lastShakeAt > COOLDOWN_MS) {
-                    lastShakeAt = now
-                    onShakeDetected()
-                }
-            }
-
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
-        }
-        listener = callback
+        // 识别算法在 ShakeDetector 里：去重力 + 双向确认 + 多帧确认 + 冷却，
+        // 不再是「合加速度 > 24 就触发」那种一碰就炸的写法。
+        val callback = ShakeDetector(
+            threshold = ShakeSensitivity.threshold(QuickGestureCache.shakeSensitivity),
+            onShake = { onShakeDetected() }
+        )
+        detector = callback
         manager.registerListener(callback, sensor, SensorManager.SENSOR_DELAY_UI)
     }
 
+    /**
+     * 摇动命中后的唯一入口。
+     *
+     * 三重闸门，保证「一次摇动只做一件事」：
+     * 1. [handling] —— 上一次触发还在跑（识屏/跳转中）就直接忽略；
+     * 2. 屏幕必须亮着 —— 装在兜里、放在桌上被震动都不算；
+     * 3. 动作只有设置里选的那一个（打开表单 或 直接识屏），不会两条链路同时跑。
+     */
     private fun onShakeDetected() {
+        if (handling) return
+        if (!isScreenInteractive()) return
+        handling = true
         // 每次命中都双震 + Toast：不依赖通知权限，用户一定能感知到「已经触发了」
         vibrate()
         if (QuickGestureCache.shakeAction == ShakeActions.SCREEN_CAPTURE) {
             Toast.makeText(applicationContext, "摇一摇已触发 · 正在识屏…", Toast.LENGTH_SHORT).show()
+            // 兜底解锁：识屏最坏 25s 内一定会走完回调；即便卡住也不会永久锁死
+            releaseHandlingLater(AUTO_CAPTURE_LOCK_TIMEOUT_MS)
             triggerScreenCapture()
         } else {
             openForm("摇一摇命中，打开记一笔")
+            // 表单已经拉起，1.5s 后允许下一次摇动（要记第二笔时不用干等）
+            releaseHandlingLater(1_500L)
         }
     }
+
+    /** 处理结束/超时后解锁，允许下一次摇动。 */
+    private fun releaseHandlingLater(delayMs: Long) {
+        scope.launch {
+            delay(delayMs)
+            handling = false
+        }
+    }
+
+    /** 屏幕是否点亮且已解锁。熄屏（装兜里）时完全不响应摇动。 */
+    private fun isScreenInteractive(): Boolean = runCatching {
+        val power = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        power?.isInteractive == true
+    }.getOrDefault(true)
 
     /**
      * 摇一摇 → 轻量识屏：截屏 + OCR + 智能提取 → 带预填打开表单。
@@ -171,6 +209,8 @@ class ShakeQuickAddService : Service() {
             return
         }
         capture.captureIntoForm(scope) { outcome ->
+            // 识屏链路已走完（成功/失败都算），短暂延迟后允许下一次摇动
+            releaseHandlingLater(800L)
             val amount = outcome.amountFen
             if (outcome.success && amount != null && amount > 0L) {
                 handleRecognized(outcome, capture, amount)
@@ -464,7 +504,7 @@ class ShakeQuickAddService : Service() {
     }
 
     override fun onDestroy() {
-        runCatching { listener?.let { sensorManager?.unregisterListener(it) } }
+        runCatching { detector?.let { sensorManager?.unregisterListener(it) } }
         isRunning = false
         scope.cancel()
         super.onDestroy()
@@ -483,8 +523,8 @@ class ShakeQuickAddService : Service() {
         private const val NOTIFICATION_ID = 1020
         private const val ONGOING_CHANNEL_ID = "shake_ongoing"
         private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
-        private const val SHAKE_THRESHOLD = 24f
-        private const val COOLDOWN_MS = 1_200L
+        /** 识屏链路的解锁兜底时间：识屏正常 25s 内必回调。 */
+        private const val AUTO_CAPTURE_LOCK_TIMEOUT_MS = 25_000L
 
         @Volatile
         var isRunning: Boolean = false

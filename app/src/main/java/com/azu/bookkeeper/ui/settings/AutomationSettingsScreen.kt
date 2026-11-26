@@ -303,7 +303,8 @@ fun AutomationSettingsScreen(
             Text("识别与去重", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
             SettingSwitch("截屏备选（需每次授权）", state.screenCaptureEnabled) { enabled ->
                 if (enabled) {
-                    runCatching { captureLauncher.launch(viewModel.createCaptureIntent()) }
+                    viewModel.createCaptureIntent()?.let { captureLauncher.launch(it) }
+                        ?: Toast.makeText(context, "当前设备不支持截屏授权", Toast.LENGTH_SHORT).show()
                         .onFailure { Toast.makeText(context, "设备不支持截屏捕获", Toast.LENGTH_SHORT).show() }
                 } else {
                     viewModel.setScreenCaptureEnabled(false)

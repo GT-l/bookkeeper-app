@@ -89,7 +89,10 @@ fun CaptureDiagnosticsScreen(
                     modifier = Modifier.weight(1f)
                 ) { Text(if (state.running) "检查中…" else "环境检查（安全）") }
                 OutlinedButton(
-                    onClick = { authLauncher.launch(viewModel.createCaptureIntent()) },
+                    onClick = {
+                        viewModel.createCaptureIntent()?.let { authLauncher.launch(it) }
+                            ?: Toast.makeText(context, "当前设备不支持截屏授权", Toast.LENGTH_SHORT).show()
+                    },
                     modifier = Modifier.padding(start = 8.dp)
                 ) { Text("授权截屏") }
             }

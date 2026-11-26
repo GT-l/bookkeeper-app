@@ -109,12 +109,19 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // 整个回调必须零异常逃出：无障碍服务一崩，ROM 就可能自动禁用它
-        runCatching { handleEvent(event) }.onFailure { t ->
+        runCatching { dispatchEvent(event) }.onFailure { t ->
             timber.log.Timber.w(t, "accessibility event failed (service kept alive)")
         }
     }
 
-    private fun handleEvent(event: AccessibilityEvent?) {
+    /**
+     * 主线程只做轻量过滤（包名 / 去抖 / 取根节点），节点树深度遍历全部放到 IO。
+     *
+     * 为什么必须这样：onAccessibilityEvent 跑在主线程，支付页/账单页节点树很大，
+     * collectText 递归遍历可能耗时数百毫秒；连续事件叠加会让主线程卡住，
+     * 系统判定 ANR 后直接杀掉服务，OrangeOS/ColorOS 就表现为「开完无障碍没一会儿自动关掉」。
+     */
+    private fun dispatchEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val packageName = runCatching { event.packageName?.toString().orEmpty() }.getOrDefault("")
         if (packageName !in Constants.PAYMENT_PACKAGES) return
@@ -124,11 +131,34 @@ class PaymentAccessibilityService : AccessibilityService() {
 
         val root = runCatching { event.source ?: rootInActiveWindow }.getOrNull() ?: return
         val parser = runCatching { deps.parser() }.getOrNull() ?: return
-        val text = runCatching { parser.collectText(root) }.getOrDefault("")
-        if (text.isBlank() || !runCatching { parser.isPaymentComplete(text) }.getOrDefault(false)) return
+        val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
 
+        // 先占位去抖，避免连续事件把任务队列塞满
         lastEventAt = now
         lastPackage = packageName
+
+        scope.launch {
+            runCatching { withContext(dispatcher) { parseAndCapture(packageName, now, root, parser, dispatcher) } }
+                .onFailure { t ->
+                    timber.log.Timber.w(t, "accessibility parse failed (service kept alive)")
+                    runCatching {
+                        com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "读屏解析失败", t)
+                    }
+                }
+        }
+    }
+
+    /** IO 线程执行：文本采集 → 完成态判断 → 打标 → 交协调器落库。 */
+    private suspend fun parseAndCapture(
+        packageName: String,
+        eventTime: Long,
+        root: android.view.accessibility.AccessibilityNodeInfo,
+        parser: AccessibilityCaptureParser,
+        dispatcher: kotlinx.coroutines.CoroutineDispatcher
+    ) {
+        val text = parser.collectText(root)
+        if (text.isBlank() || !parser.isPaymentComplete(text)) return
+
         val eventId = generateEventId(packageName, text)
         val tagger = runCatching { deps.tagger() }.getOrNull()
         val businessTag: BusinessTag = tagger?.let { runCatching { it.tag(packageName, text) }.getOrNull() }
@@ -137,15 +167,11 @@ class PaymentAccessibilityService : AccessibilityService() {
             eventId = eventId,
             packageName = packageName,
             text = text,
-            eventTime = now,
+            eventTime = eventTime,
             businessTag = businessTag
         )
         val coordinator = runCatching { deps.coordinator() }.getOrNull() ?: return
-        val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
-        scope.launch {
-            runCatching { withContext(dispatcher) { coordinator.onCapture(captureEvent) } }
-                .onFailure { timber.log.Timber.w(it, "capture coordinator failed (service kept alive)") }
-        }
+        withContext(dispatcher) { coordinator.onCapture(captureEvent) }
     }
 
     /** 指纹传感器四向滑动：不需要触摸探索模式，不影响正常点击/滑动。 */

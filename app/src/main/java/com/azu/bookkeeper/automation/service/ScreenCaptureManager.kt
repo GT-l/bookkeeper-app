@@ -61,8 +61,12 @@ class ScreenCaptureManager @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
-    private val projectionManager: MediaProjectionManager =
-        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    // 个别 ROM/受限环境下服务可能为 null；强转会直接崩，改为安全获取 + 使用处判空
+    private val projectionManager: MediaProjectionManager? by lazy {
+        runCatching {
+            context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+        }.getOrNull()
+    }
 
     @Volatile
     private var projection: MediaProjection? = null
@@ -74,9 +78,9 @@ class ScreenCaptureManager @Inject constructor(
      * 系统授权弹窗 intent（明确告知将捕获屏幕内容）。
      * 拉起前先把 mediaProjection 类型的前台服务起来，给系统留启动时间。
      */
-    fun createCaptureIntent(): Intent {
+    fun createCaptureIntent(): Intent? {
         AutoCaptureForegroundService.startForProjection(context)
-        return projectionManager.createScreenCaptureIntent()
+        return runCatching { projectionManager?.createScreenCaptureIntent() }.getOrNull()
     }
 
     /** 用户授权后建立投影会话；onStop 在授权失效时回调，供 UI 降级提示。 */
@@ -85,7 +89,8 @@ class ScreenCaptureManager @Inject constructor(
         onSessionStopped = onStopped
         // 双保险：授权回调里再确保一次（弹窗期间服务可能被 ROM 杀掉）
         AutoCaptureForegroundService.startForProjection(context)
-        projection = projectionManager.getMediaProjection(resultCode, data).also { mediaProjection ->
+        val manager = projectionManager ?: return false
+        projection = manager.getMediaProjection(resultCode, data).also { mediaProjection ->
             val callback = object : MediaProjection.Callback() {
                 override fun onStop() {
                     // 授权会话失效：释放并清空引用，避免泄漏与后续崩溃

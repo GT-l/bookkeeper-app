@@ -84,11 +84,20 @@ data class NotificationPayload(
  *
  * 通知内容不再写死：用户可在「通知栏显示内容」页选样式和要显示的项目。
  */
-@AndroidEntryPoint
 class AutoCaptureForegroundService : Service() {
 
-    @Inject lateinit var automationSettings: AutomationSettingsDataStore
-    @Inject lateinit var verificationNotifier: VerificationNotifier
+    /**
+     * 惰性依赖：不用 @AndroidEntryPoint 字段注入。
+     * 字段注入发生在 onCreate 之前，DataStore/通知组件任一构造失败，
+     * 服务会直接崩在系统调用里——典型表现就是「刚授予通知权限、服务被拉起，App 立刻闪退」。
+     * 改为 EntryPoint 按需取，构造失败只影响本次启动（会被 try/catch 转成失败计数）。
+     */
+    private val deps by lazy {
+        EntryPointAccessors.fromApplication(applicationContext, CaptureServiceEntryPoint::class.java)
+    }
+
+    private val automationSettings: AutomationSettingsDataStore
+        get() = deps.automationSettings()
 
     private val scope = CoroutineScope(SupervisorJob())
 
@@ -140,7 +149,11 @@ class AutoCaptureForegroundService : Service() {
             }
             val now = System.currentTimeMillis()
             startedSuccessfully = true
-            scope.launch { automationSettings.markServiceStarted(now) }
+            // 协程内异常必须自己兜住：未捕获异常会直接让进程崩溃（服务场景尤甚）
+            scope.launch {
+                runCatching { automationSettings.markServiceStarted(now) }
+                    .onFailure { Timber.w(it, "markServiceStarted failed") }
+            }
             // 常驻通知刷新为用户选中的样式与内容，失败保持默认文案，不影响服务
             refreshSummary()
             START_STICKY
@@ -165,11 +178,14 @@ class AutoCaptureForegroundService : Service() {
         // 先取消未完成的异步写入（如 markServiceStarted），杜绝销毁后继续写库/反向覆盖。
         scope.cancel()
         if (startedSuccessfully) {
-            runBlocking {
-                withTimeoutOrNull(STATE_WRITE_TIMEOUT_MS) {
-                    automationSettings.setServiceRunning(false)
+            // onDestroy 里抛异常会直接崩进程（且发生在服务销毁路径，最难排查）→ 必须兜住
+            runCatching {
+                runBlocking {
+                    withTimeoutOrNull(STATE_WRITE_TIMEOUT_MS) {
+                        automationSettings.setServiceRunning(false)
+                    }
                 }
-            }
+            }.onFailure { Timber.w(it, "setServiceRunning(false) failed in onDestroy") }
         }
         super.onDestroy()
     }
@@ -463,6 +479,13 @@ class AutoCaptureForegroundService : Service() {
             return start(appContext)
         }
     }
+}
+
+/** 前台服务惰性依赖入口（避免字段注入在 onCreate 前崩服务）。 */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface CaptureServiceEntryPoint {
+    fun automationSettings(): AutomationSettingsDataStore
 }
 
 /** 常驻通知需要的惰性依赖入口（不在服务 onCreate 阶段做字段注入重依赖）。 */

@@ -23,6 +23,11 @@ class ServiceRestartWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): WorkResult {
+        // 探活是纯后台动作：任何异常都返回 success，绝不让 WorkManager 把失败冒成崩溃
+        return runCatching { doWorkSafely() }.getOrDefault(WorkResult.success())
+    }
+
+    private suspend fun doWorkSafely(): WorkResult {
         if (!automationSettings.enabled.first()) return WorkResult.success()
         // 连续启动失败时尊重退避窗口；达上限后开关已被关闭，这里也不会再拉起。
         if (!automationSettings.canStartService(System.currentTimeMillis())) return WorkResult.success()

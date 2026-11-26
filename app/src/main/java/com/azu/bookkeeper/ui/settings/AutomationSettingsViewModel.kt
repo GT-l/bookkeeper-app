@@ -304,7 +304,8 @@ class AutomationSettingsViewModel @Inject constructor(
         if (!enabled) screenCapture.release()
     }
 
-    fun createCaptureIntent(): Intent = screenCapture.createCaptureIntent()
+    /** 可能为 null（设备无投屏能力/ROM 限制），调用方需判空。 */
+    fun createCaptureIntent(): Intent? = screenCapture.createCaptureIntent()
 
     fun startScreenCaptureSession(resultCode: Int, data: Intent) {
         val ok = screenCapture.startSession(resultCode, data) {

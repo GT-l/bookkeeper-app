@@ -15,14 +15,16 @@ import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.CaptureType
 import com.azu.bookkeeper.domain.repository.AccountRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository
-import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import timber.log.Timber
-import javax.inject.Inject
 
 /**
  * 银行扣款短信接收器（增量架构 §2.2 / T6）。
@@ -30,15 +32,7 @@ import javax.inject.Inject
  * 生命周期：Manifest 静态注册、无高 priority；权限未授予 / 短信开关关闭 → 静默 return；
  * 正文只在本方法栈帧内解析为结构化摘要后交给 CaptureCoordinator，绝不写日志正文。
  */
-@AndroidEntryPoint
 class SmsBroadcastReceiver : BroadcastReceiver() {
-
-    @Inject lateinit var parser: SmsCaptureParser
-    @Inject lateinit var coordinator: CaptureCoordinator
-    @Inject lateinit var automationSettings: AutomationSettingsDataStore
-    @Inject lateinit var settings: SettingsRepository
-    @Inject lateinit var accountRepository: AccountRepository
-    @Inject lateinit var json: Json
 
     private val receiverScope = CoroutineScope(SupervisorJob())
 
@@ -51,6 +45,17 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
 
         val messages = runCatching { Telephony.Sms.Intents.getMessagesFromIntent(intent) }.getOrNull()
             ?: return
+
+        // 惰性取依赖：字段注入一旦失败会直接崩在广播里（短信到达时闪退）
+        val entry = runCatching {
+            EntryPointAccessors.fromApplication(context.applicationContext, SmsDepsEntryPoint::class.java)
+        }.getOrNull() ?: return
+        val parser = runCatching { entry.parser() }.getOrNull() ?: return
+        val coordinator = runCatching { entry.coordinator() }.getOrNull() ?: return
+        val automationSettings = runCatching { entry.automationSettings() }.getOrNull() ?: return
+        val settings = runCatching { entry.settings() }.getOrNull() ?: return
+        val accountRepository = runCatching { entry.accountRepository() }.getOrNull() ?: return
+        val json = runCatching { entry.json() }.getOrNull() ?: return
 
         // onReceive 在主线程且只有 ~10s：解析为纯正则（<5ms），用 goAsync 把结构化摘要异步入队，
         // 正文不出本方法栈帧；不把原文带入协程作用域。
@@ -122,4 +127,16 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
             )
         }
     }
+}
+
+/** 短信识别的惰性依赖入口（避免广播接收器在注入阶段崩溃）。 */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SmsDepsEntryPoint {
+    fun parser(): SmsCaptureParser
+    fun coordinator(): CaptureCoordinator
+    fun automationSettings(): AutomationSettingsDataStore
+    fun settings(): SettingsRepository
+    fun accountRepository(): AccountRepository
+    fun json(): Json
 }

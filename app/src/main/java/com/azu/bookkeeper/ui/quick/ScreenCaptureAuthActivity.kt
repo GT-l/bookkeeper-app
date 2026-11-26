@@ -62,7 +62,13 @@ class ScreenCaptureAuthActivity : ComponentActivity() {
         // 提前拉起 mediaProjection 类型的前台服务：Android 14+ 要求
         // getMediaProjection / createVirtualDisplay 之前必须有它在跑
         AutoCaptureForegroundService.startForProjection(applicationContext)
-        runCatching { launcher.launch(screenCapture.createCaptureIntent()) }
+        val consentIntent = screenCapture.createCaptureIntent()
+        if (consentIntent == null) {
+            Toast.makeText(this, "当前设备不支持截屏授权", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        runCatching { launcher.launch(consentIntent) }
             .onFailure {
                 Timber.w(it, "launch capture consent failed")
                 Toast.makeText(this, "无法打开截屏授权：${it.javaClass.simpleName}", Toast.LENGTH_LONG).show()

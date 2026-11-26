@@ -313,7 +313,7 @@ class QuickBallService : Service() {
     }
 
     private fun windowManager(): WindowManager =
-        getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
 
     override fun onDestroy() {
         isRunning = false

@@ -186,7 +186,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         refresh()
     }
 
-    fun createCaptureIntent(): Intent = screenCapture.createCaptureIntent()
+    fun createCaptureIntent(): Intent? = screenCapture.createCaptureIntent()
 
     fun onAuthResult(resultCode: Int, data: Intent?) {
         if (data == null || resultCode != android.app.Activity.RESULT_OK) {

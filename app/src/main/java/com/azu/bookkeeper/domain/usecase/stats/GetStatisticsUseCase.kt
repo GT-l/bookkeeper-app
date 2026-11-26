@@ -41,8 +41,14 @@ class GetStatisticsUseCase @Inject constructor(
         val expenseFen = bills.filter { it.billType == BillType.EXPENSE }.sumOf { it.amountFen }
         val transferFen = bills.filter { it.billType == BillType.TRANSFER }.sumOf { it.amountFen }
 
-        val month = DateTimeUtils.monthKey(startMillis)
-        val budget = budgetRepository.findByBookAndMonth(bookId, month).getOrNull()
+        // 单月预算只能跟单月支出比。跨月范围（本年 / 跨月自定义 / 跨月周）继续用起始月预算，
+        // 会拿 1 月的 5000 元去比全年 6 万元支出，显示「超支 5.5 万」这种假象。
+        val sameMonth = DateTimeUtils.monthKey(startMillis) == DateTimeUtils.monthKey(endMillis)
+        val budget = if (sameMonth) {
+            budgetRepository.findByBookAndMonth(bookId, DateTimeUtils.monthKey(startMillis)).getOrNull()
+        } else {
+            null
+        }
         val summary = StatisticsSummary(
             incomeFen = incomeFen,
             expenseFen = expenseFen,

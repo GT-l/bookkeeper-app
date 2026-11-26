@@ -99,6 +99,12 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(message = "密码至少 4 位") }
             return
         }
+        // KeyboardType.NumberPassword 只限制软键盘，粘贴可以带进字母；
+        // 存了非数字 PIN 会让解锁页（也是数字键盘）永远输不进去，属于「把自己锁在门外」。
+        if (!pin.all { it.isDigit() }) {
+            _uiState.update { it.copy(message = "密码只能是数字，请重新输入") }
+            return
+        }
         viewModelScope.launch {
             settings.setAppLockPin(pin)
             _uiState.update { it.copy(message = "应用锁密码已保存", pinDraft = "") }

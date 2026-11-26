@@ -95,6 +95,8 @@ fun StatsSummaryCards(
             val progress = (summary.budgetUsedFen.toFloat() / summary.budgetLimitFen.toFloat())
                 .coerceIn(0f, 1f)
             val over = summary.budgetUsedFen > summary.budgetLimitFen
+            // 进度条要封顶 100%，但文字显示真实占比，否则和「我的」页的 150% 对不上
+            val percent = (summary.budgetUsedFen.toDouble() / summary.budgetLimitFen.toDouble() * 100).toInt()
             SoftCard(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -105,7 +107,7 @@ fun StatsSummaryCards(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = "${(progress * 100).toInt()}%",
+                            text = "$percent%",
                             style = MaterialTheme.typography.labelMedium,
                             color = if (over) ExpenseRed else MaterialTheme.colorScheme.primary
                         )

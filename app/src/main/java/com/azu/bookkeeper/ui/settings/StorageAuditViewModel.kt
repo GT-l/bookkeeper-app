@@ -113,8 +113,14 @@ class StorageAuditViewModel @Inject constructor(
 
     fun consumeMessage() = _uiState.update { it.copy(message = null) }
 
-    fun rescan() {
-        _uiState.update { it.copy(loading = true, message = null) }
+    /**
+     * [clearMessage] = false 用于「删除后刷新」：StateFlow 只保留最后一次更新，
+     * 如果这里把 message 置空，deleteSelected() 刚写好的结果提示会瞬间消失。
+     */
+    fun rescan(clearMessage: Boolean = true) {
+        _uiState.update { state ->
+            state.copy(loading = true, message = if (clearMessage) null else state.message)
+        }
         viewModelScope.launch {
             val items = withContext(Dispatchers.IO) { runCatching { scan() }.getOrElse { e ->
                 Timber.w(e, "storage audit scan failed")
@@ -169,7 +175,8 @@ class StorageAuditViewModel @Inject constructor(
                     }
                 )
             }
-            rescan()
+            // 保留删除结果提示，再刷新列表
+            rescan(clearMessage = false)
         }
     }
 

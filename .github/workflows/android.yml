@@ -82,9 +82,29 @@ jobs:
           ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
 
       - name: Run unit tests
-        continue-on-error: true
         shell: bash
         run: ./gradlew testDebugUnitTest --stacktrace
+
+      # 统计结果写进 artifact 名：公开 API 无需认证就能读到，方便核对「绿色」是否掩盖失败
+      - name: Summarize unit tests
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, os, xml.etree.ElementTree as ET
+          files = glob.glob("app/build/test-results/testDebugUnitTest/TEST-*.xml")
+          tests = failures = errors = skipped = 0
+          for path in files:
+              root = ET.parse(path).getroot()
+              tests += int(root.get("tests", 0))
+              failures += int(root.get("failures", 0))
+              errors += int(root.get("errors", 0))
+              skipped += int(root.get("skipped", 0))
+          summary = "T%d-F%d-E%d-S%d" % (tests, failures, errors, skipped)
+          print("UNIT TEST SUMMARY:", summary)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write("TEST_SUMMARY=%s\n" % summary)
+          PY
 
       - name: Upload debug APK
         if: success()
@@ -118,7 +138,8 @@ jobs:
 
             ## 新增 / 修复
 
-            - **页面切换不再「卡一下」（本轮重点）**：Navigation Compose 默认是整屏 700ms 淡入淡出，点完要等半秒才有反应。现在二级页面改成 220ms 的「1/8 屏横移 + 快速淡入」，返回是反向滑出；四个主 tab 之间只用 120ms 交叉淡入、不横移；底部导航栏进二级页时改为 140ms 滑出，不再「啪」地消失导致内容高度突跳。
+            - **1.1.0 专项测试与修复（本轮重点）**：新增 59 项静态一致性测试（`scripts/verify_v1_1_0.py`）+ 13 例 JVM 单测 + 逐函数走查，发现 14 个问题——截图按钮在 4 个页签无效、切页签重复写相册、统计页换账本不刷新、余额校准被算进收支、跨月预算假超支、删除成功提示被刷新抹掉、PIN 可存字母导致解不开锁等——全部按主流方案修复并补回归断言。CI 单测已去掉 `continue-on-error`，通过/失败数写进 artifact 名。用例与报告见仓库 `docs/testing/v1.1.0/`。
+            - **页面切换不再「卡一下」**：Navigation Compose 默认是整屏 700ms 淡入淡出，点完要等半秒才有反应。现在二级页面改成 220ms 的「1/8 屏横移 + 快速淡入」，返回是反向滑出；四个主 tab 之间只用 120ms 交叉淡入、不横移；底部导航栏进二级页时改为 140ms 滑出，不再「啪」地消失导致内容高度突跳。
             - **统计页对齐全站风格**：时间范围与 7 个页签都改成胶囊筛选；概览页换成渐变「净结余」主卡（收入 / 支出可点下钻、转账流水退到末位）+ 预算完成度卡；饼图与趋势图装进卡片并配标题/图例；分类 / 账户 / 标签明细改成「名次 + 金额 + 占比条」的卡片行；下钻改成独立整页，不再在统计页顶上硬塞一行返回。
             - **版本号升级（本轮）**：`versionCode` 1 → 2，`versionName` 1.0.0 → **1.1.0**，Release 切到新标签 `v1.1.0-debug`，后续更新都在这个版本线上走。
             - **README 重写（本轮）**：项目首页介绍按当前功能重写，补上「我的」页、存储排查、识屏三档、摇一摇加固、权限与数据说明、已知限制。
@@ -223,6 +244,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-test-reports
+          name: unit-test-reports-${{ env.TEST_SUMMARY }}
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore

@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,18 @@ fun StatisticsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val drill = state.drill
+
+    // 底部 tab 的 saveState/restoreState 会复用 ViewModel，init 不会重跑。
+    // 每次进入统计页主动刷新，保证换账本 / 新增账单后回到这里看到的是新数据。
+    LaunchedEffect(Unit) { viewModel.refresh() }
+
+    // 截图成功 / 加载失败的提示自动消失，别一直压在页面上
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            kotlinx.coroutines.delay(3_000L)
+            viewModel.dismissMessage()
+        }
+    }
 
     // 下钻：独立的整页，不再在统计页顶上硬塞一行「返回统计」
     if (drill != null) {
@@ -114,8 +127,12 @@ fun StatisticsScreen(
                     state.range.label
                 ).joinToString(" · "),
                 actions = {
-                    TextButton(onClick = { viewModel.requestScreenshot() }) {
-                        Text(text = "📷", fontSize = 16.sp)
+                    // 截图目前由 MPAndroidChart 组件完成；纯列表页没有可截的图表，
+                    // 与其点完毫无反应，不如只在 1/2/3 三个图表页显示按钮。
+                    if (state.tab in 1..3) {
+                        TextButton(onClick = { viewModel.requestScreenshot() }) {
+                            Text(text = "📷", fontSize = 16.sp)
+                        }
                     }
                 }
             )

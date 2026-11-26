@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,15 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // 删除失败等提示 3 秒自动消失；原来只能等下一次增删操作才被清掉
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            kotlinx.coroutines.delay(3_000L)
+            viewModel.consumeMessage()
+        }
+    }
+
     var bookMenuExpanded by remember { mutableStateOf(false) }
     // 待删除账单 ID：滑动删除 / 长按删除都会先记录到这里，经确认对话框后再真正删除
     var pendingDelete by remember { mutableStateOf<Long?>(null) }

@@ -3,7 +3,6 @@
 package com.azu.bookkeeper.ui.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -11,9 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -177,13 +174,10 @@ fun AppNavHost(
         // 底部导航栏自身仍会消费系统导航栏 inset。
         contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         bottomBar = {
-            // 进二级页面时底栏收得「有过程」：直接消失会让内容高度瞬间跳一下，
-            // 视觉上很像卡顿；这里用 140ms 滑出，和页面动效同时收尾。
-            AnimatedVisibility(
-                visible = showBottomBar,
-                enter = fadeIn(tween(140)) + slideInVertically(tween(140)) { it / 3 },
-                exit = fadeOut(tween(110)) + slideOutVertically(tween(110)) { it / 3 }
-            ) {
+            // 测试结论：用 AnimatedVisibility 包底栏时，Scaffold 在动画期间仍按底栏高度给
+            // NavHost 留 padding，动画结束的那一帧 padding 突然归零，页面高度「二次跳变」，
+            // 观感比直接切换更差。转场本身已压到 220ms 内，这里回归即时切换最稳。
+            if (showBottomBar) {
                 CuteBottomBar(currentRoute = currentRoute) { route ->
                     navController.navigate(route) {
                         launchSingleTop = true

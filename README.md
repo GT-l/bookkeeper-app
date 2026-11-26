@@ -48,6 +48,8 @@ Kotlin + Jetpack Compose（Material3 / Navigation）、MVVM + UseCase + Reposito
 
 构建环境：JDK 17、Android SDK Platform 35、Gradle 8.9。
 
+v1.1.0 的测试用例、问题清单与修复记录见 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)；静态一致性测试可执行 `python3 scripts/verify_v1_1_0.py`。
+
 ```bash
 ./gradlew assembleDebug        # 构建
 ./gradlew testDebugUnitTest    # 单元测试

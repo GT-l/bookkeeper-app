@@ -121,7 +121,11 @@ class ProfileViewModel @Inject constructor(
                         autoBills = 0,
                         recordDays = 0,
                         firstBillTime = 0L,
-                        topCategories = emptyList()
+                        topCategories = emptyList(),
+                        // 换账本时三块「由别的 Flow 供给」的字段也要清掉，否则旧账本数字会残留
+                        accountCount = 0,
+                        netAssetFen = 0L,
+                        budgetLimitFen = 0L
                     )
                 }
                 dataJob?.cancel()
@@ -170,7 +174,10 @@ class ProfileViewModel @Inject constructor(
 
     /** 把整本账单折成「累计 / 本月 / 天数 / Top 分类」四块，只遍历一次。 */
     private suspend fun applyBills(bookId: Long, allBills: List<Bill>) {
-        val bills = allBills.filter { it.amountFen > 0L }
+        // 与统计页口径一致：余额校准生成的 ADJUSTMENT 流水不是真实收支，转账也不算进「花在哪」
+        val bills = allBills.filter {
+            it.amountFen > 0L && !it.isAdjustment && it.billType != BillType.TRANSFER
+        }
         val monthStart = DateTimeUtils.startOfMonth(DateTimeUtils.nowMillis())
         val monthEnd = DateTimeUtils.endOfMonth(DateTimeUtils.nowMillis())
         val monthBills = bills.filter { it.billTime in monthStart..monthEnd }

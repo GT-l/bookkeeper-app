@@ -25,6 +25,7 @@ import com.azu.bookkeeper.ui.stats.component.TrendMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,14 +102,51 @@ class StatisticsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    /**
+     * 统计页会被底部 tab 的 saveState/restoreState 复用实例，init 里的 load() 不会重跑。
+     * 所以改为持续监听默认账本：账本一变（含恢复后的首次收集）就重算，
+     * 这样从首页换账本再切回统计，不会看到上一本账的数字。
+     */
+    private var loadJob: Job? = null
+
+    /** 下钻用的「原始流水」：账户明细需要包含转账，统计口径本身则排除。 */
+    private var allBills: List<Bill> = emptyList()
+
     init {
         viewModelScope.launch {
-            val bookId = settings.defaultBookId.first().takeIf { it > 0L }
-                ?: bookRepository.findDefault().getOrNull()?.bookId ?: 0L
-            val bookName = bookRepository.findById(bookId).getOrNull()?.name.orEmpty()
-            _uiState.update { it.copy(bookId = bookId, bookName = bookName) }
-            load()
+            settings.defaultBookId.collect { preferred ->
+                val resolved = preferred.takeIf { it > 0L }
+                    ?: bookRepository.findDefault().getOrNull()?.bookId ?: 0L
+                val name = bookRepository.findById(resolved).getOrNull()?.name.orEmpty()
+                _uiState.update { state ->
+                    if (state.bookId == resolved && state.bookName == name) {
+                        state
+                    } else {
+                        state.copy(
+                            bookId = resolved,
+                            bookName = name,
+                            bundle = StatisticsBundle(),
+                            bills = emptyList(),
+                            drill = null,
+                            drillBills = emptyList()
+                        )
+                    }
+                }
+                scheduleLoad()
+            }
         }
+    }
+
+    /** tab 复用场景由页面调用，强制按当前账本和筛选条件重算一次。 */
+    fun refresh() = scheduleLoad()
+
+    /**
+     * 新请求先取消旧请求。快速连点时间范围时，较慢的旧请求若最后写回，
+     * 会出现「胶囊选了本年、图表还是本月」的错配，这是典型的竞态问题。
+     */
+    private fun scheduleLoad() {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch { load() }
     }
 
     fun setRange(range: StatsRange) {
@@ -118,17 +156,17 @@ class StatisticsViewModel @Inject constructor(
             else -> StatsGranularity.DAY
         }
         _uiState.update { it.copy(range = range, granularity = granularity, drill = null, drillBills = emptyList()) }
-        viewModelScope.launch { load() }
+        scheduleLoad()
     }
 
     fun setCustomRange(startMillis: Long, endMillis: Long) {
         _uiState.update { it.withCustomRange(startMillis, endMillis).copy(drill = null, drillBills = emptyList()) }
-        viewModelScope.launch { load() }
+        scheduleLoad()
     }
 
     fun setGranularity(granularity: StatsGranularity) {
         _uiState.update { it.copy(granularity = granularity) }
-        viewModelScope.launch { load() }
+        scheduleLoad()
     }
 
     fun setTrendMode(mode: TrendMode) = _uiState.update { it.copy(trendMode = mode) }
@@ -153,7 +191,14 @@ class StatisticsViewModel @Inject constructor(
                     }
                 }.getOrNull()
             }
-            _uiState.update { it.copy(message = if (uri != null) "图表截图已保存到相册" else "截图保存失败，请检查存储权限") }
+            // 消费掉本次请求：图表组件是 remember 内部状态，切 tab 后重置为 0，
+            // 若不把 captureRequest 归零，新图表会把旧请求当成新的一次，重复往相册写图。
+            _uiState.update {
+                it.copy(
+                    message = if (uri != null) "图表截图已保存到相册" else "截图保存失败，请检查存储权限",
+                    captureRequest = 0L
+                )
+            }
         }
     }
 
@@ -195,7 +240,13 @@ class StatisticsViewModel @Inject constructor(
 
     private fun drill(target: StatsDrillDown) {
         val state = _uiState.value
-        val filtered = state.bills.filter { bill ->
+        // 账户下钻要能看到转账流水；其它下钻仍走「统计口径」列表，避免收支被转账污染。
+        val source = if (target.accountId != null) {
+            allBills.filter { !it.isAdjustment }
+        } else {
+            state.bills
+        }
+        val filtered = source.filter { bill ->
             (target.type == null || bill.billType == target.type) &&
                 (target.categoryId == null || bill.categoryId == target.categoryId) &&
                 (target.accountId == null || bill.accountFrom == target.accountId || bill.accountTo == target.accountId) &&
@@ -214,9 +265,10 @@ class StatisticsViewModel @Inject constructor(
             is Result.Error -> _uiState.update { it.copy(message = result.error.userMessage) }
             Result.Loading -> Unit
         }
-        val bills = billRepository.findByTimeRange(state.bookId, start, end)
+        val rawBills = billRepository.findByTimeRange(state.bookId, start, end)
             .getOrDefault(emptyList())
-            .filter { !it.isAdjustment && it.billType != BillType.TRANSFER }
+        allBills = rawBills
+        val bills = rawBills.filter { !it.isAdjustment && it.billType != BillType.TRANSFER }
         val categoryNames = (
             categoryRepository.observeByBook(state.bookId, com.azu.bookkeeper.domain.model.CategoryKind.EXPENSE).first() +
                 categoryRepository.observeByBook(state.bookId, com.azu.bookkeeper.domain.model.CategoryKind.INCOME).first()

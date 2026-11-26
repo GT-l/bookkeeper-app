@@ -107,7 +107,22 @@ fun ProfileScreen(
                         Entry("📚", "账本管理", "日常 / 家庭 / 旅行分开记", Screen.Books.route),
                         Entry("🏷️", "分类管理", "分类和二级分类都在这里", Screen.Categories.route),
                         Entry("#️⃣", "标签管理", "给账单打标签，方便复盘", Screen.Tags.route),
-                        Entry("💳", "资产账户", "银行卡、微信、支付宝余额", Screen.Accounts.route)
+                        Entry("💳", "资产账户", "银行卡、微信、支付宝余额", Screen.Accounts.route),
+                        Entry("🧾", "批量添加", "一次录入多笔，共用分类账户", Screen.BatchAdd.route),
+                        Entry("📊", "年度预算", "看全年花销总量", Screen.AnnualBudget.route)
+                    ),
+                    onNavigate = { route -> navController.navigate(route) }
+                )
+            }
+
+            item {
+                ProfileGroup(
+                    title = "资金往来",
+                    entries = listOf(
+                        Entry("↩️", "退款管理", "登记退款，自动记回一笔收入", Screen.Refunds.route),
+                        Entry("📤", "报销管理", "垫付的钱，到账时自动入账", Screen.Reimbursements.route),
+                        Entry("🤝", "债务 / 借贷", "借入借出与每笔还款", Screen.Debts.route),
+                        Entry("🗓️", "分期计划", "大额消费拆期，尾差自动补齐", Screen.Installments.route)
                     ),
                     onNavigate = { route -> navController.navigate(route) }
                 )

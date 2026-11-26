@@ -37,9 +37,15 @@ import com.azu.bookkeeper.R
 import com.azu.bookkeeper.ui.account.AccountEditScreen
 import com.azu.bookkeeper.ui.account.AccountListScreen
 import com.azu.bookkeeper.ui.backup.BackupScreen
+import com.azu.bookkeeper.ui.finance.BatchAddScreen
+import com.azu.bookkeeper.ui.finance.DebtsScreen
+import com.azu.bookkeeper.ui.finance.InstallmentsScreen
+import com.azu.bookkeeper.ui.finance.RefundsScreen
+import com.azu.bookkeeper.ui.finance.ReimbursementsScreen
 import com.azu.bookkeeper.ui.bill.BillDetailScreen
 import com.azu.bookkeeper.ui.bill.BillEditScreen
 import com.azu.bookkeeper.ui.book.BookManageScreen
+import com.azu.bookkeeper.ui.budget.AnnualBudgetScreen
 import com.azu.bookkeeper.ui.budget.BudgetScreen
 import com.azu.bookkeeper.ui.category.CategoryManageScreen
 import com.azu.bookkeeper.ui.category.TagManageScreen
@@ -47,6 +53,7 @@ import com.azu.bookkeeper.ui.export.ExportScreen
 import com.azu.bookkeeper.ui.home.HomeScreen
 import com.azu.bookkeeper.ui.importflow.ImportWizardScreen
 import com.azu.bookkeeper.ui.search.SearchScreen
+import com.azu.bookkeeper.ui.stats.CalendarStatsScreen
 import com.azu.bookkeeper.ui.stats.StatisticsScreen
 import com.azu.bookkeeper.ui.settings.AutomationSettingsScreen
 import com.azu.bookkeeper.ui.settings.CaptureDiagnosticsScreen
@@ -271,6 +278,14 @@ fun AppNavHost(
             composable(Screen.NotificationSettings.route) { NotificationSettingsScreen() }
             composable(Screen.QuickGestureSettings.route) { QuickGestureSettingsScreen() }
             composable(Screen.CaptureDiagnostics.route) { CaptureDiagnosticsScreen() }
+
+            composable(Screen.Refunds.route) { RefundsScreen() }
+            composable(Screen.Reimbursements.route) { ReimbursementsScreen() }
+            composable(Screen.Debts.route) { DebtsScreen() }
+            composable(Screen.Installments.route) { InstallmentsScreen() }
+            composable(Screen.BatchAdd.route) { BatchAddScreen() }
+            composable(Screen.CalendarStats.route) { CalendarStatsScreen() }
+            composable(Screen.AnnualBudget.route) { AnnualBudgetScreen() }
         }
     }
 }

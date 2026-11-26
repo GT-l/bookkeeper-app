@@ -127,6 +127,10 @@ fun StatisticsScreen(
                     state.range.label
                 ).joinToString(" · "),
                 actions = {
+                    // 日历 / 热力 / 同比环比入口：独立页面，不占 7 个页签
+                    TextButton(onClick = { navController.navigate(Screen.CalendarStats.route) }) {
+                        Text("日历", style = MaterialTheme.typography.labelMedium)
+                    }
                     // 截图目前由 MPAndroidChart 组件完成；纯列表页没有可截的图表，
                     // 与其点完毫无反应，不如只在 1/2/3 三个图表页显示按钮。
                     if (state.tab in 1..3) {

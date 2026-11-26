@@ -26,8 +26,17 @@ data class Account(
     val balanceFen: Long = initialBalanceFen,
     val icon: String = "",
     val remark: String = "",
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    /** 信用卡账单日（1~28）；0 表示未设置。 */
+    val billDay: Int = 0,
+    /** 信用卡还款日（1~28）；0 表示未设置。 */
+    val dueDay: Int = 0,
+    /** 是否开启账单日 / 还款日提醒。 */
+    val reminderEnabled: Boolean = false
 ) {
     /** 信用卡负债在总资产中按负值计入净资产。 */
     val netBalanceFen: Long get() = balanceFen
+
+    /** 是否配置了有效的账单日提醒。 */
+    val hasCardReminder: Boolean get() = reminderEnabled && billDay in 1..28 && dueDay in 1..28
 }

@@ -36,6 +36,21 @@ sealed class Screen(val route: String) {
 
     /** 关于与更新介绍。 */
     data object About : Screen("about")
+
+    /** 退款记录。 */
+    data object Refunds : Screen("refunds")
+    /** 报销管理。 */
+    data object Reimbursements : Screen("reimbursements")
+    /** 债务 / 借贷。 */
+    data object Debts : Screen("debts")
+    /** 分期计划。 */
+    data object Installments : Screen("installments")
+    /** 批量添加账单。 */
+    data object BatchAdd : Screen("batch_add")
+    /** 日历视图 + 消费热力图 + 同比环比。 */
+    data object CalendarStats : Screen("calendar_stats")
+    /** 年度预算。 */
+    data object AnnualBudget : Screen("annual_budget")
     data object AutomationSettings : Screen("automation_settings")
     data object NotificationSettings : Screen("notification_settings")
     data object QuickGestureSettings : Screen("quick_gesture_settings")

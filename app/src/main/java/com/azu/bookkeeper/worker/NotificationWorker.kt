@@ -16,6 +16,7 @@ import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.core.getOrDefault
 import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.domain.model.BillType
+import com.azu.bookkeeper.domain.repository.AccountRepository
 import com.azu.bookkeeper.domain.repository.BillRepository
 import com.azu.bookkeeper.domain.repository.BookRepository
 import com.azu.bookkeeper.domain.repository.BudgetRepository
@@ -32,7 +33,8 @@ class NotificationWorker @AssistedInject constructor(
     private val billRepository: BillRepository,
     private val budgetRepository: BudgetRepository,
     private val bookRepository: BookRepository,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val accountRepository: AccountRepository
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): WorkResult {
@@ -63,7 +65,33 @@ class NotificationWorker @AssistedInject constructor(
                 notificationId = 2002
             )
         }
+        // 信用卡还款日提醒：还款日在 3 天内时提醒（每天最多一条，避免打扰）
+        checkCardDueReminder(bookId)
+
         return WorkResult.success()
+    }
+
+    /**
+     * 信用卡还款日提醒。
+     *
+     * 主流做法：在账单日/还款日临近时提前提醒，只推一次而非每天轰炸。
+     * 这里按「距还款日 ≤ 3 天」触发，并用 notificationId 固定为同一条，
+     * 系统在当天只会保留最新一条，不会堆积。
+     */
+    private suspend fun checkCardDueReminder(bookId: Long) {
+        val accounts = runCatching { accountRepository.observeAll(bookId).first() }
+            .getOrDefault(emptyList())
+        val today = java.time.LocalDate.now().dayOfMonth
+        accounts.firstOrNull { account ->
+            account.hasCardReminder && kotlin.math.abs(account.dueDay - today) <= 3
+        }?.let { account ->
+            showNotification(
+                title = "信用卡还款提醒",
+                text = "${account.name} 还款日快到了（${account.dueDay}号），记得还款",
+                channel = Constants.CHANNEL_REMINDER,
+                notificationId = 2003
+            )
+        }
     }
 
     private fun showNotification(title: String, text: String, channel: String, notificationId: Int) {

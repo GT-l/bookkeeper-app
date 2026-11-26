@@ -5,7 +5,7 @@ object Constants {
 
     // ---------- 数据库 ----------
     const val DATABASE_NAME = "bookkeeper.db"
-    const val DATABASE_VERSION = 1
+    const val DATABASE_VERSION = 2
     const val DATABASE_KEY_PREF = "bk_db_key_prefs"
     const val DATABASE_KEY_ENTRY = "passphrase"
 

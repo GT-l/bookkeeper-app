@@ -7,13 +7,19 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.data.local.db.BookkeeperDatabase
+import com.azu.bookkeeper.data.local.db.MIGRATION_1_2
 import com.azu.bookkeeper.data.local.db.dao.AccountDao
+import com.azu.bookkeeper.data.local.db.dao.AnnualBudgetDao
 import com.azu.bookkeeper.data.local.db.dao.BillDao
+import com.azu.bookkeeper.data.local.db.dao.DebtDao
+import com.azu.bookkeeper.data.local.db.dao.InstallmentDao
 import com.azu.bookkeeper.data.local.db.dao.BookDao
 import com.azu.bookkeeper.data.local.db.dao.BudgetDao
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
 import com.azu.bookkeeper.data.local.db.dao.CategoryDao
 import com.azu.bookkeeper.data.local.db.dao.ImportDao
+import com.azu.bookkeeper.data.local.db.dao.RefundDao
+import com.azu.bookkeeper.data.local.db.dao.ReimbursementDao
 import com.azu.bookkeeper.data.local.db.dao.RuleDao
 import com.azu.bookkeeper.data.local.db.dao.TagDao
 import dagger.Module
@@ -67,7 +73,9 @@ object DatabaseModule {
         context,
         BookkeeperDatabase::class.java,
         Constants.DATABASE_NAME
-    ).openHelperFactory(factory).build()
+    ).openHelperFactory(factory)
+        .addMigrations(MIGRATION_1_2)
+        .build()
 
     @Provides
     fun provideBillDao(database: BookkeeperDatabase): BillDao = database.billDao()
@@ -95,4 +103,19 @@ object DatabaseModule {
 
     @Provides
     fun provideCaptureDao(database: BookkeeperDatabase): CaptureDao = database.captureDao()
+
+    @Provides
+    fun provideRefundDao(database: BookkeeperDatabase): RefundDao = database.refundDao()
+
+    @Provides
+    fun provideReimbursementDao(database: BookkeeperDatabase): ReimbursementDao = database.reimbursementDao()
+
+    @Provides
+    fun provideDebtDao(database: BookkeeperDatabase): DebtDao = database.debtDao()
+
+    @Provides
+    fun provideInstallmentDao(database: BookkeeperDatabase): InstallmentDao = database.installmentDao()
+
+    @Provides
+    fun provideAnnualBudgetDao(database: BookkeeperDatabase): AnnualBudgetDao = database.annualBudgetDao()
 }

@@ -1,6 +1,7 @@
 package com.azu.bookkeeper.data.mapper
 
 import com.azu.bookkeeper.data.local.db.entity.AccountEntity
+import com.azu.bookkeeper.data.local.db.entity.AnnualBudgetEntity
 import com.azu.bookkeeper.data.local.db.entity.BillEntity
 import com.azu.bookkeeper.data.local.db.entity.BillImageEntity
 import com.azu.bookkeeper.data.local.db.entity.BillTagCrossRef
@@ -9,9 +10,16 @@ import com.azu.bookkeeper.data.local.db.entity.BudgetEntity
 import com.azu.bookkeeper.data.local.db.entity.CaptureEventEntity
 import com.azu.bookkeeper.data.local.db.entity.CategoryEntity
 import com.azu.bookkeeper.data.local.db.entity.CategoryRuleEntity
+import com.azu.bookkeeper.data.local.db.entity.DebtEntity
+import com.azu.bookkeeper.data.local.db.entity.DebtRepaymentEntity
 import com.azu.bookkeeper.data.local.db.entity.ImportTaskEntity
+import com.azu.bookkeeper.data.local.db.entity.InstallmentEntity
+import com.azu.bookkeeper.data.local.db.entity.InstallmentPaymentEntity
 import com.azu.bookkeeper.data.local.db.entity.ImportTemplateEntity
 import com.azu.bookkeeper.data.local.db.entity.TagEntity
+import com.azu.bookkeeper.data.local.db.entity.RefundEntity
+import com.azu.bookkeeper.data.local.db.entity.ReimbursementEntity
+import com.azu.bookkeeper.domain.model.AnnualBudget
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.AccountType
 import com.azu.bookkeeper.domain.model.Bill
@@ -19,6 +27,10 @@ import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.Book
 import com.azu.bookkeeper.domain.model.BookStatus
+import com.azu.bookkeeper.domain.model.Debt
+import com.azu.bookkeeper.domain.model.DebtDirection
+import com.azu.bookkeeper.domain.model.DebtRepayment
+import com.azu.bookkeeper.domain.model.DebtStatus
 import com.azu.bookkeeper.domain.model.Budget
 import com.azu.bookkeeper.domain.model.CaptureCandidate
 import com.azu.bookkeeper.domain.model.CaptureType
@@ -27,8 +39,13 @@ import com.azu.bookkeeper.domain.model.CategoryKind
 import com.azu.bookkeeper.domain.model.CategoryRule
 import com.azu.bookkeeper.domain.model.CycleType
 import com.azu.bookkeeper.domain.model.ImportTask
-import com.azu.bookkeeper.domain.model.ImportTaskStatus
+import com.azu.bookkeeper.domain.model.Installment
+import com.azu.bookkeeper.domain.model.InstallmentPayment
+import com.azu.bookkeeper.domain.model.InstallmentPaymentStatus
 import com.azu.bookkeeper.domain.model.ImportTemplate
+import com.azu.bookkeeper.domain.model.Refund
+import com.azu.bookkeeper.domain.model.ReimburseStatus
+import com.azu.bookkeeper.domain.model.Reimbursement
 import com.azu.bookkeeper.domain.model.Tag
 import com.azu.bookkeeper.domain.model.VerifyStatus
 import kotlinx.serialization.encodeToString
@@ -159,7 +176,10 @@ fun AccountEntity.toDomain(): Account = Account(
     balanceFen = balanceFen,
     icon = icon,
     remark = remark,
-    enabled = enabled
+    enabled = enabled,
+    billDay = billDay,
+    dueDay = dueDay,
+    reminderEnabled = reminderEnabled
 )
 
 fun Account.toEntity(): AccountEntity = AccountEntity(
@@ -171,7 +191,10 @@ fun Account.toEntity(): AccountEntity = AccountEntity(
     balanceFen = balanceFen,
     icon = icon,
     remark = remark,
-    enabled = enabled
+    enabled = enabled,
+    billDay = billDay,
+    dueDay = dueDay,
+    reminderEnabled = reminderEnabled
 )
 
 // ---------- Budget ----------
@@ -258,3 +281,79 @@ fun CaptureEventEntity.toCandidate(): CaptureCandidate = CaptureCandidate(
 )
 
 fun BillImageEntity.toPath(): String = encryptedPath
+
+// ---------- 1.2.0 新增表 ----------
+fun RefundEntity.toDomain(): Refund = Refund(
+    refundId = refundId, bookId = bookId, sourceBillId = sourceBillId,
+    amountFen = amountFen, refundTime = refundTime, reason = reason, createAt = createAt
+)
+
+fun Refund.toEntity(): RefundEntity = RefundEntity(
+    refundId = refundId, bookId = bookId, sourceBillId = sourceBillId,
+    amountFen = amountFen, refundTime = refundTime, reason = reason, createAt = createAt
+)
+
+fun ReimbursementEntity.toDomain(): Reimbursement = Reimbursement(
+    reimbursementId = reimbursementId, bookId = bookId, title = title,
+    amountFen = amountFen, status = ReimburseStatus.fromCode(status),
+    sourceBillId = sourceBillId, incomeBillId = incomeBillId, accountId = accountId,
+    createAt = createAt, updateAt = updateAt
+)
+
+fun Reimbursement.toEntity(): ReimbursementEntity = ReimbursementEntity(
+    reimbursementId = reimbursementId, bookId = bookId, title = title,
+    amountFen = amountFen, status = status.code,
+    sourceBillId = sourceBillId, incomeBillId = incomeBillId, accountId = accountId,
+    createAt = createAt, updateAt = updateAt
+)
+
+fun DebtEntity.toDomain(): Debt = Debt(
+    debtId = debtId, bookId = bookId, direction = DebtDirection.fromCode(direction),
+    counterparty = counterparty, totalFen = totalFen, settledFen = settledFen,
+    accountId = accountId, dueDate = dueDate, note = note,
+    status = DebtStatus.fromCode(status), createAt = createAt, updateAt = updateAt
+)
+
+fun Debt.toEntity(): DebtEntity = DebtEntity(
+    debtId = debtId, bookId = bookId, direction = direction.code,
+    counterparty = counterparty, totalFen = totalFen, settledFen = settledFen,
+    accountId = accountId, dueDate = dueDate, note = note,
+    status = status.code, createAt = createAt, updateAt = updateAt
+)
+
+fun DebtRepaymentEntity.toDomain(): DebtRepayment = DebtRepayment(
+    repaymentId = repaymentId, debtId = debtId, amountFen = amountFen,
+    repayTime = repayTime, billId = billId, note = note
+)
+
+fun DebtRepayment.toEntity(): DebtRepaymentEntity = DebtRepaymentEntity(
+    repaymentId = repaymentId, debtId = debtId, amountFen = amountFen,
+    repayTime = repayTime, billId = billId, note = note
+)
+
+fun InstallmentEntity.toDomain(): Installment = Installment(
+    installmentId = installmentId, bookId = bookId, title = title,
+    totalFen = totalFen, periods = periods, paidPeriods = paidPeriods,
+    perPeriodFen = perPeriodFen, accountId = accountId, categoryId = categoryId,
+    note = note, createAt = createAt
+)
+
+fun Installment.toEntity(): InstallmentEntity = InstallmentEntity(
+    installmentId = installmentId, bookId = bookId, title = title,
+    totalFen = totalFen, periods = periods, paidPeriods = paidPeriods,
+    perPeriodFen = perPeriodFen, accountId = accountId, categoryId = categoryId,
+    note = note, createAt = createAt
+)
+
+fun InstallmentPaymentEntity.toDomain(): InstallmentPayment = InstallmentPayment(
+    paymentId = paymentId, installmentId = installmentId, periodIndex = periodIndex,
+    amountFen = amountFen, payTime = payTime, billId = billId
+)
+
+fun AnnualBudgetEntity.toDomain(): AnnualBudget = AnnualBudget(
+    budgetId = budgetId, bookId = bookId, year = year, totalLimitFen = totalLimitFen
+)
+
+fun AnnualBudget.toEntity(): AnnualBudgetEntity = AnnualBudgetEntity(
+    budgetId = budgetId, bookId = bookId, year = year, totalLimitFen = totalLimitFen
+)

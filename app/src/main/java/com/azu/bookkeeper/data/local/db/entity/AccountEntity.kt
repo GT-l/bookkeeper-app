@@ -30,5 +30,11 @@ data class AccountEntity(
     val balanceFen: Long = initialBalanceFen,
     val icon: String = "",
     val remark: String = "",
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    /** 信用卡账单日（1~28，0 表示未设置）；v2 迁移新增。 */
+    @ColumnInfo(name = "bill_day") val billDay: Int = 0,
+    /** 信用卡还款日（1~28，0 表示未设置）；v2 迁移新增。 */
+    @ColumnInfo(name = "due_day") val dueDay: Int = 0,
+    /** 是否开启账单日提醒；v2 迁移新增。 */
+    @ColumnInfo(name = "reminder_enabled") val reminderEnabled: Boolean = false
 )

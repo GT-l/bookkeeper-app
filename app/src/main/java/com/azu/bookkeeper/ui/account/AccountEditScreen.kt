@@ -82,6 +82,39 @@ fun AccountEditScreen(
                 Checkbox(checked = state.enabled, onCheckedChange = viewModel::setEnabled)
                 Text("启用（停用后不可选，历史账单保留）")
             }
+
+            // 信用卡账单日 / 还款日：只对该类型有意义，其它类型隐藏，避免干扰
+            if (state.type == AccountType.CREDIT_CARD) {
+                Text(
+                    "账单日与还款日",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+                OutlinedTextField(
+                    value = state.billDayText,
+                    onValueChange = viewModel::setBillDay,
+                    label = { Text("账单日（1~28）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                )
+                OutlinedTextField(
+                    value = state.dueDayText,
+                    onValueChange = viewModel::setDueDay,
+                    label = { Text("还款日（1~28）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                androidx.compose.foundation.layout.Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = state.reminderEnabled,
+                        onCheckedChange = viewModel::setReminderEnabled
+                    )
+                    Text("临近还款日时提醒我")
+                }
+            }
             state.message?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
             }

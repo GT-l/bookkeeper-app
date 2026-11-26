@@ -4,15 +4,24 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.azu.bookkeeper.data.local.db.dao.AccountDao
+import com.azu.bookkeeper.data.local.db.dao.AnnualBudgetDao
 import com.azu.bookkeeper.data.local.db.dao.BillDao
+import com.azu.bookkeeper.data.local.db.dao.DebtDao
+import com.azu.bookkeeper.data.local.db.dao.InstallmentDao
 import com.azu.bookkeeper.data.local.db.dao.BookDao
 import com.azu.bookkeeper.data.local.db.dao.BudgetDao
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
 import com.azu.bookkeeper.data.local.db.dao.CategoryDao
 import com.azu.bookkeeper.data.local.db.dao.ImportDao
+import com.azu.bookkeeper.data.local.db.dao.RefundDao
+import com.azu.bookkeeper.data.local.db.dao.ReimbursementDao
 import com.azu.bookkeeper.data.local.db.dao.RuleDao
 import com.azu.bookkeeper.data.local.db.dao.TagDao
+import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.data.local.db.entity.AccountEntity
+import com.azu.bookkeeper.data.local.db.entity.AnnualBudgetEntity
+import com.azu.bookkeeper.data.local.db.entity.DebtEntity
+import com.azu.bookkeeper.data.local.db.entity.DebtRepaymentEntity
 import com.azu.bookkeeper.data.local.db.entity.BillEntity
 import com.azu.bookkeeper.data.local.db.entity.BillImageEntity
 import com.azu.bookkeeper.data.local.db.entity.BillTagCrossRef
@@ -22,7 +31,11 @@ import com.azu.bookkeeper.data.local.db.entity.CaptureEventEntity
 import com.azu.bookkeeper.data.local.db.entity.CategoryEntity
 import com.azu.bookkeeper.data.local.db.entity.CategoryRuleEntity
 import com.azu.bookkeeper.data.local.db.entity.ImportTaskEntity
+import com.azu.bookkeeper.data.local.db.entity.InstallmentEntity
+import com.azu.bookkeeper.data.local.db.entity.InstallmentPaymentEntity
 import com.azu.bookkeeper.data.local.db.entity.ImportTemplateEntity
+import com.azu.bookkeeper.data.local.db.entity.RefundEntity
+import com.azu.bookkeeper.data.local.db.entity.ReimbursementEntity
 import com.azu.bookkeeper.data.local.db.entity.TagEntity
 
 /** Room 唯一数据库入口；SQLCipher 的 openHelperFactory 由 DatabaseModule 注入。 */
@@ -39,9 +52,16 @@ import com.azu.bookkeeper.data.local.db.entity.TagEntity
         ImportTaskEntity::class,
         CategoryRuleEntity::class,
         CaptureEventEntity::class,
-        BillImageEntity::class
+        BillImageEntity::class,
+        RefundEntity::class,
+        ReimbursementEntity::class,
+        DebtEntity::class,
+        DebtRepaymentEntity::class,
+        InstallmentEntity::class,
+        InstallmentPaymentEntity::class,
+        AnnualBudgetEntity::class
     ],
-    version = 1,
+    version = Constants.DATABASE_VERSION,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -64,4 +84,14 @@ abstract class BookkeeperDatabase : RoomDatabase() {
     abstract fun ruleDao(): RuleDao
 
     abstract fun captureDao(): CaptureDao
+
+    abstract fun refundDao(): RefundDao
+
+    abstract fun reimbursementDao(): ReimbursementDao
+
+    abstract fun debtDao(): DebtDao
+
+    abstract fun installmentDao(): InstallmentDao
+
+    abstract fun annualBudgetDao(): AnnualBudgetDao
 }

@@ -41,6 +41,9 @@ class AccountEditViewModel @Inject constructor(
         val icon: String = "",
         val remark: String = "",
         val enabled: Boolean = true,
+        val billDayText: String = "",
+        val dueDayText: String = "",
+        val reminderEnabled: Boolean = false,
         val message: String? = null,
         val saved: Boolean = false
     )
@@ -65,7 +68,10 @@ class AccountEditViewModel @Inject constructor(
                         currentBalanceFen = account.balanceFen,
                         icon = account.icon,
                         remark = account.remark,
-                        enabled = account.enabled
+                        enabled = account.enabled,
+                        billDayText = if (account.billDay > 0) account.billDay.toString() else "",
+                        dueDayText = if (account.dueDay > 0) account.dueDay.toString() else "",
+                        reminderEnabled = account.reminderEnabled
                     )
                 } ?: state.copy(bookId = bookId)
             }
@@ -83,6 +89,9 @@ class AccountEditViewModel @Inject constructor(
     fun setRemark(value: String) = _uiState.update { it.copy(remark = value) }
 
     fun setEnabled(value: Boolean) = _uiState.update { it.copy(enabled = value) }
+    fun setBillDay(value: String) = _uiState.update { it.copy(billDayText = value.filter { it.isDigit() }.take(2)) }
+    fun setDueDay(value: String) = _uiState.update { it.copy(dueDayText = value.filter { it.isDigit() }.take(2)) }
+    fun setReminderEnabled(value: Boolean) = _uiState.update { it.copy(reminderEnabled = value) }
 
     fun save(onSaved: () -> Unit) {
         val state = _uiState.value
@@ -91,6 +100,13 @@ class AccountEditViewModel @Inject constructor(
             return
         }
         val initialFen = Money.parse(state.initialBalanceText) ?: 0L
+        val billDay = state.billDayText.toIntOrNull() ?: 0
+        val dueDay = state.dueDayText.toIntOrNull() ?: 0
+        if ((state.billDayText.isNotBlank() && billDay !in 1..28) ||
+            (state.dueDayText.isNotBlank() && dueDay !in 1..28)) {
+            _uiState.update { it.copy(message = "账单日和还款日需填 1~28 之间的数字") }
+            return
+        }
         val account = Account(
             accountId = state.accountId,
             bookId = state.bookId,
@@ -100,7 +116,10 @@ class AccountEditViewModel @Inject constructor(
             balanceFen = if (state.accountId > 0L) state.currentBalanceFen else initialFen,
             icon = state.icon,
             remark = state.remark,
-            enabled = state.enabled
+            enabled = state.enabled,
+            billDay = billDay,
+            dueDay = dueDay,
+            reminderEnabled = state.reminderEnabled && billDay in 1..28 && dueDay in 1..28
         )
         viewModelScope.launch {
             val result = if (state.accountId > 0L) {

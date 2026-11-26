@@ -180,7 +180,7 @@ jobs:
           if os.path.isfile("build.log"):
               with open("build.log", encoding="utf-8", errors="ignore") as f:
                   text = f.read()
-          errors = re.findall(r"^e: .+", text, re.M)
+          errors = re.findall(r"^e: file:///.+$", text, re.M) or re.findall(r"^e: .+", text, re.M)
           if errors:
               matched = re.match(r"^e: file:///(\S+?):(\d+):(\d+): (.*)$", errors[0])
               if matched:

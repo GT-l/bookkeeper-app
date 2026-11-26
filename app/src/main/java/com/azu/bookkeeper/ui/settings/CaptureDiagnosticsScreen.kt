@@ -50,12 +50,13 @@ fun CaptureDiagnosticsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
-    // 识屏日志预览：自检跑完或页面数据变化时刷新
-    var logText by remember { mutableStateOf(viewModel.logPreview(20)) }
-    var logSummary by remember { mutableStateOf(viewModel.logSummary()) }
+    // 识屏日志预览：初始为空，读取放到 LaunchedEffect（组合期不碰磁盘，避免首帧卡顿/主线程异常）
+    var logText by remember { mutableStateOf("") }
+    var logSummary by remember { mutableStateOf("读取中…") }
     LaunchedEffect(state.running, state.last, state.message) {
-        logText = viewModel.logPreview(20)
-        logSummary = viewModel.logSummary()
+        com.azu.bookkeeper.core.BootTrace.step("PAGE", "自检页组合/刷新")
+        logText = runCatching { viewModel.logPreview(20) }.getOrDefault("")
+        logSummary = runCatching { viewModel.logSummary() }.getOrDefault("读取失败")
     }
     val authLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()

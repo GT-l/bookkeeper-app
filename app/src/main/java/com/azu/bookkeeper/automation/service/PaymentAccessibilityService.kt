@@ -82,8 +82,18 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var lastTriggerAt = 0L
 
     override fun onServiceConnected() {
+        // 整个回调零异常逃出：系统绑定阶段一旦抛异常，服务会被 ROM 直接禁用，
+        // 用户看到的就是「刚打开无障碍，几秒后又被自动关掉」。
+        runCatching { connectedInternal() }.onFailure { t ->
+            Log.e(TAG, "onServiceConnected 执行异常（服务保持存活）", t)
+            runCatching { com.azu.bookkeeper.core.CaptureLog.e(applicationContext, "A11Y", "onServiceConnected 异常", t) }
+        }
+    }
+
+    private fun connectedInternal() {
         super.onServiceConnected()
         instance = this
+        com.azu.bookkeeper.core.BootTrace.step("A11Y", "onServiceConnected")
         val canShot = runCatching { canCaptureScreen() }.getOrDefault(false)
         // 用 Log.w 而不是 Timber.i：release 的 -assumenosideeffects 会把 i() 整段裁掉，
         // 连不上服务时必须有能在 logcat 里看到的日志。
@@ -104,7 +114,9 @@ class PaymentAccessibilityService : AccessibilityService() {
                 QuickGestureCache.code = gestureEntryPoint.automationSettings().quickGesture.first()
             }
         }
-        setupFingerprintGestures()
+        runCatching { setupFingerprintGestures() }.onFailure {
+            Log.w(TAG, "指纹手势初始化失败（不影响读屏）", it)
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -246,6 +258,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        com.azu.bookkeeper.core.BootTrace.step("A11Y", "onUnbind（被解绑/ROM 回收）")
         Log.w(TAG, "无障碍服务被解绑（系统关闭开关 / ROM 回收）")
         com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "服务被解绑（系统关闭/ROM 回收）")
         runCatching {
@@ -256,6 +269,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        com.azu.bookkeeper.core.BootTrace.step("A11Y", "onDestroy")
         Log.w(TAG, "无障碍服务已销毁")
         if (instance === this) instance = null
         // 保留最后一次连接时间：设置页/自检页用它区分「从没连上」与「连上后被杀」

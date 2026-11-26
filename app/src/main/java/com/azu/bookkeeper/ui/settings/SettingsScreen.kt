@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +42,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // 必须在 Composable 作用域取好，不能写在 clickable 的普通 lambda 里（那不是 @Composable 上下文）
+    val appContext = LocalContext.current
     var bookExpanded by remember { mutableStateOf(false) }
     var accountExpanded by remember { mutableStateOf(false) }
     var weekText by remember(state.weekStartDay) { mutableStateOf(state.weekStartDay.toString()) }
@@ -132,7 +135,8 @@ fun SettingsScreen(
                 "标签管理" to Screen.Tags.route,
                 "账本管理" to Screen.Books.route,
                 "自动化设置（T5）" to Screen.AutomationSettings.route,
-                "识屏诊断与日志（可复制）" to Screen.CaptureDiagnostics.route,
+                "识屏自检" to Screen.CaptureDiagnostics.route,
+                "崩溃日志（一键复制，不依赖任何组件）" to "debug:crash_log",
                 "导入（T4）" to Screen.Import.route,
                 "统计（T4）" to Screen.Statistics.route,
                 "备份与恢复（T4）" to Screen.Backup.route
@@ -142,7 +146,21 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { navController.navigate(route) }
+                            .clickable {
+                                if (route == "debug:crash_log") {
+                                    // 用最原始的 Intent 打开零依赖日志页：即使自检页/依赖图崩了也能看到栈
+                                    runCatching {
+                                        appContext.startActivity(
+                                            android.content.Intent(
+                                                appContext,
+                                                com.azu.bookkeeper.ui.debug.CaptureLogActivity::class.java
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    navController.navigate(route)
+                                }
+                            }
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

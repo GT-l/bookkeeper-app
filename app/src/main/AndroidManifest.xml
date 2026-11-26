@@ -84,6 +84,13 @@
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- 零依赖日志查看页：不用 Compose / Hilt / 截屏 / OCR，保证「只要能开 App 就能开它」 -->
+        <activity
+            android:name=".ui.debug.CaptureLogActivity"
+            android:exported="false"
+            android:label="识屏诊断日志"
+            android:theme="@android:style/Theme.DeviceDefault.Light.DarkActionBar" />
+
         <!-- 截屏授权中转页：摇一摇缺授权时自动拉起，只弹系统授权对话框 -->
         <activity
             android:name=".ui.quick.ScreenCaptureAuthActivity"

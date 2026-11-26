@@ -1,13 +1,26 @@
 package com.azu.bookkeeper
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.rememberNavController
 import com.azu.bookkeeper.automation.permission.PermissionGuide
@@ -21,6 +34,7 @@ import com.azu.bookkeeper.domain.repository.SettingsRepository
 import com.azu.bookkeeper.domain.usecase.bill.ObserveBillsUseCase
 import com.azu.bookkeeper.ui.navigation.AppEntryRouter
 import com.azu.bookkeeper.ui.navigation.AppNavHost
+import com.azu.bookkeeper.ui.debug.CaptureLogActivity
 import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.ui.quick.QuickBallService
 import com.azu.bookkeeper.ui.quick.ShakeQuickAddService
@@ -73,6 +87,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        com.azu.bookkeeper.core.BootTrace.step("APP", "MainActivity.onCreate", "startDest 解析前")
         val startDestination = QuickCaptureLauncher.resolve(intent)
             ?.let { Screen.billEdit(prefill = it.toPrefill()) }
             ?: AppEntryRouter.resolve(intent)
@@ -83,6 +98,62 @@ class MainActivity : FragmentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val navController = rememberNavController()
                     AppNavHost(navController = navController, startDestination = startDestination)
+
+                    // 启动即检查：上次是否闪退过。崩过就把栈直接摆到用户眼前并支持一键复制。
+                    // 为什么放这里而不是自检页：自检页本身可能就是崩的那一环，藏在里面等于没写。
+                    var crashReport by remember { mutableStateOf<String?>(null) }
+                    LaunchedEffect(Unit) {
+                        crashReport = runCatching {
+                            com.azu.bookkeeper.core.CrashReportGate.pending(this@MainActivity)
+                        }.getOrNull()
+                    }
+                    crashReport?.let { report ->
+                        AlertDialog(
+                            onDismissRequest = {
+                                runCatching {
+                                    com.azu.bookkeeper.core.CrashReportGate.markShown(this@MainActivity)
+                                }
+                                crashReport = null
+                            },
+                            title = { Text("上次闪退了，已抓到崩溃栈") },
+                            text = {
+                                Text(
+                                    report.take(1200),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    runCatching {
+                                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE)
+                                            as? ClipboardManager
+                                        clipboard?.setPrimaryClip(
+                                            ClipData.newPlainText("崩溃栈", report)
+                                        )
+                                        com.azu.bookkeeper.core.CrashReportGate.markShown(this@MainActivity)
+                                    }
+                                    crashReport = null
+                                    Toast.makeText(
+                                        this@MainActivity, "崩溃栈已复制，粘贴发我即可", Toast.LENGTH_LONG
+                                    ).show()
+                                    runCatching {
+                                        startActivity(
+                                            Intent(this@MainActivity, CaptureLogActivity::class.java)
+                                        )
+                                    }
+                                }) { Text("复制并看详情") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    runCatching {
+                                        com.azu.bookkeeper.core.CrashReportGate.markShown(this@MainActivity)
+                                    }
+                                    crashReport = null
+                                }) { Text("知道了") }
+                            }
+                        )
+                    }
 
                     LaunchedEffect(Unit) {
                         quickCaptureEvents.collect { request ->

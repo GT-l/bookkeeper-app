@@ -65,27 +65,58 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     val state = _state.asStateFlow()
 
     init {
-        refresh()
+        // 构造阶段绝不能抛：ViewModel 创建失败会直接让「点自检」变成闪退，
+        // 而用户完全看不到原因。这里兜住并把异常显示到页面上。
+        com.azu.bookkeeper.core.BootTrace.step("VM", "CaptureDiagnosticsViewModel.init")
+        runCatching { refresh() }.onFailure { t ->
+            com.azu.bookkeeper.core.BootTrace.step(
+                "VM", "init 失败", "${t.javaClass.simpleName}: ${t.message}"
+            )
+            _state.update {
+                it.copy(
+                    items = listOf(
+                        CheckItem(
+                            "自检页初始化异常",
+                            false,
+                            "${t.javaClass.simpleName}: ${t.message}",
+                            "把该信息连同崩溃日志一起反馈"
+                        )
+                    )
+                )
+            }
+        }
     }
 
     /** 刷新环境检查项（通知权限 / 截屏通道）与最近一次留痕。 */
     fun refresh() {
-        val last = CaptureDiagnostics.last(context)
-        val interrupted = SelfCheckGuard.lastInterruptedStep(context)
+        val last = runCatching { CaptureDiagnostics.last(context) }.getOrNull()
+        val interrupted = runCatching { SelfCheckGuard.lastInterruptedStep(context) }.getOrNull()
         _state.update {
             it.copy(
                 last = last,
                 textPreview = last?.textPreview.orEmpty(),
                 items = buildList {
-                    crashCheck()?.let { add(it) }
+                    runCatching { crashCheck() }.getOrNull()?.let { add(it) }
                     if (interrupted != null) add(interruptedCheck(interrupted))
-                    add(notificationCheck())
-                    add(accessibilityChannelCheck())
-                    add(projectionChannelCheck())
+                    // 每项独立兜底：某一项读取系统状态失败，只让这一项变红，绝不拖垮整页
+                    add(safeItem("通知权限") { notificationCheck() })
+                    add(safeItem("无障碍截屏通道") { accessibilityChannelCheck() })
+                    add(safeItem("媒体投影通道") { projectionChannelCheck() })
                 }
             )
         }
     }
+
+    /** 单项检查兜底：异常转成一条红色检查项，而不是让页面崩溃。 */
+    private fun safeItem(name: String, block: () -> CheckItem): CheckItem =
+        runCatching { block() }.getOrElse { t ->
+            CheckItem(
+                name = name,
+                ok = false,
+                detail = "检查项执行异常：${t.javaClass.simpleName}: ${t.message}",
+                advice = "把这条与崩溃日志一起反馈"
+            )
+        }
 
     /**
      * 最近一次 Java 崩溃（全局捕获器写盘）。用户报告「一点就闪退」时，
@@ -217,6 +248,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
 
     /** 主动自检：真实执行一次截屏 + OCR + 提取，逐项实时显示。 */
     fun runSelfCheck() = viewModelScope.launch {
+        com.azu.bookkeeper.core.BootTrace.step("SELFCHECK", "点击真实截屏测试")
         if (_state.value.running) return@launch
         // 上次如果崩在截屏步骤，直接再跑一次大概率再次闪退 → 自动降级为安全模式
         val lastInterrupted = SelfCheckGuard.lastInterruptedStep(context)
@@ -332,8 +364,25 @@ class CaptureDiagnosticsViewModel @Inject constructor(
      * 用于「点开始自检就闪退」时先确认基础状态，排除截屏环节。
      */
     fun runEnvironmentOnlyCheck() = viewModelScope.launch {
+        com.azu.bookkeeper.core.BootTrace.step("SELFCHECK", "点击环境检查（安全）")
         if (_state.value.running) return@launch
-        environmentCheck()
+        // 环境检查本身也要兜底：它是用户「自检是否还崩」的基准线，绝不能崩
+        try {
+            environmentCheck()
+        } catch (t: Throwable) {
+            com.azu.bookkeeper.core.BootTrace.step(
+                "SELFCHECK", "环境检查异常", "${t.javaClass.simpleName}: ${t.message}"
+            )
+            publish(
+                CheckItem(
+                    "环境检查异常",
+                    false,
+                    "${t.javaClass.simpleName}: ${t.message}",
+                    "把该信息连同崩溃日志一起反馈"
+                )
+            )
+            finishRun(CaptureFailReason.UNKNOWN, emptyList())
+        }
     }
 
     private suspend fun environmentCheck(note: String? = null) {

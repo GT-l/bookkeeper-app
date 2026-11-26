@@ -188,12 +188,14 @@ jobs:
                       os.path.basename(matched.group(1)), matched.group(2), matched.group(4)[:55]
                   )
               else:
-                  msg = errors[0][-90:]
+                  msg = errors[0][:200]
           else:
               msg = "unknown-compile-error"
-          msg = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff_.\-]", "", msg)[:100]
+          msg = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff_.\-]", "", msg)[:220]
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
               f.write("BUILD_ERROR=%s\n" % msg)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("### Build errors\n\n```\n" + "\n".join(errors[:8]) + "\n```\n")
           print("BUILD ERROR:", msg)
           PY
 

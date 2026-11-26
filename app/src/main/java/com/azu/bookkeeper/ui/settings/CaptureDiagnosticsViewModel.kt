@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.azu.bookkeeper.automation.ocr.OcrEngine
+import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
@@ -12,6 +12,7 @@ import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
 import com.azu.bookkeeper.core.DiagnosticStep
+import com.azu.bookkeeper.core.SelfCheckGuard
 import com.azu.bookkeeper.core.di.IoDispatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -40,7 +41,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val channels: com.azu.bookkeeper.automation.capture.CaptureChannels,
     private val screenCapture: ScreenCaptureManager,
-    private val ocr: OcrEngine,
+    private val ocrIpc: OcrIpcClient,
     private val analyzer: PaymentTextAnalyzer,
     private val permissionGuide: PermissionGuide,
     @IoDispatcher private val io: CoroutineDispatcher
@@ -64,14 +65,29 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     /** 刷新环境检查项（通知权限 / 截屏通道）与最近一次留痕。 */
     fun refresh() {
         val last = CaptureDiagnostics.last(context)
+        val interrupted = SelfCheckGuard.lastInterruptedStep(context)
         _state.update {
             it.copy(
                 last = last,
                 textPreview = last?.textPreview.orEmpty(),
-                items = listOf(notificationCheck(), accessibilityChannelCheck(), projectionChannelCheck())
+                items = buildList {
+                    if (interrupted != null) add(interruptedCheck(interrupted))
+                    add(notificationCheck())
+                    add(accessibilityChannelCheck())
+                    add(projectionChannelCheck())
+                }
             )
         }
     }
+
+    /** 上次自检过程中进程被杀：这是 native 崩溃/OOM 的直接证据，必须显式展示。 */
+    private fun interruptedCheck(step: String): CheckItem = CheckItem(
+        name = "上次自检被系统终止",
+        ok = false,
+        detail = "在步骤「$step」时进程被终止（native 崩溃或内存不足）。OCR 已隔离到独立进程，" +
+            "主程序未受影响；自检结果已改为分步落盘，可继续跑看是否还卡在同一步。",
+        advice = "再点一次「开始自检」；若仍停在该步骤，把「复制诊断信息」的内容反馈"
+    )
 
     private fun notificationCheck(): CheckItem {
         val granted = permissionGuide.hasNotificationPermission()
@@ -136,8 +152,11 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         _state.update { it.copy(running = true, message = null) }
         // 整段兜底：OutOfMemoryError / 原生异常都不能冒到 viewModelScope（会直接退出 App）
         try {
+            SelfCheckGuard.markStep(context, "环境检查")
             runCheck()
+            SelfCheckGuard.markFinished(context)
         } catch (t: Throwable) {
+            SelfCheckGuard.markFinished(context)
             val items = listOf(
                 CheckItem(
                     "自检异常",
@@ -172,6 +191,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
             reason = CaptureFailReason.NO_CHANNEL
         } else {
             // 双通道依次尝试：无障碍截屏优先，媒体投影兜底
+            SelfCheckGuard.markStep(context, "截屏")
             val frame = withContext(io) { channels.capture() }
             val bitmap = frame.bitmap
             items += CheckItem(
@@ -188,27 +208,33 @@ class CaptureDiagnosticsViewModel @Inject constructor(
             if (bitmap == null) {
                 reason = frame.reason ?: CaptureFailReason.UNKNOWN
             } else {
-                val result = try {
-                    withContext(io) { ocr.recognize(bitmap) }
-                } finally {
-                    runCatching { bitmap.recycle() }
-                }
-                preview = result.rawText
-                val textOk = result.rawText.isNotBlank()
+                SelfCheckGuard.markStep(context, "OCR（独立进程）")
+                val ipc = withContext(io) { ocrIpc.recognize(bitmap) }
+                runCatching { bitmap.recycle() }
+                val payload = ipc.payload
+                preview = payload?.text.orEmpty()
+                val textOk = payload != null && payload.text.isNotBlank()
                 items += CheckItem(
-                    name = "OCR 文字识别",
+                    name = "OCR 文字识别（独立进程）",
                     ok = textOk,
-                    detail = if (textOk) {
-                        "${result.rawText.length} 字 / ${result.blockCount} 块 / 置信度 ${"%.2f".format(result.confidence)}"
-                    } else {
-                        "识别为空（中文模型可能未下载，或截图是空白页）"
+                    detail = when {
+                        payload == null -> "OCR 进程失败：${ipc.error ?: "未知"}（主程序未受影响）"
+                        payload.text.isBlank() -> "识别为空（中文模型可能未下载，或截图是空白页）"
+                        else -> "${payload.text.length} 字 / ${payload.blocks} 块 / 置信度 ${"%.2f".format(payload.confidence)}"
                     },
-                    advice = if (textOk) "" else CaptureFailReason.OCR_EMPTY.advice
+                    advice = when {
+                        payload == null -> CaptureFailReason.OCR_PROCESS_FAILED.advice
+                        !textOk -> CaptureFailReason.OCR_EMPTY.advice
+                        else -> ""
+                    }
                 )
-                if (!textOk) {
+                if (payload == null) {
+                    reason = CaptureFailReason.OCR_PROCESS_FAILED
+                } else if (!textOk) {
                     reason = CaptureFailReason.OCR_EMPTY
                 } else {
-                    val analysis = analyzer.analyze(result.rawText)
+                    SelfCheckGuard.markStep(context, "扣款提取")
+                    val analysis = analyzer.analyze(payload.text)
                     val amountOk = analysis.amountFen != null
                     items += CheckItem(
                         name = "扣款信息提取",

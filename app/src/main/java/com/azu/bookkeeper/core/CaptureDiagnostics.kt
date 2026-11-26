@@ -58,6 +58,10 @@ enum class CaptureFailReason(val title: String, val advice: String) {
         "OCR 没有识别到任何文字",
         "中文识别模型可能未下载（首次使用需联网）或截图是空白页；联网后重试"
     ),
+    OCR_PROCESS_FAILED(
+        "OCR 进程崩溃或无响应",
+        "识别已放到独立进程执行，主程序未受影响；这通常是机型兼容问题，请把「复制诊断信息」的内容反馈"
+    ),
     EXTRACT_EMPTY(
         "识别到文字但没找到扣款金额",
         "当前页面可能不是支付结果页；打开支付成功页再摇一摇"

@@ -129,6 +129,13 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- OCR 独立进程：ML Kit 是 native 库，异常图像/机型兼容问题会 native 崩溃，
+             放在 :ocr 子进程里执行，最坏只崩子进程，主 App 与自检页面不受影响 -->
+        <service
+            android:name=".automation.ocr.OcrWorkerService"
+            android:exported="false"
+            android:process=":ocr" />
+
         <!-- T5：支付通知监听服务 -->
         <service
             android:name=".automation.service.PaymentNotificationListenerService"

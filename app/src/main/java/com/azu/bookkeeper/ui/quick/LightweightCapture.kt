@@ -3,7 +3,7 @@ package com.azu.bookkeeper.ui.quick
 import android.content.Context
 import android.widget.Toast
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
-import com.azu.bookkeeper.automation.ocr.OcrEngine
+import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
@@ -47,7 +47,7 @@ data class CaptureOutcome(
 class LightweightCapture @Inject constructor(
     @ApplicationContext private val context: Context,
     private val channels: com.azu.bookkeeper.automation.capture.CaptureChannels,
-    private val ocr: OcrEngine,
+    private val ocrIpc: OcrIpcClient,
     private val analyzer: PaymentTextAnalyzer,
     private val extractor: FieldExtractor,
     private val progress: CaptureProgressNotifier,
@@ -100,33 +100,38 @@ class LightweightCapture @Inject constructor(
                 steps += DiagnosticStep("截屏（${frame.channel}）", true, frame.detail)
 
                 progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE)
-                val result = try {
-                    withContext(ioDispatcher) { ocr.recognize(bitmap) }
-                } finally {
-                    runCatching { bitmap.recycle() }
-                }
-                if (result.rawText.isBlank()) {
-                    fail(CaptureFailReason.OCR_EMPTY, "empty text, confidence=${result.confidence}")
+                // OCR 放到 :ocr 独立进程执行：ML Kit 原生库崩溃不会带走主进程
+                val ipc = withContext(ioDispatcher) { ocrIpc.recognize(bitmap) }
+                runCatching { bitmap.recycle() }
+                val ocrPayload = ipc.payload
+                if (ocrPayload == null) {
+                    fail(CaptureFailReason.OCR_PROCESS_FAILED, ipc.error ?: "unknown")
                     return@launch
                 }
+                if (ocrPayload.text.isBlank()) {
+                    fail(CaptureFailReason.OCR_EMPTY, "empty text, confidence=${ocrPayload.confidence}")
+                    return@launch
+                }
+                val ocrText = ocrPayload.text
                 steps += DiagnosticStep(
-                    "OCR", true, "${result.rawText.length} 字 / ${result.blockCount} 块 / conf=${"%.2f".format(result.confidence)}"
+                    "OCR（独立进程）", true,
+                    "${ocrText.length} 字 / ${ocrPayload.blocks} 块 / conf=${"%.2f".format(ocrPayload.confidence)}"
                 )
 
                 progress.showStage(CaptureProgressNotifier.Stage.EXTRACT)
-                val analysis = analyzer.analyze(result.rawText)
-                val fallback = extractor.extract(result.rawText, System.currentTimeMillis())
+                val analysis = analyzer.analyze(ocrText)
+                val fallback = extractor.extract(ocrText, System.currentTimeMillis())
                 val amountFen = analysis.amountFen ?: fallback.amountFen
                 val merchant = analysis.merchant.ifBlank { fallback.merchant }
 
                 if (amountFen == null) {
-                    steps += DiagnosticStep("提取金额", false, "无候选金额，文本前 40 字：${result.rawText.take(40)}")
+                    steps += DiagnosticStep("提取金额", false, "无候选金额，文本前 40 字：${ocrText.take(40)}")
                     runCatching {
                         CaptureDiagnostics.record(
                             context,
                             CaptureReport(
                                 startedAt, CaptureFailReason.EXTRACT_EMPTY, steps.toList(),
-                                textPreview = result.rawText
+                                textPreview = ocrText
                             )
                         )
                     }
@@ -144,7 +149,7 @@ class LightweightCapture @Inject constructor(
                 runCatching {
                     CaptureDiagnostics.record(
                         context,
-                        CaptureReport(startedAt, null, steps.toList(), result.rawText)
+                        CaptureReport(startedAt, null, steps.toList(), ocrText)
                     )
                 }
                 progress.showResult(amountFen, merchant, resultIntent(amountFen, merchant))

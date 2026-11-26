@@ -62,7 +62,7 @@ class CaptureChannels @Inject constructor(
                 delay(400)
                 shot = accessibility.capture()
             }
-            val bitmap = shot.bitmap
+            val bitmap = shot.bitmap?.let { downscale(it) }
             when {
                 bitmap != null && !isBlackFrame(bitmap) -> {
                     attempts += "无障碍截屏 ✓ ${shot.detail}"
@@ -124,6 +124,24 @@ class CaptureChannels @Inject constructor(
             accessibilityDetail.ifBlank { attempts.joinToString("；") }, attempts
         )
     }
+
+    /**
+     * 统一缩放到最长边 1080：无障碍截屏返回的是全分辨率位图（2K 屏 ~18MB），
+     * 直接送去 OCR 会翻倍占内存，低端机容易被系统杀掉。
+     */
+    private fun downscale(bitmap: Bitmap, maxDimension: Int = 1080): Bitmap = runCatching {
+        val longest = maxOf(bitmap.width, bitmap.height)
+        if (longest <= maxDimension) return bitmap
+        val scale = maxDimension.toFloat() / longest
+        val scaled = Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * scale).toInt().coerceAtLeast(1),
+            (bitmap.height * scale).toInt().coerceAtLeast(1),
+            true
+        )
+        if (scaled !== bitmap) runCatching { bitmap.recycle() }
+        scaled
+    }.getOrDefault(bitmap)
 
     /**
      * 黑帧检测：等距采样 32x64 个点算平均亮度，过低判定为全黑。

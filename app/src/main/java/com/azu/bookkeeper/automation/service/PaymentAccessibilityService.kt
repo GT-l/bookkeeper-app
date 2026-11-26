@@ -83,7 +83,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        runCatching { ensureScreenshotCapability() }
+        runCatching { logScreenshotCapability() }
         // 心跳：主进程读这个标记判断服务是否真的连上（系统开关状态在部分 ROM 上不可靠）
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -249,16 +249,13 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * XML 已配 canTakeScreenshot；这里再兜一次（部分 ROM 首连时 capability 未刷新）。
+     * 无障碍截屏能力由 XML（canTakeScreenshot="true"）在服务绑定时注册，
+     * 运行时不能改 capabilities（Kotlin 侧是只读），这里只做一次日志确认。
+     * 若设置页显示「服务已连但无截屏能力」，关掉服务再打开即可重新注册。
      */
-    private fun ensureScreenshotCapability() {
+    private fun logScreenshotCapability() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-        val info = serviceInfo ?: return
-        val canShot = android.accessibilityservice.AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT
-        if (info.capabilities and canShot == 0) {
-            info.capabilities = info.capabilities or canShot
-            setServiceInfo(info)
-        }
+        timber.log.Timber.i("a11y connected, canTakeScreenshot=%b", canCaptureScreen())
     }
 }
 

@@ -38,6 +38,8 @@ data class Debt(
     val updateAt: Long = System.currentTimeMillis()
 ) {
     val remainingFen: Long get() = (totalFen - settledFen).coerceAtLeast(0L)
+    /** 是否已结清：既看状态，也兼容历史数据里状态未同步但金额已还满的情况。 */
+    val finished: Boolean get() = status == DebtStatus.SETTLED || settledFen >= totalFen
     val settledPercent: Int
         get() = if (totalFen <= 0L) 100 else ((settledFen * 100) / totalFen).coerceIn(0, 100)
 }

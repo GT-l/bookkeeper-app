@@ -12,7 +12,7 @@
 python3 scripts/verify_v1_2_0.py
 ```
 
-退出码 0 表示全部通过。共 **82 项**，分组如下：
+退出码 0 表示全部通过。共 **83 项**，分组如下：
 
 | 用例组 | 覆盖内容 | 用例数 |
 |---|---|---|
@@ -22,7 +22,7 @@ python3 scripts/verify_v1_2_0.py
 | T-TX-* | 新增业务 UseCase 只走 `addWithBalanceTx` / `updateWithBalanceTx` / `deleteWithBalanceTx`，不直写余额 | 10 |
 | T-NAV-* / T-ENTRY-* | 7 个新路由在 `Screen`、`AppNavHost` 注册；6 个入口在「我的」页可达 | 20 |
 | T-FILE-* | 7 个新界面 + 统计计算器 + 2 个新测试文件存在 | 9 |
-| T-LOGIC-* | 尾差补齐、剩余不为负、统计排除校准、除零保护、还款日提醒、退款累计校验 | 6 |
+| T-LOGIC-* | 尾差补齐、剩余不为负、债务结清属性、统计排除校准、除零保护、还款日提醒、退款累计校验 | 7 |
 | T-SYNTAX-* | 全部 Kotlin 源文件括号配平（排除注释与字符串） | 1 |
 | T-CI-* / T-TEST-* | 静态测试进入 CI；同比单测与信用卡提醒配置单测存在 | 3 |
 
@@ -156,7 +156,7 @@ CI 执行 `./gradlew testDebugUnitTest`。单测统计写入 artifact 名：`uni
 
 ## 四、判定标准
 
-- 静态测试 `python3 scripts/verify_v1_2_0.py` 退出码 0（82/82）。
+- 静态测试 `python3 scripts/verify_v1_2_0.py` 退出码 0（83/83）。
 - CI `Build debug APK` 与 `Run unit tests` 均 success，artifact 名显示 `T<n>-F0-E0-S<n>`。
 - Release `v1.2.0-debug` 存在且 APK 可下载、正文为新模板。
 - 第三节 10 条真机流程由用户确认；未确认项不得标记为通过。

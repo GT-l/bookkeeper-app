@@ -16,9 +16,12 @@ class FinanceModelsTest {
         )
         assertEquals(70_00L, debt.remainingFen)
         assertEquals(30, debt.settledPercent)
+        assertFalse(debt.finished)
         val settled = debt.copy(settledFen = 100_00L, status = DebtStatus.SETTLED)
         assertEquals(0L, settled.remainingFen)
         assertEquals(100, settled.settledPercent)
+        assertTrue(settled.finished)
+        assertTrue(debt.copy(settledFen = 100_00L, status = DebtStatus.ONGOING).finished)
     }
 
     @Test

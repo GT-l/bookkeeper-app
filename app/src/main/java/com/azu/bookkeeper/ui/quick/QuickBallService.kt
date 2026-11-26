@@ -166,7 +166,7 @@ class QuickBallService : Service() {
                         // 否则球会朝手指反方向跑；y 是离顶部距离，与手指同向。
                         params.x = startX - dx.toInt()
                         params.y = startY + dy.toInt()
-                        runCatching { windowManager().updateViewLayout(v, params) }
+                        runCatching { windowManager()?.updateViewLayout(v, params) }
                     }
                     true
                 }
@@ -208,7 +208,8 @@ class QuickBallService : Service() {
         }
 
         return try {
-            windowManager().addView(view, params)
+            val manager = windowManager() ?: return false
+            manager.addView(view, params)
             ballView = view
             true
         } catch (t: Throwable) {
@@ -307,13 +308,14 @@ class QuickBallService : Service() {
 
     private fun removeBall() {
         ballView?.let { view ->
-            runCatching { windowManager().removeView(view) }
+            runCatching { windowManager()?.removeView(view) }
         }
         ballView = null
     }
 
-    private fun windowManager(): WindowManager =
-        getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+    /** WindowManager 安全获取：个别 ROM 上可能为 null，强转/断言会直接崩（球消失）。 */
+    private fun windowManager(): WindowManager? =
+        runCatching { getSystemService(Context.WINDOW_SERVICE) as? WindowManager }.getOrNull()
 
     override fun onDestroy() {
         isRunning = false

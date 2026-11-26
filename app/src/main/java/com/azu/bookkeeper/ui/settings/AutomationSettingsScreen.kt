@@ -305,7 +305,6 @@ fun AutomationSettingsScreen(
                 if (enabled) {
                     viewModel.createCaptureIntent()?.let { captureLauncher.launch(it) }
                         ?: Toast.makeText(context, "当前设备不支持截屏授权", Toast.LENGTH_SHORT).show()
-                        .onFailure { Toast.makeText(context, "设备不支持截屏捕获", Toast.LENGTH_SHORT).show() }
                 } else {
                     viewModel.setScreenCaptureEnabled(false)
                 }

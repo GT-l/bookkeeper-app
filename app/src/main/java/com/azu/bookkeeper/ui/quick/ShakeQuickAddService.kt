@@ -26,6 +26,7 @@ import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
 import com.azu.bookkeeper.core.DiagnosticStep
 import com.azu.bookkeeper.core.Money
+import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.ShakeActions

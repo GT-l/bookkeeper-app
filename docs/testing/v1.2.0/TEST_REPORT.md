@@ -21,7 +21,7 @@
 | `python3 scripts/verify_v1_2_0.py` | 89/89 通过 | **89/89 通过**（本地复跑确认） |
 | CI `assembleDebug` | 连续多次失败：Release 正文表达式超长、Material3 `LinearProgressIndicator` API 变更、6 处编译 / 导入 / 构造函数问题 | 见下方「CI 结论」 |
 | CI `testDebugUnitTest` | 初测因编译失败未跑到 | 见下方「CI 结论」 |
-| 逐函数 / 逐流程走查 | 记录 14 项问题（见第三节） | 均已按主流方案修复并补静态断言 |
+| 逐函数 / 逐流程走查 | 记录 15 项问题（见第三节） | 均已按主流方案修复并补静态断言 |
 | 真机全流程 | 未执行（环境限制） | 见 `TEST_CASES.md` 第三节，需用户确认 |
 
 ### CI 结论
@@ -46,6 +46,7 @@
 | 12 | 批量添加表单构造 `Bill` 缺少必填 `billTime` | `Bill.billTime` 无默认值，`BatchAddScreen` 构造时未传，编译失败 | 传 `billTime = 0L`，由 `BatchAddBillsUseCase` 按统一基准逐笔错开 1 秒填充 | 0 只是哨兵值，不会落库；静态脚本锁死该传参 | 已修（本轮） |
 | 13 | 三处删除按钮点击后无限递归 | ViewModel 的公开函数 `delete(id)` 与注入的 UseCase 属性 `delete` 同名，函数体内 `delete(id)` 解析为自身；报销 UseCase 的 `delete` 同理 | 注入属性改名 `deleteDebt` / `deleteInstallment`，报销方法改名 `deleteRecord`，UI 调用同步更新 | 不改公开 UI 事件名；静态脚本 `T-NO-RECUR-01..03` 逐处锁死 | 已修（本轮） |
 | 14 | `ImportTaskStatus` 已定义但未导入 | `EntityMappers.ImportTaskEntity.toDomain()` 调用 `ImportTaskStatus.fromCode`，编译报 `Unresolved reference` | 补 `import com.azu.bookkeeper.domain.model.ImportTaskStatus`；静态检查同时锁死「幽灵导入已删 + 必需导入存在」 | 无行为变化；仅补导入 | 已修（本轮） |
+| 15 | `Debt.settledPercent` 返回类型不匹配 | `if` 两支分别是 `Int` 字面量 100 与 `Long.coerceIn(...)` 结果，公共类型被推断为 `Number`，但属性声明为 `Int` | 上限下限写成 `0L/100L` 并在末尾 `.toInt()`，两支统一为 `Int` | 百分比范围仍是 0~100；单测覆盖 30% 与 100%，静态脚本锁死写法 | 已修（本轮） |
 
 ## 四、全局与全流程自测
 
@@ -67,6 +68,6 @@
 
 ## 六、结论
 
-- 静态一致性 **89/89 通过**；走查与 CI 编译暴露的 14 项问题均已修复并补回归断言。
+- 静态一致性 **89/89 通过**；走查与 CI 编译暴露的 15 项问题均已修复并补回归断言。
 - 编译与单测的最终结论以本轮 GitHub Actions 为准（见「CI 结论」）；未拿到绿色结论前不宣称发布成功。
 - 真机 10 条全流程清单需用户确认；在此之前，本报告只覆盖静态、JVM 与代码走查层面。

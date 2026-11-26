@@ -118,7 +118,8 @@ check("T-TEST-CARD 提醒配置单测存在",
 # ---------- 7. 业务逻辑回归 ----------
 debt = read("app/src/main/java/com/azu/bookkeeper/domain/model/Debt.kt")
 check("T-LOGIC-01 债务剩余不为负", ".coerceAtLeast(0L)" in debt)
-check("T-LOGIC-07 债务结清属性供 UI 使用", "val finished: Boolean" in debt)
+check("T-LOGIC-07 债务结清属性与百分比类型正确",
+      "val finished: Boolean" in debt and "coerceIn(0L, 100L).toInt()" in debt)
 inst = read("app/src/main/java/com/azu/bookkeeper/domain/model/Installment.kt")
 check("T-LOGIC-02 分期尾差补齐", "totalFen - perPeriodFen * paidPeriods" in inst)
 calc = read("app/src/main/java/com/azu/bookkeeper/domain/usecase/stats/StatsEnhanceCalculator.kt")

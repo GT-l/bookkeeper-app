@@ -41,7 +41,7 @@ data class Debt(
     /** 是否已结清：既看状态，也兼容历史数据里状态未同步但金额已还满的情况。 */
     val finished: Boolean get() = status == DebtStatus.SETTLED || settledFen >= totalFen
     val settledPercent: Int
-        get() = if (totalFen <= 0L) 100 else ((settledFen * 100) / totalFen).coerceIn(0, 100)
+        get() = if (totalFen <= 0L) 100 else ((settledFen * 100) / totalFen).coerceIn(0L, 100L).toInt()
 }
 
 /** 单笔还款记录。 */

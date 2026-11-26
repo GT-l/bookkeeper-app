@@ -39,6 +39,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.core.Constants
@@ -113,7 +114,7 @@ fun AutomationSettingsScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("自动化设置") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("自动化设置") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

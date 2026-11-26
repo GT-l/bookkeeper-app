@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.Account
@@ -51,7 +52,7 @@ fun AccountListScreen(
     var actualText by remember { mutableStateOf("") }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("资产账户") }) },
+        topBar = { AppTopBar("资产账户") },
         floatingActionButton = {
             // 醒目的可爱风「+」悬浮按钮：创建账户的唯一入口，避免被误认为普通小按钮而找不到
             FloatingActionButton(

@@ -13,6 +13,7 @@ import com.azu.bookkeeper.core.DiagnosticStep
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.core.di.MainDispatcher
 import com.azu.bookkeeper.domain.model.QuickCaptureRequest
+import com.azu.bookkeeper.domain.model.CaptureType
 import com.azu.bookkeeper.domain.model.QuickEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,12 +24,20 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 识屏结果：失败时带可读原因，供 Toast / 通知 / 自检页展示。 */
+/**
+ * 识屏结果。
+ *
+ * [confidence] 是「抽取置信度」（金额 0.5 / 商户 +0.3 / 支付成功 +0.2），不是 OCR 引擎置信度。
+ * 上层用它决定后续动作：高 → 直接记账，中 → 弹小弹窗确认，低 → 打开完整表单。
+ */
 data class CaptureOutcome(
     val amountFen: Long?,
     val merchant: String,
     val reason: CaptureFailReason? = null,
-    val detail: String = ""
+    val detail: String = "",
+    val confidence: Float = 0f,
+    val captureType: CaptureType = CaptureType.NONE,
+    val rawText: String = ""
 ) {
     val success: Boolean get() = reason == null
 }
@@ -97,7 +106,13 @@ class LightweightCapture @Inject constructor(
                 onResult(CaptureOutcome(null, "", reason, detail))
             }
 
-            suspend fun succeed(amountFen: Long, merchant: String, confidence: Float, rawText: String) {
+            suspend fun succeed(
+                amountFen: Long,
+                merchant: String,
+                confidence: Float,
+                rawText: String,
+                captureType: CaptureType
+            ) {
                 steps += DiagnosticStep(
                     "提取金额", merchant.isNotBlank(),
                     "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }} / conf=${"%.2f".format(confidence)}"
@@ -108,7 +123,17 @@ class LightweightCapture @Inject constructor(
                 )
                 record(null, rawText)
                 runCatching { progress.showResult(amountFen, merchant, resultIntent(amountFen, merchant)) }
-                withContext(mainDispatcher) { onResult(CaptureOutcome(amountFen, merchant)) }
+                withContext(mainDispatcher) {
+                    onResult(
+                        CaptureOutcome(
+                            amountFen = amountFen,
+                            merchant = merchant,
+                            confidence = confidence,
+                            captureType = captureType,
+                            rawText = rawText
+                        )
+                    )
+                }
             }
 
             try {
@@ -131,7 +156,10 @@ class LightweightCapture @Inject constructor(
                         val amountFen = extractAmount(rawText)
                         if (amountFen != null) {
                             val merchant = extractMerchant(rawText)
-                            succeed(amountFen, merchant, confidenceOf(rawText), rawText)
+                            succeed(
+                                amountFen, merchant, confidenceOf(rawText), rawText,
+                                CaptureType.ACCESSIBILITY_TEXT
+                            )
                             return@launch
                         }
                         steps += DiagnosticStep(
@@ -176,7 +204,11 @@ class LightweightCapture @Inject constructor(
                     rawText = listOf(rawText, payload.text).filter { it.isNotBlank() }.joinToString("\n")
                     val amountFen = extractAmount(rawText)
                     if (amountFen != null) {
-                        succeed(amountFen, extractMerchant(rawText), payload.confidence, rawText)
+                        // 统一用抽取置信度做分流依据（OCR 引擎置信度只反映字符清晰度，不代表字段抽对）
+                        succeed(
+                            amountFen, extractMerchant(rawText), confidenceOf(rawText), rawText,
+                            CaptureType.PROJECTION_IMAGE
+                        )
                         return@launch
                     }
                     fail(

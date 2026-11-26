@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.core.DateTimeUtils
 
 /** 账单导出：账本 + 时间范围 + 格式 + 字段勾选，写入用户选择的 URI。 */
@@ -46,7 +47,7 @@ fun ExportScreen(viewModel: ExportViewModel = hiltViewModel()) {
         if (uri != null) viewModel.exportTo(uri.toString())
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("导出账单") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("导出账单") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

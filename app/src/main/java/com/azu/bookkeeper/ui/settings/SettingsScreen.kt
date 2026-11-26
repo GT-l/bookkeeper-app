@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.ui.common.SoftCard
 import com.azu.bookkeeper.ui.navigation.Screen
 
@@ -48,7 +49,7 @@ fun SettingsScreen(
     var accountExpanded by remember { mutableStateOf(false) }
     var weekText by remember(state.weekStartDay) { mutableStateOf(state.weekStartDay.toString()) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("设置") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("设置") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

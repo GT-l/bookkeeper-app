@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.core.QuickGestureCodes
 import com.azu.bookkeeper.core.ShakeActions
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -55,7 +56,7 @@ fun QuickGestureSettingsScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { viewModel.refreshPermission() }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("快捷手势") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("快捷手势") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

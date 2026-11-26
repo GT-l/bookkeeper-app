@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.ui.common.CutePrimaryButton
 import com.azu.bookkeeper.ui.common.SoftCard
 import java.text.SimpleDateFormat
@@ -62,7 +63,7 @@ fun CaptureDiagnosticsScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { result -> viewModel.onAuthResult(result.resultCode, result.data) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("识屏自检") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("识屏自检") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

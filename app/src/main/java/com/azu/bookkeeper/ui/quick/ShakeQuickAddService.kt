@@ -25,6 +25,7 @@ import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
 import com.azu.bookkeeper.core.DiagnosticStep
+import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
 import com.azu.bookkeeper.core.ShakeActions
@@ -169,12 +170,71 @@ class ShakeQuickAddService : Service() {
             return
         }
         capture.captureIntoForm(scope) { outcome ->
-            val message = when {
-                outcome.amountFen != null && outcome.amountFen > 0L -> "识别完成，请确认金额后保存"
-                !outcome.success -> "识屏失败：${outcome.reason?.title}，请手动输入"
-                else -> "没有识别到金额，请手动输入"
+            val amount = outcome.amountFen
+            if (outcome.success && amount != null && amount > 0L) {
+                handleRecognized(outcome, capture, amount)
+            } else {
+                val message = if (!outcome.success) {
+                    "识屏失败：${outcome.reason?.title}，请手动输入"
+                } else {
+                    "没有识别到金额，请手动输入"
+                }
+                openCaptureForm(capture, amount, outcome.merchant, message)
             }
-            openCaptureForm(capture, outcome.amountFen, outcome.merchant, message)
+        }
+    }
+
+    /**
+     * 识别到金额后的三档分流：
+     * - 置信度 ≥ [AUTO_RECORD_CONFIDENCE]（金额+商户同时命中）→ 直接记账，只提示「记账成功」；
+     * - 0.5 ~ 0.8（只拿到金额 / 金额+支付成功）→ 弹一颗小卡片确认，不把用户丢进完整表单；
+     * - 更低或落库失败 → 打开完整表单。
+     */
+    private fun handleRecognized(outcome: CaptureOutcome, capture: LightweightCapture, amount: Long) {
+        if (outcome.confidence >= AUTO_RECORD_CONFIDENCE) {
+            autoRecord(outcome, capture, amount)
+        } else {
+            showQuickConfirm(capture, amount, outcome)
+        }
+    }
+
+    /** 高置信度直接落库；失败则退到小弹窗，绝不静默丢掉这笔。 */
+    private fun autoRecord(outcome: CaptureOutcome, capture: LightweightCapture, amount: Long) {
+        scope.launch {
+            val recorder = runCatching { entryPoint.autoRecord() }.getOrNull()
+            val billId = if (recorder == null) {
+                null
+            } else {
+                runCatching {
+                    recorder(amount, outcome.merchant, outcome.confidence, outcome.rawText, outcome.captureType)
+                }.getOrNull()?.getOrNull()
+            }
+            if (billId != null) {
+                val detail = if (outcome.merchant.isNotBlank()) " · ${outcome.merchant}" else ""
+                runCatching { capture.toast("记账成功 · ${Money.format(amount)}$detail") }
+                runCatching {
+                    entryPoint.captureProgress().showRecorded(amount, outcome.merchant, null)
+                }
+                com.azu.bookkeeper.core.CaptureLog.i(
+                    applicationContext, "CAPTURE",
+                    "自动记账成功 billId=$billId amount=$amount conf=${outcome.confidence}"
+                )
+            } else {
+                com.azu.bookkeeper.core.CaptureLog.w(
+                    applicationContext, "CAPTURE", "自动记账失败，退到确认弹窗"
+                )
+                showQuickConfirm(capture, amount, outcome)
+            }
+        }
+    }
+
+    /** 轻确认弹窗：一枚小卡片，确认即记账，不用进表单。 */
+    private fun showQuickConfirm(capture: LightweightCapture, amount: Long, outcome: CaptureOutcome) {
+        val launched = runCatching {
+            startActivity(QuickConfirmActivity.intent(this, amount, outcome.merchant, outcome.confidence))
+        }.isSuccess
+        if (!launched) {
+            openCaptureForm(capture, amount, outcome.merchant, "请确认金额")
         }
     }
 
@@ -362,6 +422,8 @@ class ShakeQuickAddService : Service() {
 
         /** 截屏授权完成后继续识屏。 */
         const val ACTION_CAPTURE_NOW = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_CAPTURE_NOW"
+        /** 金额+商户同时命中（confidence≥0.8）就认为可靠，不再打扰用户。 */
+        private const val AUTO_RECORD_CONFIDENCE = 0.8f
         private const val NOTIFICATION_ID = 1020
         private const val ONGOING_CHANNEL_ID = "shake_ongoing"
         private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
@@ -421,4 +483,5 @@ interface ShakeActionEntryPoint {
     fun automationSettings(): AutomationSettingsDataStore
     fun lightweightCapture(): LightweightCapture
     fun captureProgress(): CaptureProgressNotifier
+    fun autoRecord(): com.azu.bookkeeper.domain.usecase.bill.AutoRecordUseCase
 }

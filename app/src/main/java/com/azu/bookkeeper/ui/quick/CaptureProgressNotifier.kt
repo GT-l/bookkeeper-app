@@ -74,6 +74,23 @@ class CaptureProgressNotifier @Inject constructor(
         )
     }
 
+    /** 已自动记账：只报结果，不再要求用户确认。 */
+    fun showRecorded(amountFen: Long, merchant: String, contentIntent: PendingIntent?) {
+        val amountText = Money.format(amountFen)
+        val text = if (merchant.isNotBlank()) "$merchant · 已自动记入账本" else "已自动记入账本"
+        post(
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_quick_add)
+                .setContentTitle("记账成功 $amountText")
+                .setContentText(text)
+                .setOngoing(false)
+                .setAutoCancel(true)
+                .apply { contentIntent?.let { setContentIntent(it) } }
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build()
+        )
+    }
+
     /** 失败：标题直接写明失败原因，点击手动记一笔（失败时同时会自动打开表单）。 */
     fun showFailed(contentIntent: PendingIntent, reason: com.azu.bookkeeper.core.CaptureFailReason? = null) {
         val title = reason?.let { "识屏失败：${it.title}" } ?: "识屏失败 · 点击手动记一笔"

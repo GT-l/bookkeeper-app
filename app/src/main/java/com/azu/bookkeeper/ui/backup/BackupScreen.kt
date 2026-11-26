@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.ui.common.ConfirmDialog
 import java.io.File
@@ -49,7 +50,7 @@ fun BackupScreen(viewModel: BackupViewModel = hiltViewModel()) {
         if (uri != null) viewModel.onRestorePicked(uri.toString())
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("备份与恢复") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("备份与恢复") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

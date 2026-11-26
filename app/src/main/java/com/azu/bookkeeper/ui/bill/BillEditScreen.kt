@@ -86,12 +86,8 @@ fun BillEditScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                title = { Text(if (state.billId > 0L) "编辑账单" else "记一笔") }
+            com.azu.bookkeeper.ui.common.AppTopBar(
+                if (state.billId > 0L) "编辑账单" else "记一笔"
             )
         }
     ) { padding ->

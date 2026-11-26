@@ -1,5 +1,7 @@
 package com.azu.bookkeeper.ui.unlock
 
+import com.azu.bookkeeper.ui.common.AppTopBar
+
 import android.content.Context
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricPrompt
@@ -38,7 +40,7 @@ fun AppLockScreen(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
-    Scaffold(topBar = { TopAppBar(title = { Text("应用锁") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("应用锁") }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
             Text("请输入数字密码，或使用指纹 / 面容解锁")
             OutlinedTextField(

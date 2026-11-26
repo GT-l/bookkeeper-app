@@ -1,5 +1,9 @@
 package com.azu.bookkeeper.ui.home
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -123,32 +127,61 @@ fun HomeScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            SoftCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(text = "账单概览", style = MaterialTheme.typography.titleMedium)
-                    Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            // 概览主卡：支出做成视觉主体（渐变底 + 大字），收入/结余退为次级信息。
+            // 之前三个数字同等大小，用户一眼看不出「这个月花了多少」。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.secondary
+                            )
+                        )
+                    )
+                    .padding(horizontal = 20.dp, vertical = 18.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "本月支出",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+                    )
+                    Text(
+                        text = Money.format(totalExpense),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "收入",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
                             )
                             Text(
                                 text = Money.format(totalIncome),
-                                style = AmountStyle,
-                                color = IncomeGreen
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "支出",
+                                text = "结余",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
                             )
                             Text(
-                                text = Money.format(totalExpense),
-                                style = AmountStyle,
-                                color = ExpenseRed
+                                text = Money.format(totalIncome - totalExpense),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }

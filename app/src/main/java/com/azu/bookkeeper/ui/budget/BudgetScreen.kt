@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.ui.common.CuteOutlinedButton
 import com.azu.bookkeeper.ui.common.CutePrimaryButton
@@ -29,7 +30,7 @@ import com.azu.bookkeeper.ui.theme.ExpenseRed
 fun BudgetScreen(viewModel: BudgetViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    Scaffold(topBar = { TopAppBar(title = { Text("月度预算 · ${state.month}") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("月度预算 · ${state.month}") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

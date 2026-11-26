@@ -84,6 +84,13 @@
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- 识屏轻确认弹窗：中等置信度时只弹一张小卡片，确认即记账 -->
+        <activity
+            android:name=".ui.quick.QuickConfirmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- 零依赖日志查看页：不用 Compose / Hilt / 截屏 / OCR，保证「只要能开 App 就能开它」 -->
         <activity
             android:name=".ui.debug.CaptureLogActivity"

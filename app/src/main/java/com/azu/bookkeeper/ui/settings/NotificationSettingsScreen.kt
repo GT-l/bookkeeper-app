@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.data.local.datastore.NotificationDisplayStyles
 
 /** 通知栏显示内容设置：选样式 + 勾选要显示的项目，改动即时生效。 */
@@ -32,7 +33,7 @@ fun NotificationSettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val prefs = state.prefs
 
-    Scaffold(topBar = { TopAppBar(title = { Text("通知栏显示内容") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("通知栏显示内容") }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

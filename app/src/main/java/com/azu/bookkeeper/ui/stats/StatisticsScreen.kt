@@ -67,8 +67,8 @@ fun StatisticsScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("统计报表 · ${state.bookName.ifBlank { "当前账本" }}") },
+        com.azu.bookkeeper.ui.common.AppTopBar(
+            title = "统计报表 · ${state.bookName.ifBlank { "当前账本" }}",
             actions = { TextButton(onClick = { viewModel.requestScreenshot() }) { Text("截图") } }
         )
 

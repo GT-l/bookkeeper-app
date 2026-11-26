@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.domain.model.Book
 import com.azu.bookkeeper.domain.model.BookStatus
 import com.azu.bookkeeper.ui.common.ConfirmDialog
@@ -36,7 +37,7 @@ fun BookManageScreen(viewModel: BookManageViewModel = hiltViewModel()) {
     var newName by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("账本管理") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("账本管理") }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             OutlinedTextField(
                 value = newName,

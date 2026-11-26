@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.ui.home.BillRow
@@ -42,7 +43,7 @@ fun SearchScreen(
     var showCategoryDialog by remember { mutableStateOf(false) }
     var categoryIdText by remember { mutableStateOf("") }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("搜索与筛选") }) }) { padding ->
+    Scaffold(topBar = { AppTopBar("搜索与筛选") }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             OutlinedTextField(
                 value = state.keyword,

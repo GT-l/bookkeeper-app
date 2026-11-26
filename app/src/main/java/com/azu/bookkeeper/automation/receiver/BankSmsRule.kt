@@ -3,6 +3,7 @@ package com.azu.bookkeeper.automation.receiver
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.AccountType
+import com.azu.bookkeeper.core.SafeRegex
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +35,7 @@ class BankSmsWhitelist @Inject constructor() {
         BankInfo("PSBC", "邮储银行", setOf("95580"))
     )
 
-    private val alphaSenderRegex = Regex("(?i).*(银行|bank|credit|card).*")
+    private val alphaSenderRegex = SafeRegex.of("(?i).*(银行|bank|credit|card).*")
 
     fun matches(sender: String): BankInfo? {
         val raw = sender.trim()
@@ -63,28 +64,30 @@ class SmsRuleSet @Inject constructor() {
     )
     val douyinKeywords: List<String> = DouyinBusinessTagger.KEYWORDS
 
-    val amountRegex = Regex("""(?:¥|￥|RMB|人民币)?\s*([\d,]+\.\d{2})""")
-    val yuanAmountRegex = Regex("""人民币\s*([\d,]+(?:\.\d{1,2})?)元""")
+    // 全部走 SafeRegex：本类在短信广播路径上按需构造，正则编译失败会直接抛到 onReceive，
+    // 表现为「收到银行短信瞬间闪退」。字符类里也不用 \s（Android 17 ICU 踩坑）。
+    val amountRegex = SafeRegex.of("""(?:¥|￥|RMB|人民币)?\s*([\d,]+\.\d{2})""")
+    val yuanAmountRegex = SafeRegex.of("""人民币\s*([\d,]+(?:\.\d{1,2})?)元""")
 
     /**
      * 标签优先金额（QA F-11）：短信常写「当前余额8888.88元，本次支出1234.56元」，
      * 通用 amountRegex 会误取余额。优先取「支出/消费/扣款/交易金额」标签后的数字。
      */
-    val labelledAmountRegex = Regex(
+    val labelledAmountRegex = SafeRegex.of(
         """(?:支出|消费|扣款|支付金额|交易金额|订单金额|付款金额|扣费|支付)[^0-9]{0,8}([\d,]+\.\d{2})"""
     )
 
     /** 余额 / 额度片段：无标签时先剥离，避免被当成消费金额。 */
-    val balanceSegmentRegex = Regex(
+    val balanceSegmentRegex = SafeRegex.of(
         """(?:账户余额|可用余额|可用额度|信用额度|余额)[^0-9]{0,6}[\d,]+\.\d{2}\s*元?"""
     )
     val timeRegexes: List<Regex> = listOf(
-        Regex("""(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})日?\s+(\d{1,2}):(\d{2})"""),
-        Regex("""(\d{1,2})月(\d{1,2})日\s+(\d{1,2}):(\d{2})"""),
-        Regex("""(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})日?""")
+        SafeRegex.of("""(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})日?[ \t\u00a0\u3000]+(\d{1,2}):(\d{2})"""),
+        SafeRegex.of("""(\d{1,2})月(\d{1,2})日[ \t\u00a0\u3000]+(\d{1,2}):(\d{2})"""),
+        SafeRegex.of("""(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})日?""")
     )
-    val merchantRegex = Regex("""(?:商户名称|商户|交易对手|收款方)\s*[:：]\s*([^\s,，。；;]+)""")
-    private val cardTailRegex = Regex("""(\d{4})\d{8,11}(\d{4})""")
+    val merchantRegex = SafeRegex.of("""(?:商户名称|商户|交易对手|收款方)\s*[:：]\s*([^ ,，。；;：:\n]+)""")
+    private val cardTailRegex = SafeRegex.of("""(\d{4})\d{8,11}(\d{4})""")
 
     /** 命中支出类且不含排除类才进入解析。 */
     fun filterBusinessType(body: String): Boolean =

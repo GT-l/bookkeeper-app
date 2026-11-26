@@ -2,6 +2,7 @@ package com.azu.bookkeeper.automation.ocr
 
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Money
+import com.azu.bookkeeper.core.SafeRegex
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -9,11 +10,14 @@ import javax.inject.Singleton
 @Singleton
 class FieldExtractor @Inject constructor() {
 
-    private val amountWithSymbol = Regex("(?:¥|￥|RMB|人民币)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
-    private val amountWithYuan = Regex("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
-    private val amountLabelled = Regex("(?:金额|订单金额|付款金额|交易金额|扣款金额)\\s*[:：]?\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
-    private val merchantRegex = Regex("(?:商户名称|商户|收款方|交易对方|付款给|向)\\s*[:：]?\\s*([^\\s，。；;：:]{2,20})")
-    private val accountRegex = Regex("(?:银行卡|储蓄卡|信用卡|微信零钱|支付宝余额|付款方式)\\s*[:：]?\\s*([^\\s，。；;]{2,16})")
+    // 注意：全部走 SafeRegex + 字符类里不用 \s。
+    // 「[^\s，。；;：:]」这种混排在 Android 17 的 ICU 上会抛 Incorrect Unicode property，
+    // 而本类是 @Singleton，构造失败会让注入它的识屏组件直接崩（真实事故）。
+    private val amountWithSymbol = SafeRegex.of("(?:¥|￥|RMB|人民币)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
+    private val amountWithYuan = SafeRegex.of("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
+    private val amountLabelled = SafeRegex.of("(?:金额|订单金额|付款金额|交易金额|扣款金额)\\s*[:：]?\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
+    private val merchantRegex = SafeRegex.of("""(?:商户名称|商户|收款方|交易对方|付款给|向)\s*[:：]?\s*([^ ，。；;：:\n]{2,20})""")
+    private val accountRegex = SafeRegex.of("""(?:银行卡|储蓄卡|信用卡|微信零钱|支付宝余额|付款方式)\s*[:：]?\s*([^ ，。；;：:\n]{2,16})""")
 
     fun extract(text: String, fallbackTime: Long? = null): ExtractedFields {
         val amountFen = extractAmount(text)
@@ -47,8 +51,8 @@ class FieldExtractor @Inject constructor() {
 
     private companion object {
         /** 从带标签的行中抓取 ISO/中文日期时间子串（含可选秒）。 */
-        val DATE_TIME_TOKEN = Regex(
-            """20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?"""
+        val DATE_TIME_TOKEN = SafeRegex.of(
+            """20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?(?:[ \t\u00a0\u3000]+\d{1,2}:\d{2}(?::\d{2})?)?"""
         )
     }
 }

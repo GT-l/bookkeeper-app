@@ -1,5 +1,7 @@
 package com.azu.bookkeeper.automation.ocr
 
+import com.azu.bookkeeper.core.SafeRegex
+
 import com.azu.bookkeeper.core.Money
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -123,11 +125,13 @@ class PaymentTextAnalyzer @Inject constructor() {
     }
 
     companion object {
-        private val AMOUNT_SYMBOL = Regex("(?:¥|￥)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
-        private val AMOUNT_LABELLED = Regex(
+        // 全部走 SafeRegex：任何一条正则在本机 ICU 上编译失败，都会让本类初始化失败，
+        // 进而让「注入本类的 ViewModel」创建即闪退（真实事故见 SafeRegex 注释）。
+        private val AMOUNT_SYMBOL = SafeRegex.of("(?:¥|￥)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
+        private val AMOUNT_LABELLED = SafeRegex.of(
             "(?:实付(?:款|金额)?|付款金额|支付金额|扣款金额|交易金额|订单金额|合计)[^0-9]{0,6}([0-9][0-9,]*(?:\\.\\d{1,2})?)"
         )
-        private val AMOUNT_YUAN = Regex("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
+        private val AMOUNT_YUAN = SafeRegex.of("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
 
         private val AMOUNT_STRONG_LABELS = listOf("实付", "付款金额", "支付金额", "扣款金额", "交易金额")
         private val AMOUNT_SOFT_LABELS = listOf("订单金额", "合计", "金额", "支付成功", "付款成功", "交易成功", "扣款成功")
@@ -135,8 +139,12 @@ class PaymentTextAnalyzer @Inject constructor() {
         private val PAID_OK_KEYWORDS = listOf("支付成功", "付款成功", "扣款成功", "交易成功", "已支付", "支付完成")
         private val PAID_BAD_KEYWORDS = listOf("待支付", "支付失败", "付款失败", "已退款", "已取消")
 
-        private val MERCHANT_LABELLED = Regex(
-            "(?:收款方|收款人|收款单位|商户名称|商户全称|商户|商家|交易对方|付款给|付款至|向)\\s*[:：]?\\s*([^\\s，。；;：:]{2,30})"
+        // 注意：字符类里**绝不能用 \s** ——「\s + 全角标点」这种混排，在 Android 17 的 ICU 上
+        // 会被误判成 Unicode property，直接抛 PatternSyntaxException（真实崩溃点，见 SafeRegex）。
+        // 这里字符类只保留「普通空格 + 中文标点」的否定，语义几乎等价且各版本都能编译。
+        // 用 raw string：普通字符串里的 \s 会被 Kotlin 当非法转义，编译就挂。
+        private val MERCHANT_LABELLED = SafeRegex.of(
+            """(?:收款方|收款人|收款单位|商户名称|商户全称|商户|商家|交易对方|付款给|付款至|向)\s*[:：]?\s*([^ ，。；;：:]{2,30})"""
         )
         private val MERCHANT_EXCLUDES = listOf(
             "付款方式", "支付方式", "零钱", "余额", "银行卡", "订单", "单号", "时间", "备注",
@@ -146,8 +154,8 @@ class PaymentTextAnalyzer @Inject constructor() {
             "店", "公司", "超市", "便利店", "餐饮", "银行", "科技", "商贸", "贸易", "旗舰店", "专营店", "咖啡", "茶"
         )
 
-        private val PHONE_REGEX = Regex("1[3-9]\\d{9}")
-        private val DATE_REGEX = Regex("20\\d{2}[-/年]\\d{1,2}[-/月]\\d{1,2}")
+        private val PHONE_REGEX = SafeRegex.of("1[3-9]\\d{9}")
+        private val DATE_REGEX = SafeRegex.of("20\\d{2}[-/年]\\d{1,2}[-/月]\\d{1,2}")
     }
 }
 

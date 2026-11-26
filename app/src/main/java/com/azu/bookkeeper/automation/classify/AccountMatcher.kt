@@ -1,5 +1,7 @@
 package com.azu.bookkeeper.automation.classify
 
+import com.azu.bookkeeper.core.SafeRegex
+
 import com.azu.bookkeeper.domain.model.Account
 import com.azu.bookkeeper.domain.model.AccountType
 import javax.inject.Inject
@@ -45,7 +47,7 @@ class AccountMatcher @Inject constructor() {
         if (account.name.contains(hint, ignoreCase = true)) return true
         if (account.remark.contains(hint, ignoreCase = true)) return true
         // 卡尾匹配：提示串含账户备注中的 4 位尾号
-        val tailRegex = Regex("\\d{4}")
+        val tailRegex = SafeRegex.of("\\d{4}")
         val tails = tailRegex.findAll(hint).map { it.value }.toSet()
         return tails.isNotEmpty() && tails.any { account.remark.contains(it) || account.name.contains(it) }
     }

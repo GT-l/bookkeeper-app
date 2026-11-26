@@ -136,8 +136,10 @@ class ShakeQuickAddService : Service() {
     }
 
     private fun onShakeDetected() {
+        // 每次命中都双震 + Toast：不依赖通知权限，用户一定能感知到「已经触发了」
         vibrate()
         if (QuickGestureCache.shakeAction == ShakeActions.SCREEN_CAPTURE) {
+            Toast.makeText(applicationContext, "摇一摇已触发 · 正在识屏…", Toast.LENGTH_SHORT).show()
             triggerScreenCapture()
         } else {
             openForm("摇一摇命中，打开记一笔")
@@ -268,10 +270,13 @@ class ShakeQuickAddService : Service() {
         runCatching {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(VibrationEffect.createOneShot(80L, VibrationEffect.DEFAULT_AMPLITUDE))
+                // 双脉冲：与普通通知震动区分开，明确是「摇一摇命中」
+                vibrator?.vibrate(
+                    VibrationEffect.createWaveform(longArrayOf(0, 70, 70, 70), -1)
+                )
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(80L)
+                vibrator?.vibrate(longArrayOf(0, 70, 70, 70), -1)
             }
         }
     }

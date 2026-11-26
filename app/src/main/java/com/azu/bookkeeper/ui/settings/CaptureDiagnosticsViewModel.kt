@@ -33,8 +33,9 @@ data class CheckItem(
 )
 
 /**
- * 识屏自检 ViewModel：把「授权 → 截屏 → OCR → 提取」逐项跑一遍，
- * 每项都给结论和修复建议；同时读取最近一次摇一摇识屏的失败留痕。
+ * 识屏自检 ViewModel：把「通道 → 截屏 → OCR → 提取」逐项跑一遍，
+ * 每一项**跑完立即推送**到界面（不是等全部结束才显示），过程中有当前步骤提示，
+ * 这样即使某一步把进程干掉，最后停留的步骤也能被 SelfCheckGuard 记下来。
  */
 @HiltViewModel
 class CaptureDiagnosticsViewModel @Inject constructor(
@@ -50,6 +51,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     data class UiState(
         val items: List<CheckItem> = emptyList(),
         val running: Boolean = false,
+        /** 当前正在执行的步骤，界面用「监督指示」显示。 */
+        val currentStep: String = "",
         val last: CaptureReport? = null,
         val textPreview: String = "",
         val message: String? = null
@@ -94,7 +97,7 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         return CheckItem(
             name = "通知权限",
             ok = granted,
-            detail = if (granted) "已授予（进度通知可见）" else "未授予（识屏进度和结果通知不会显示）",
+            detail = if (granted) "已授予（识屏进度通知可见）" else "未授予（识屏进度和结果通知不会显示，摇一摇改用 Toast 提醒）",
             advice = if (granted) "" else "到系统设置 → 通知，允许「少花点儿」通知"
         )
     }
@@ -147,74 +150,65 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         refresh()
     }
 
-    /** 主动自检：真实执行一次截屏 + OCR + 提取，把每一步结果写出来。 */
-    fun runSelfCheck() = viewModelScope.launch {
-        _state.update { it.copy(running = true, message = null) }
-        // 整段兜底：OutOfMemoryError / 原生异常都不能冒到 viewModelScope（会直接退出 App）
-        try {
-            SelfCheckGuard.markStep(context, "环境检查")
-            runCheck()
-            SelfCheckGuard.markFinished(context)
-        } catch (t: Throwable) {
-            SelfCheckGuard.markFinished(context)
-            val items = listOf(
-                CheckItem(
-                    "自检异常",
-                    false,
-                    "${t.javaClass.simpleName}: ${t.message}",
-                    "多为内存不足或 ROM 拦截截屏，重启 App 后重试，仍失败请回到自动化设置页查看"
-                )
-            )
-            runCatching {
-                CaptureDiagnostics.record(
-                    context,
-                    CaptureReport(System.currentTimeMillis(), CaptureFailReason.UNKNOWN,
-                        items.map { DiagnosticStep(it.name, it.ok, it.detail) })
-                )
-            }
-            _state.update {
-                it.copy(running = false, items = items, last = CaptureDiagnostics.last(context))
-            }
-        }
+    // ---- 实时监督：每一步跑完立刻推送到界面 ----
+
+    private fun publish(item: CheckItem) {
+        _state.update { it.copy(items = it.items + item) }
     }
 
-    private suspend fun runCheck() {
-        val items = mutableListOf<CheckItem>()
-        items += notificationCheck()
-        items += accessibilityChannelCheck()
-        items += projectionChannelCheck()
+    private fun enterStep(name: String) {
+        SelfCheckGuard.markStep(context, name)
+        _state.update { it.copy(currentStep = name) }
+    }
 
-        var reason: CaptureFailReason? = null
-        var preview = ""
+    /** 主动自检：真实执行一次截屏 + OCR + 提取，逐项实时显示。 */
+    fun runSelfCheck() = viewModelScope.launch {
+        if (_state.value.running) return@launch
+        _state.update {
+            it.copy(running = true, items = emptyList(), currentStep = "准备中", message = null)
+        }
+        // 整段兜底：OutOfMemoryError / 原生异常都不能冒到 viewModelScope（会直接退出 App）
+        try {
+            enterStep("环境检查")
+            publish(notificationCheck())
+            publish(accessibilityChannelCheck())
+            publish(projectionChannelCheck())
 
-        if (channels.needsAuthorization()) {
-            reason = CaptureFailReason.NO_CHANNEL
-        } else {
-            // 双通道依次尝试：无障碍截屏优先，媒体投影兜底
-            SelfCheckGuard.markStep(context, "截屏")
+            if (channels.needsAuthorization()) {
+                finishRun(CaptureFailReason.NO_CHANNEL, listOf())
+                return@launch
+            }
+
+            // ---- 截屏 ----
+            enterStep("截屏（双通道）")
             val frame = withContext(io) { channels.capture() }
             val bitmap = frame.bitmap
-            items += CheckItem(
-                name = "截屏（${frame.channel}）",
-                ok = bitmap != null,
-                detail = if (bitmap != null) {
-                    "取帧成功 ${frame.detail}"
-                } else {
-                    (frame.reason?.title ?: "失败") + "：" +
-                        frame.attempts.joinToString("；").ifBlank { frame.detail }
-                },
-                advice = frame.reason?.advice.orEmpty()
+            publish(
+                CheckItem(
+                    name = "截屏（${frame.channel}）",
+                    ok = bitmap != null,
+                    detail = if (bitmap != null) {
+                        "取帧成功 ${frame.detail}"
+                    } else {
+                        (frame.reason?.title ?: "失败") + "：" +
+                            frame.attempts.joinToString("；").ifBlank { frame.detail }
+                    },
+                    advice = frame.reason?.advice.orEmpty()
+                )
             )
             if (bitmap == null) {
-                reason = frame.reason ?: CaptureFailReason.UNKNOWN
-            } else {
-                SelfCheckGuard.markStep(context, "OCR（独立进程）")
-                val ipc = withContext(io) { ocrIpc.recognize(bitmap) }
-                runCatching { bitmap.recycle() }
-                val payload = ipc.payload
-                preview = payload?.text.orEmpty()
-                val textOk = payload != null && payload.text.isNotBlank()
-                items += CheckItem(
+                finishRun(frame.reason ?: CaptureFailReason.UNKNOWN, listOf())
+                return@launch
+            }
+
+            // ---- OCR（独立进程）----
+            enterStep("OCR（独立进程）")
+            val ipc = withContext(io) { ocrIpc.recognize(bitmap) }
+            runCatching { bitmap.recycle() }
+            val payload = ipc.payload
+            val textOk = payload != null && payload.text.isNotBlank()
+            publish(
+                CheckItem(
                     name = "OCR 文字识别（独立进程）",
                     ok = textOk,
                     detail = when {
@@ -228,42 +222,73 @@ class CaptureDiagnosticsViewModel @Inject constructor(
                         else -> ""
                     }
                 )
-                if (payload == null) {
-                    reason = CaptureFailReason.OCR_PROCESS_FAILED
-                } else if (!textOk) {
-                    reason = CaptureFailReason.OCR_EMPTY
-                } else {
-                    SelfCheckGuard.markStep(context, "扣款提取")
-                    val analysis = analyzer.analyze(payload.text)
-                    val amountOk = analysis.amountFen != null
-                    items += CheckItem(
-                        name = "扣款信息提取",
-                        ok = amountOk,
-                        detail = if (amountOk) {
-                            "金额 ¥${analysis.amountFen!! / 100.0} · 商户 ${analysis.merchant.ifBlank { "未识别" }} · 置信度 ${"%.2f".format(analysis.confidence)}"
-                        } else {
-                            "识别到文字但没有金额候选（当前页可能不是支付结果页）"
-                        },
-                        advice = if (amountOk) "" else CaptureFailReason.EXTRACT_EMPTY.advice
-                    )
-                    if (!amountOk) reason = CaptureFailReason.EXTRACT_EMPTY
-                }
+            )
+            if (payload == null || !textOk) {
+                val reason = if (payload == null) CaptureFailReason.OCR_PROCESS_FAILED else CaptureFailReason.OCR_EMPTY
+                finishRun(reason, listOf(), payload?.text.orEmpty())
+                return@launch
             }
-        }
 
+            // ---- 扣款提取 ----
+            enterStep("扣款提取")
+            val analysis = analyzer.analyze(payload.text)
+            val amountOk = analysis.amountFen != null
+            publish(
+                CheckItem(
+                    name = "扣款信息提取",
+                    ok = amountOk,
+                    detail = if (amountOk) {
+                        "金额 ¥${analysis.amountFen!! / 100.0} · 商户 ${analysis.merchant.ifBlank { "未识别" }} · 置信度 ${"%.2f".format(analysis.confidence)}"
+                    } else {
+                        "识别到文字但没有金额候选（当前页可能不是支付结果页）"
+                    },
+                    advice = if (amountOk) "" else CaptureFailReason.EXTRACT_EMPTY.advice
+                )
+            )
+            finishRun(
+                if (amountOk) null else CaptureFailReason.EXTRACT_EMPTY,
+                listOf(),
+                payload.text
+            )
+        } catch (t: Throwable) {
+            publish(
+                CheckItem(
+                    "自检异常",
+                    false,
+                    "${t.javaClass.simpleName}: ${t.message}",
+                    "多为内存不足或 ROM 拦截截屏，重启 App 后重试，仍失败请把诊断信息反馈"
+                )
+            )
+            finishRun(CaptureFailReason.UNKNOWN, listOf())
+            SelfCheckGuard.markFinished(context)
+        }
+    }
+
+    /** 收尾：落盘诊断、结束监督状态。 */
+    private suspend fun finishRun(
+        reason: CaptureFailReason?,
+        extra: List<DiagnosticStep>,
+        preview: String = ""
+    ) {
+        val snapshot = _state.value.items
         runCatching {
             CaptureDiagnostics.record(
                 context,
                 CaptureReport(
                     timeMillis = System.currentTimeMillis(),
                     reason = reason,
-                    steps = items.map { DiagnosticStep(it.name, it.ok, it.detail) },
+                    steps = snapshot.map { DiagnosticStep(it.name, it.ok, it.detail) } + extra,
                     textPreview = preview
                 )
             )
         }
+        SelfCheckGuard.markFinished(context)
         _state.update {
-            it.copy(running = false, items = items, last = CaptureDiagnostics.last(context))
+            it.copy(
+                running = false,
+                currentStep = "",
+                last = CaptureDiagnostics.last(context)
+            )
         }
     }
 

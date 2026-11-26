@@ -97,8 +97,9 @@ for f in files:
 # ---------- 6.1 新增回归测试与 CI 步骤 ----------
 check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_0.py" in workflow)
 mapper = read("app/src/main/java/com/azu/bookkeeper/data/mapper/EntityMappers.kt")
-check("T-IMPORT-01 无幽灵导入 InstallmentPaymentStatus",
-      "InstallmentPaymentStatus" not in mapper)
+check("T-IMPORT-01 mapper 导入清理且必需类型可解析",
+      "InstallmentPaymentStatus" not in mapper
+      and "import com.azu.bookkeeper.domain.model.ImportTaskStatus" in mapper)
 check("T-MAP-01 分期流水 domain→entity 映射存在",
       "fun InstallmentPayment.toEntity()" in mapper)
 check("T-BATCH-TIME 批量表单提供 billTime",

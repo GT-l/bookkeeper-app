@@ -39,6 +39,7 @@ import com.azu.bookkeeper.domain.model.CategoryKind
 import com.azu.bookkeeper.domain.model.CategoryRule
 import com.azu.bookkeeper.domain.model.CycleType
 import com.azu.bookkeeper.domain.model.ImportTask
+import com.azu.bookkeeper.domain.model.ImportTaskStatus
 import com.azu.bookkeeper.domain.model.Installment
 import com.azu.bookkeeper.domain.model.InstallmentPayment
 import com.azu.bookkeeper.domain.model.ImportTemplate

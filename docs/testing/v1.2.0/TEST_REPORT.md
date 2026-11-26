@@ -45,6 +45,7 @@
 | 11 | `InstallmentPayment` 缺少 `toEntity()` | `InstallmentUseCases` 每期确认时要写 `installment_payments`，但 domain→entity 映射函数不存在 | 按实体字段补 `InstallmentPayment.toEntity()`，与 `toDomain()` 成对 | 字段一一对应；静态脚本锁死映射存在性 | 已修（本轮） |
 | 12 | 批量添加表单构造 `Bill` 缺少必填 `billTime` | `Bill.billTime` 无默认值，`BatchAddScreen` 构造时未传，编译失败 | 传 `billTime = 0L`，由 `BatchAddBillsUseCase` 按统一基准逐笔错开 1 秒填充 | 0 只是哨兵值，不会落库；静态脚本锁死该传参 | 已修（本轮） |
 | 13 | 三处删除按钮点击后无限递归 | ViewModel 的公开函数 `delete(id)` 与注入的 UseCase 属性 `delete` 同名，函数体内 `delete(id)` 解析为自身；报销 UseCase 的 `delete` 同理 | 注入属性改名 `deleteDebt` / `deleteInstallment`，报销方法改名 `deleteRecord`，UI 调用同步更新 | 不改公开 UI 事件名；静态脚本 `T-NO-RECUR-01..03` 逐处锁死 | 已修（本轮） |
+| 14 | `ImportTaskStatus` 已定义但未导入 | `EntityMappers.ImportTaskEntity.toDomain()` 调用 `ImportTaskStatus.fromCode`，编译报 `Unresolved reference` | 补 `import com.azu.bookkeeper.domain.model.ImportTaskStatus`；静态检查同时锁死「幽灵导入已删 + 必需导入存在」 | 无行为变化；仅补导入 | 已修（本轮） |
 
 ## 四、全局与全流程自测
 
@@ -66,6 +67,6 @@
 
 ## 六、结论
 
-- 静态一致性 **89/89 通过**；走查与 CI 编译暴露的 13 项问题均已修复并补回归断言。
+- 静态一致性 **89/89 通过**；走查与 CI 编译暴露的 14 项问题均已修复并补回归断言。
 - 编译与单测的最终结论以本轮 GitHub Actions 为准（见「CI 结论」）；未拿到绿色结论前不宣称发布成功。
 - 真机 10 条全流程清单需用户确认；在此之前，本报告只覆盖静态、JVM 与代码走查层面。

@@ -6,7 +6,7 @@ import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -28,8 +28,13 @@ class OcrEngine @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
+    /**
+     * 中文识别模型（识屏从未成功的根因之一：此前用的是拉丁模型，
+     * 中文支付页面整页识别不出，提取器自然拿不到金额/商户）。
+     * chinese 模型同时覆盖中文、数字与字母，纯端侧离线运行，首次使用会自动下载模型。
+     */
     private val recognizer by lazy {
-        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     }
 
     /** 识别内存中的 Bitmap；失败返回置信度 0 的空结果，由上层触发校对而非崩溃。 */

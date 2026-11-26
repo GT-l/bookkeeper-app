@@ -10,6 +10,8 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.DisplayMetrics
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
@@ -140,7 +142,7 @@ class ScreenCaptureManager @Inject constructor(
                     image.close()
                 }
             }
-            reader.setOnImageAvailableListener(listener, null)
+            reader.setOnImageAvailableListener(listener, HANDLER)
             cont.invokeOnCancellation { reader.setOnImageAvailableListener(null, null) }
         }
 
@@ -155,5 +157,13 @@ class ScreenCaptureManager @Inject constructor(
 
     private companion object {
         const val CAPTURE_TIMEOUT_MS = 3_000L
+
+        /**
+         * 识屏从未成功的根因：setOnImageAvailableListener 传 null handler 时
+         * 要求调用线程自带 Looper，而 capture() 跑在 IO 线程池（无 Looper），
+         * 监听器要么抛异常被吞、要么永不回调 → 截屏永远超时返回 null。
+         * 统一挂到主线程 Looper，回调只做取帧转 Bitmap，不卡主线程。
+         */
+        val HANDLER = Handler(Looper.getMainLooper())
     }
 }

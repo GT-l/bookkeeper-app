@@ -65,6 +65,9 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkit" }
+# 中文识别模型：默认的 text-recognition 是拉丁模型，识别不了中文支付页面（识屏从未成功的根因之一）。
+# chinese 模型同时覆盖中文与数字/字母，离线可用。
+mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkit" }
 mpandroidchart = { module = "com.github.PhilJay:MPAndroidChart", version.ref = "mpandroidchart" }
 kotlin-csv-jvm = { module = "com.github.doyaaaaaken:kotlin-csv-jvm", version.ref = "kotlinCsv" }
 # 完整 XSSF API（XSSFWorkbook / SXSSFWorkbook / OPCPackage / DataFormatter 等）只在

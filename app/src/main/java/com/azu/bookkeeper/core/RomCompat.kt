@@ -32,6 +32,21 @@ object RomCompat {
     /** 是否为 OPPO 系并命中 OrangeOS 分支（供 UI 提示用，两条满足其一即可）。 */
     fun needsOppoGuidance(): Boolean = isOppoFamily() || isOrangeOs()
 
+    /**
+     * ROM 是否具备「灵动岛」类焦点展示（小米焦点通知 / 华为·荣耀实况窗 / OPPO 系流体云）。
+     * 这类 ROM 会把 App 的 ongoing 进度通知自动聚合成屏幕顶部胶囊；无公开第三方 SDK，
+     * 应用侧只需投递常驻进度通知即可命中该形态（见 CaptureProgressNotifier）。
+     */
+    fun isFocusIslandCapable(): Boolean = runCatching {
+        val manufacturer = Build.MANUFACTURER?.uppercase().orEmpty()
+        val brand = Build.BRAND?.uppercase().orEmpty()
+        val device = Build.DEVICE?.uppercase().orEmpty()
+        manufacturer.contains("XIAOMI") || manufacturer.contains("HUAWEI") ||
+            manufacturer.contains("HONOR") || isOppoFamily() ||
+            brand.contains("XIAOMI") || brand.contains("HUAWEI") ||
+            brand.contains("HONOR") || device.contains("MI ")
+    }.getOrDefault(false)
+
     /** ROM 展示名（诊断用）。 */
     fun displayName(): String = runCatching {
         "${Build.MANUFACTURER} ${Build.MODEL} · ${Build.VERSION.RELEASE} (${Build.DISPLAY})"

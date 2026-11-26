@@ -89,6 +89,8 @@ dependencies {
     // XLSX 读写需要完整 XSSF API；lite 版缺失 XSSFWorkbook/SXSSFWorkbook/OPCPackage 等类
     implementation(libs.poi.ooxml)
     implementation(libs.mlkit.text.recognition)
+    // 中文 OCR 模型：拉丁模型识别不了中文支付页（识屏失败根因之一），见 OcrEngine
+    implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.mpandroidchart)
     implementation(libs.timber)
     coreLibraryDesugaring(libs.desugar.jdk.libs)

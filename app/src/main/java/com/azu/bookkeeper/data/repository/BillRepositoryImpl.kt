@@ -264,34 +264,16 @@ class BillRepositoryImpl @Inject constructor(
         updateAt = DateTimeUtils.nowMillis()
     )
 
-    /** 一条 bill 对所有账户造成的净余额变动。 */
-    private fun BillEntity.netDeltas(): Map<Long, Long> {
-        val result = mutableMapOf<Long, Long>()
-        fun add(accountId: Long, delta: Long) {
-            if (accountId <= 0L || delta == 0L) return
-            result[accountId] = (result[accountId] ?: 0L) + delta
-        }
-        when (billType) {
-            BillType.EXPENSE.code -> add(accountFrom, -amountFen)
-            BillType.INCOME.code -> add(accountFrom, amountFen)
-            BillType.TRANSFER.code -> {
-                add(accountFrom, -amountFen)
-                add(accountTo, amountFen)
-            }
-        }
-        return result
-    }
+    /** 一条 bill 对所有账户造成的净余额变动（实现见 [BalanceMath]）。 */
+    private fun BillEntity.netDeltas(): Map<Long, Long> =
+        BalanceMath.netDeltas(billType, amountFen, accountFrom, accountTo)
 
-    private fun Map<Long, Long>.negated(): Map<Long, Long> = mapValues { -it.value }
+    private fun Map<Long, Long>.negated(): Map<Long, Long> = BalanceMath.negated(this)
 
     /**
      * 修改账单时：旧账单的净变动取反 + 新账单的净变动。
      * 即使账户发生变更（A→B）也能正确回滚 A 并调整 B。
      */
-    private fun Map<Long, Long>.merge(newDeltas: Map<Long, Long>, reverseOld: Boolean): Map<Long, Long> {
-        val result = mutableMapOf<Long, Long>()
-        this.forEach { (id, delta) -> result[id] = (result[id] ?: 0L) + if (reverseOld) -delta else delta }
-        newDeltas.forEach { (id, delta) -> result[id] = (result[id] ?: 0L) + delta }
-        return result.filterValues { it != 0L }
-    }
+    private fun Map<Long, Long>.merge(newDeltas: Map<Long, Long>, reverseOld: Boolean): Map<Long, Long> =
+        BalanceMath.merge(this, newDeltas, reverseOld)
 }

@@ -3,7 +3,6 @@ package com.azu.bookkeeper.data.repository
 import com.azu.bookkeeper.data.local.db.entity.BillEntity
 import com.azu.bookkeeper.domain.model.BillSource
 import com.azu.bookkeeper.domain.model.BillType
-import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,32 +10,21 @@ import org.junit.Test
 /**
  * 余额净变动单元测试（PRD §12 / 架构 N4）。
  *
- * 直接以反射调用 BillRepositoryImpl 的真实私有工具方法 netDeltas / negated / merge，
- * 不复制公式、不写空壳断言。所有金额单位为「分」。
+ * 直接调用生产实现 [BalanceMath]（BillRepositoryImpl 内部使用的同一份函数），
+ * 不再用反射 + mockk：实现一旦变更，测试会编译失败而不是运行时莫名的 AssertionError。
+ * 所有金额单位为「分」。
  *
  * 重点场景：新增、修改金额、修改换账户、转账、删除回滚、ADJUSTMENT、信用卡（负余额=欠款）。
  */
-@Suppress("UNCHECKED_CAST")
 class BalanceCalculationTest {
 
-    private val repo: BillRepositoryImpl = mockk(relaxed = true)
-
-    private fun call(name: String, vararg args: Any?): Any? {
-        val method = BillRepositoryImpl::class.java.declaredMethods
-            .firstOrNull { it.name == name && it.parameterCount == args.size }
-            ?: error("private method $name not found")
-        method.isAccessible = true
-        return method.invoke(repo, *args)
-    }
-
     private fun deltas(bill: BillEntity): Map<Long, Long> =
-        call("netDeltas", bill) as Map<Long, Long>
+        BalanceMath.netDeltas(bill.billType, bill.amountFen, bill.accountFrom, bill.accountTo)
 
-    private fun negated(map: Map<Long, Long>): Map<Long, Long> =
-        call("negated", map) as Map<Long, Long>
+    private fun negated(map: Map<Long, Long>): Map<Long, Long> = BalanceMath.negated(map)
 
     private fun merged(old: Map<Long, Long>, new: Map<Long, Long>): Map<Long, Long> =
-        call("merge", old, new, true) as Map<Long, Long>
+        BalanceMath.merge(old, new, reverseOld = true)
 
     private fun bill(
         type: BillType,

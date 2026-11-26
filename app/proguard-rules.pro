@@ -44,3 +44,20 @@
 # 短信原文只在本地正则运算，任何情况下不得输出正文：保留类但不保留日志字符串拼接
 -keep class com.azu.bookkeeper.automation.receiver.SmsCaptureParser { *; }
 -keep class com.azu.bookkeeper.automation.receiver.SmsBroadcastReceiver { *; }
+
+# ===== 系统绑定组件：类名/构造器绝不能被混淆或裁剪 =====
+# 无障碍服务：system_server 通过清单里的类名跨进程绑定，混淆后类名变了就永远连不上
+-keep class com.azu.bookkeeper.automation.service.PaymentAccessibilityService { *; }
+-keep class * extends android.accessibilityservice.AccessibilityService { *; }
+# 通知监听服务同理
+-keep class com.azu.bookkeeper.automation.service.PaymentNotificationListenerService { *; }
+-keep class * extends android.service.notification.NotificationListenerService { *; }
+# 前台服务 / 广播 / 透明中转页（清单引用，防 R8 裁剪）
+-keep class com.azu.bookkeeper.automation.service.AutoCaptureForegroundService { *; }
+-keep class com.azu.bookkeeper.ui.quick.ShakeQuickAddService { *; }
+-keep class com.azu.bookkeeper.ui.quick.QuickBallService { *; }
+-keep class com.azu.bookkeeper.ui.quick.QuickBallToggleActivity { *; }
+-keep class com.azu.bookkeeper.ui.quick.ScreenCaptureAuthActivity { *; }
+-keep class com.azu.bookkeeper.automation.service.BootReceiver { *; }
+-keep class com.azu.bookkeeper.automation.receiver.SmsBroadcastReceiver { *; }
+-keep class com.azu.bookkeeper.ui.widget.QuickBookWidgetReceiver { *; }

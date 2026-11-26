@@ -87,14 +87,21 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     private fun accessibilityChannelCheck(): CheckItem {
         val connected = channels.accessibilityServiceConnected()
         val ready = channels.accessibilityReady()
+        val lastConnected = permissionGuide.accessibilityLastConnectedAt()
+        val lastDisconnected = permissionGuide.accessibilityLastDisconnectedAt()
+        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        val connectedText = if (lastConnected > 0L) fmt.format(java.util.Date(lastConnected)) else "从未连上"
+        val killedAfterConnect = lastDisconnected > lastConnected && lastConnected > 0L
+
         val detail = when {
-            ready -> "可用（免授权，首选通道）"
-            !connected -> "无障碍服务未连接"
-            else -> "服务已连但缺少截屏能力（canTakeScreenshot 未生效）"
+            ready -> "可用 · 最后连接 $connectedText"
+            !connected && killedAfterConnect -> "服务未连接 · 上次 $connectedText 连上后被系统解绑"
+            !connected -> "服务未连接 · 最后连接 $connectedText"
+            else -> "服务已连但缺少截屏能力（canTakeScreenshot 未生效） · $connectedText"
         }
         val advice = when {
             ready -> ""
-            !connected -> "设置 → 无障碍 → 少花点儿，打开服务"
+            !connected -> "设置 → 无障碍 → 少花点儿，打开服务；打开后回到本页应显示「可用」"
             else -> "关闭无障碍服务再重新打开一次，让截屏能力重新注册"
         }
         return CheckItem("无障碍截屏通道", ready, detail, advice)
@@ -238,6 +245,30 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         CaptureDiagnostics.clear(context)
         _state.update { it.copy(last = null, textPreview = "") }
         refresh()
+    }
+
+    /** 汇总当前诊断信息为纯文本，供用户一键复制反馈（含机型/ROM/通道状态）。 */
+    fun buildReportText(): String {
+        val s = _state.value
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        val sb = StringBuilder()
+        sb.appendLine("【少花点儿 · 识屏诊断】")
+        sb.appendLine("机型：${com.azu.bookkeeper.core.RomCompat.displayName()}")
+        sb.appendLine("Android：${android.os.Build.VERSION.SDK_INT}")
+        sb.appendLine("无障碍服务连接：${channels.accessibilityServiceConnected()}")
+        sb.appendLine("无障碍截屏可用：${channels.accessibilityReady()}")
+        sb.appendLine("媒体投影会话：${channels.projectionReady()}")
+        val lastConnected = permissionGuide.accessibilityLastConnectedAt()
+        sb.appendLine("最后连接时间：${if (lastConnected > 0) fmt.format(java.util.Date(lastConnected)) else "从未连上"}")
+        sb.appendLine("上次截屏能力：${permissionGuide.accessibilityCanTakeScreenshot()}")
+        s.items.forEach { sb.appendLine("${if (it.ok) "✓" else "✗"} ${it.name}：${it.detail}") }
+        s.last?.let { report ->
+            sb.appendLine("--- 最近一次识屏 ---")
+            sb.appendLine("时间：${fmt.format(java.util.Date(report.timeMillis))}")
+            sb.appendLine("结果：${report.reason?.title ?: "成功"}")
+            report.steps.forEach { sb.appendLine("${if (it.ok) "✓" else "✗"} ${it.name}：${it.detail}") }
+        }
+        return sb.toString()
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }

@@ -1,5 +1,6 @@
 package com.azu.bookkeeper.ui.settings
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,7 @@ fun CaptureDiagnosticsScreen(
     viewModel: CaptureDiagnosticsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val authLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result -> viewModel.onAuthResult(result.resultCode, result.data) }
@@ -75,6 +77,22 @@ fun CaptureDiagnosticsScreen(
                     modifier = Modifier.padding(start = 8.dp)
                 ) { Text("授权截屏") }
             }
+
+            // 一键复制诊断信息：不方便连 adb 时，把这段发给开发者即可定位
+            OutlinedButton(
+                onClick = {
+                    val clipboard = context.getSystemService(
+                        android.content.Context.CLIPBOARD_SERVICE
+                    ) as? android.content.ClipboardManager
+                    clipboard?.setPrimaryClip(
+                        android.content.ClipData.newPlainText(
+                            "识屏诊断", viewModel.buildReportText()
+                        )
+                    )
+                    Toast.makeText(context, "诊断信息已复制，可直接粘贴发送", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("复制诊断信息") }
 
             state.message?.let { msg ->
                 Text(

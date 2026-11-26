@@ -8,6 +8,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
 import com.azu.bookkeeper.R
@@ -83,11 +84,18 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        val canShot = runCatching { canCaptureScreen() }.getOrDefault(false)
+        // 用 Log.w 而不是 Timber.i：release 的 -assumenosideeffects 会把 i() 整段裁掉，
+        // 连不上服务时必须有能在 logcat 里看到的日志。
+        Log.w(TAG, "无障碍服务已连接: canTakeScreenshot=$canShot sdk=${Build.VERSION.SDK_INT}")
         runCatching { logScreenshotCapability() }
         // 心跳：主进程读这个标记判断服务是否真的连上（系统开关状态在部分 ROM 上不可靠）
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putLong(KEY_LAST_CONNECTED, System.currentTimeMillis()).apply()
+                .edit()
+                .putLong(KEY_LAST_CONNECTED, System.currentTimeMillis())
+                .putBoolean(KEY_CAN_SHOT, canShot)
+                .apply()
         }
         // 手势选择从持久化值回填；设置页改动会通过 QuickGestureCache 立即同步（同进程）
         scope.launch {
@@ -210,11 +218,22 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() = Unit
 
-    override fun onDestroy() {
-        if (instance === this) instance = null
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        Log.w(TAG, "无障碍服务被解绑（系统关闭开关 / ROM 回收）")
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putLong(KEY_LAST_CONNECTED, 0L).apply()
+                .edit().putLong(KEY_LAST_DISCONNECTED, System.currentTimeMillis()).apply()
+        }
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        Log.w(TAG, "无障碍服务已销毁")
+        if (instance === this) instance = null
+        // 保留最后一次连接时间：设置页/自检页用它区分「从没连上」与「连上后被杀」
+        runCatching {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putLong(KEY_LAST_DISCONNECTED, System.currentTimeMillis()).apply()
         }
         runCatching {
             fingerprintCallback?.let { fingerprintController?.unregisterFingerprintGestureCallback(it) }
@@ -224,9 +243,12 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val TAG = "BookkeeperA11y"
         private const val GESTURE_COOLDOWN_MS = 2_500L
         const val PREFS = "accessibility_service_status"
         const val KEY_LAST_CONNECTED = "last_connected_at"
+        const val KEY_LAST_DISCONNECTED = "last_disconnected_at"
+        const val KEY_CAN_SHOT = "can_take_screenshot"
 
         /**
          * 当前活着的服务实例。无障碍截屏（API 30+ takeScreenshot）必须由服务实例发起，

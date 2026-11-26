@@ -113,9 +113,12 @@
         </service>
 
         <!-- T5：无障碍读屏服务 -->
+        <!-- exported 必须为 true：无障碍服务由 system_server 跨进程绑定，
+             exported=false 时系统根本绑不上（表现为「启动失败/开关自动弹回」）。
+             安全性由 android:permission=BIND_ACCESSIBILITY_SERVICE 保证，普通应用无法调用。 -->
         <service
             android:name=".automation.service.PaymentAccessibilityService"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

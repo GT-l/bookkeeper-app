@@ -39,14 +39,39 @@ class PermissionGuide @Inject constructor(
      * 服务是否真的连上过（心跳）。部分 ROM 会把系统开关显示成开、但服务已被杀掉，
      * 或反过来在用户返回后自动关掉服务。设置页用这个给用户更准确的提示。
      */
-    fun accessibilityServiceEverConnected(): Boolean = runCatching {
+    fun accessibilityServiceEverConnected(): Boolean = accessibilityLastConnectedAt() > 0L
+
+    /** 最后一次「服务连上」的时间戳（0 表示从未连上）。 */
+    fun accessibilityLastConnectedAt(): Long = runCatching {
         context.getSharedPreferences(
             com.azu.bookkeeper.automation.service.PaymentAccessibilityService.PREFS,
             Context.MODE_PRIVATE
         ).getLong(
             com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_LAST_CONNECTED,
             0L
-        ) > 0L
+        )
+    }.getOrDefault(0L)
+
+    /** 最后一次「服务被解绑/销毁」的时间戳（判断是否连上后又被 ROM 干掉）。 */
+    fun accessibilityLastDisconnectedAt(): Long = runCatching {
+        context.getSharedPreferences(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.PREFS,
+            Context.MODE_PRIVATE
+        ).getLong(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_LAST_DISCONNECTED,
+            0L
+        )
+    }.getOrDefault(0L)
+
+    /** 上次连接时无障碍截屏能力是否已注册（canTakeScreenshot）。 */
+    fun accessibilityCanTakeScreenshot(): Boolean = runCatching {
+        context.getSharedPreferences(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.PREFS,
+            Context.MODE_PRIVATE
+        ).getBoolean(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_CAN_SHOT,
+            false
+        )
     }.getOrDefault(false)
 
     fun isNotificationListenerEnabled(): Boolean {

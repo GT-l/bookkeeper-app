@@ -15,17 +15,18 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.di.IoDispatcher
-import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
+import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * 抓帧结果：成功时 path 非空；失败时 reason 给出可读原因（诊断链路使用）。
- */
+/** 抓帧结果：成功时 path 非空；失败时 reason 给出可读原因（诊断链路使用）。 */
 data class FrameCaptureResult(
     val path: String?,
     val reason: CaptureFailReason?,
@@ -34,15 +35,29 @@ data class FrameCaptureResult(
     val success: Boolean get() = path != null
 }
 
+/** 内存帧结果：识屏主链路直接用 Bitmap 交给 OCR，不再落盘（更快、更省内存）。 */
+data class FrameBitmapResult(
+    val bitmap: Bitmap?,
+    val reason: CaptureFailReason?,
+    val detail: String
+) {
+    val success: Boolean get() = bitmap != null
+}
+
 /**
- * MediaProjection 截屏备选（主架构 §5.2 / AC-5）：
- * 用户授权后在 FGS 中拿投影实例，抓一帧 → 加密落盘 → 交 OCR。
- * Android 14+ 每次会话需重授权；onStop 回调释放投影并清空引用，自动降级读屏/通知路。
+ * MediaProjection 截屏备选（主架构 §5.2 / AC-5）。
+ *
+ * 关键实现要点（都是踩过的坑）：
+ * 1. Android 14+：getMediaProjection / createVirtualDisplay 之前必须有 mediaProjection 类型的
+ *    前台服务在跑，否则授权成功也会 SecurityException → 会话建不起来；
+ * 2. ImageReader 监听器必须挂主线程 Looper（null handler 在无 Looper 的 IO 线程上不回调）；
+ * 3. 抓帧按最长边 1280 缩放：全分辨率 ARGB_8888 在 2K 屏上一次就是 70MB+，
+ *    直接 OOM 把整个 App 杀掉（用户看到的「点自检就退出」）；
+ * 4. 所有异常都按 Throwable 兜（OutOfMemoryError 是 Error，catch Exception 接不住）。
  */
 @Singleton
 class ScreenCaptureManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val encryptedFiles: EncryptedFileDataSource,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
@@ -55,11 +70,11 @@ class ScreenCaptureManager @Inject constructor(
     @Volatile
     private var onSessionStopped: (() -> Unit)? = null
 
-    /** 系统授权弹窗 intent（明确告知将捕获屏幕内容）。 */
+    /**
+     * 系统授权弹窗 intent（明确告知将捕获屏幕内容）。
+     * 拉起前先把 mediaProjection 类型的前台服务起来，给系统留启动时间。
+     */
     fun createCaptureIntent(): Intent {
-        // Android 14+：getMediaProjection / createVirtualDisplay 都要求已有
-        // mediaProjection 类型的前台服务在跑，否则 Authorization 成功也会 SecurityException。
-        // 在拉起授权弹窗之前就把服务拉起来，给系统留出启动时间。
         AutoCaptureForegroundService.startForProjection(context)
         return projectionManager.createScreenCaptureIntent()
     }
@@ -81,68 +96,83 @@ class ScreenCaptureManager @Inject constructor(
             mediaProjection.registerCallback(callback, null)
         }
         true
-    } catch (_: Exception) {
+    } catch (t: Throwable) {
+        Timber.w(t, "start projection session failed")
         false
     }
 
-    /**
-     * 抓一帧并加密保存，返回绝对路径；无会话 / 授权失效 / 超时均返回 null（上层降级）。
-     */
+    /** 抓一帧并保存为缓存 JPEG，返回绝对路径；兼容旧管线（CaptureCoordinator）。 */
     suspend fun capture(): String? = captureWithReason().path
 
-    /**
-     * 带失败原因的抓帧（诊断用）：每一步都给出可读原因，供 Toast / 通知 / 自检页展示。
-     */
+    /** 带失败原因的抓帧（落盘版，诊断/旧管线使用）。 */
     suspend fun captureWithReason(): FrameCaptureResult = withContext(ioDispatcher) {
-        val mediaProjection = projection
-            ?: return@withContext FrameCaptureResult(null, CaptureFailReason.NO_SESSION, "projection == null")
-        var imageReader: ImageReader? = null
-        var virtualDisplay: VirtualDisplay? = null
+        val frame = captureBitmapScaled()
+        val bitmap = frame.bitmap
+            ?: return@withContext FrameCaptureResult(null, frame.reason, frame.detail)
         try {
-            // Android 14+ 要求：调用 createVirtualDisplay 前必须有 mediaProjection 类型的前台服务在跑，
-            // 否则 SecurityException。之前只靠设置页授权、没有这个前置，截屏会直接失败。
-            AutoCaptureForegroundService.startForProjection(context)
-
-            val metrics = DisplayMetrics()
-            @Suppress("DEPRECATION")
-            (context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager)
-                .defaultDisplay.getMetrics(metrics)
-            val width = metrics.widthPixels
-            val height = metrics.heightPixels
-            val density = metrics.densityDpi
-
-            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-            virtualDisplay = try {
-                createVirtualDisplay(mediaProjection, width, height, density, imageReader.surface)
-            } catch (e: Exception) {
-                val reason = if (e is SecurityException) {
-                    CaptureFailReason.PROJECTION_INIT_FAILED
-                } else {
-                    CaptureFailReason.VIRTUAL_DISPLAY_FAILED
-                }
-                return@withContext FrameCaptureResult(null, reason, "${e.javaClass.simpleName}: ${e.message}")
-            }
-
-            val bitmap = withTimeoutOrNull(CAPTURE_TIMEOUT_MS) {
-                awaitBitmap(imageReader!!, width, height)
-            } ?: return@withContext FrameCaptureResult(
-                null, CaptureFailReason.FRAME_TIMEOUT, "${CAPTURE_TIMEOUT_MS}ms 内未收到画面帧"
-            )
-
-            val path = runCatching { encryptedFiles.saveCapture(bitmap) }.getOrNull()
-            bitmap.recycle()
+            val path = saveJpegToCache(bitmap)
             if (path == null) {
-                FrameCaptureResult(null, CaptureFailReason.SAVE_FAILED, "saveCapture 返回 null")
+                FrameCaptureResult(null, CaptureFailReason.SAVE_FAILED, "JPEG 写入缓存失败")
             } else {
-                FrameCaptureResult(path, null, "${width}x$height")
+                FrameCaptureResult(path, null, frame.detail)
             }
-        } catch (e: Exception) {
-            FrameCaptureResult(null, CaptureFailReason.UNKNOWN, "${e.javaClass.simpleName}: ${e.message}")
         } finally {
-            virtualDisplay?.release()
-            imageReader?.close()
+            runCatching { bitmap.recycle() }
         }
     }
+
+    /**
+     * 抓一帧到内存（最长边缩放到 [maxDimension]），识屏主链路与自检都走这里。
+     * 调用方负责 recycle 返回的 Bitmap。
+     */
+    suspend fun captureBitmapScaled(maxDimension: Int = 1080): FrameBitmapResult =
+        withContext(ioDispatcher) {
+            val mediaProjection = projection
+                ?: return@withContext FrameBitmapResult(null, CaptureFailReason.NO_SESSION, "projection == null")
+            var imageReader: ImageReader? = null
+            var virtualDisplay: VirtualDisplay? = null
+            try {
+                // Android 14+：createVirtualDisplay 前必须有 mediaProjection 类型的前台服务
+                AutoCaptureForegroundService.startForProjection(context)
+
+                val metrics = DisplayMetrics()
+                @Suppress("DEPRECATION")
+                (context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager)
+                    .defaultDisplay.getMetrics(metrics)
+                val fullWidth = metrics.widthPixels.coerceAtLeast(1)
+                val fullHeight = metrics.heightPixels.coerceAtLeast(1)
+                val scale = minOf(1f, maxDimension.toFloat() / maxOf(fullWidth, fullHeight))
+                val width = (fullWidth * scale).toInt().coerceAtLeast(1)
+                val height = (fullHeight * scale).toInt().coerceAtLeast(1)
+
+                // 单缓冲即可（AUTO_MIRROR 会持续产帧）；多缓冲会翻倍占内存，低端机易 OOM
+                imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 1)
+                virtualDisplay = try {
+                    createVirtualDisplay(mediaProjection, width, height, metrics.densityDpi, imageReader.surface)
+                } catch (t: Throwable) {
+                    val reason = if (t is SecurityException) {
+                        CaptureFailReason.PROJECTION_INIT_FAILED
+                    } else {
+                        CaptureFailReason.VIRTUAL_DISPLAY_FAILED
+                    }
+                    return@withContext FrameBitmapResult(null, reason, "${t.javaClass.simpleName}: ${t.message}")
+                }
+
+                val bitmap = withTimeoutOrNull(CAPTURE_TIMEOUT_MS) {
+                    awaitBitmap(imageReader!!, width, height)
+                } ?: return@withContext FrameBitmapResult(
+                    null, CaptureFailReason.FRAME_TIMEOUT, "${CAPTURE_TIMEOUT_MS}ms 内未收到画面帧"
+                )
+
+                FrameBitmapResult(bitmap, null, "${width}x$height")
+            } catch (t: Throwable) {
+                // Throwable：OutOfMemoryError 也在内，绝不让它冒到上层杀进程
+                FrameBitmapResult(null, CaptureFailReason.UNKNOWN, "${t.javaClass.simpleName}: ${t.message}")
+            } finally {
+                runCatching { virtualDisplay?.release() }
+                runCatching { imageReader?.close() }
+            }
+        }
 
     private fun createVirtualDisplay(
         mediaProjection: MediaProjection,
@@ -167,7 +197,8 @@ class ScreenCaptureManager @Inject constructor(
     private suspend fun awaitBitmap(reader: ImageReader, width: Int, height: Int): Bitmap? =
         kotlinx.coroutines.suspendCancellableCoroutine { cont ->
             val listener = ImageReader.OnImageAvailableListener { r ->
-                val image = r.acquireLatestImage() ?: return@OnImageAvailableListener
+                val image = runCatching { r.acquireLatestImage() }.getOrNull()
+                    ?: return@OnImageAvailableListener
                 try {
                     val plane = image.planes[0]
                     val buffer = plane.buffer
@@ -181,15 +212,31 @@ class ScreenCaptureManager @Inject constructor(
                     val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
                     bitmap.recycle()
                     if (cont.isActive) cont.resume(cropped) {}
-                } catch (_: Exception) {
+                } catch (t: Throwable) {
+                    Timber.w(t, "decode frame failed")
                     if (cont.isActive) cont.resume(null) {}
                 } finally {
-                    image.close()
+                    runCatching { image.close() }
                 }
             }
             reader.setOnImageAvailableListener(listener, HANDLER)
             cont.invokeOnCancellation { reader.setOnImageAvailableListener(null, null) }
         }
+
+    /** 写缓存 JPEG（不加密、不依赖 Keystore，识屏瞬时截图用完即删）。 */
+    private fun saveJpegToCache(bitmap: Bitmap): String? = runCatching {
+        val dir = File(context.cacheDir, "captures").apply { if (!exists()) mkdirs() }
+        val file = File(dir, "cap_${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg")
+        FileOutputStream(file).use { out ->
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)) return null
+        }
+        file.absolutePath
+    }.getOrNull()
+
+    /** 清理解码/OCR 后的临时截图。 */
+    fun deleteTemp(absolutePath: String?) = runCatching {
+        absolutePath?.let { File(it).takeIf { f -> f.exists() }?.delete() }
+    }
 
     /** 释放投影会话（设置页关闭 / 服务销毁时调用）。 */
     fun release() {
@@ -204,10 +251,8 @@ class ScreenCaptureManager @Inject constructor(
         const val CAPTURE_TIMEOUT_MS = 3_000L
 
         /**
-         * 识屏从未成功的根因：setOnImageAvailableListener 传 null handler 时
-         * 要求调用线程自带 Looper，而 capture() 跑在 IO 线程池（无 Looper），
-         * 监听器要么抛异常被吞、要么永不回调 → 截屏永远超时返回 null。
-         * 统一挂到主线程 Looper，回调只做取帧转 Bitmap，不卡主线程。
+         * setOnImageAvailableListener 传 null handler 时要求调用线程自带 Looper，
+         * 而抓帧跑在 IO 线程池（无 Looper）→ 监听器不回调 / 抛异常 → 截屏永远超时。
          */
         val HANDLER = Handler(Looper.getMainLooper())
     }

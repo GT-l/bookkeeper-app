@@ -89,16 +89,21 @@ class LightweightCapture @Inject constructor(
 
             runCatching {
                 progress.showStage(CaptureProgressNotifier.Stage.CAPTURE)
-                val frame = withContext(ioDispatcher) { screenCapture.captureWithReason() }
-                if (!frame.success) {
+                // 内存抓帧 + 最长边 1280 缩放：全分辨率位图在 2K 屏上会 OOM 把进程杀掉
+                val frame = withContext(ioDispatcher) { screenCapture.captureBitmapScaled() }
+                val bitmap = frame.bitmap
+                if (bitmap == null) {
                     fail(frame.reason ?: CaptureFailReason.UNKNOWN, frame.detail)
                     return@launch
                 }
                 steps += DiagnosticStep("截屏", true, frame.detail)
-                val path = frame.path!!
 
                 progress.showStage(CaptureProgressNotifier.Stage.RECOGNIZE)
-                val result = withContext(ioDispatcher) { ocr.recognizeFromFile(path) }
+                val result = try {
+                    withContext(ioDispatcher) { ocr.recognize(bitmap) }
+                } finally {
+                    runCatching { bitmap.recycle() }
+                }
                 if (result.rawText.isBlank()) {
                     fail(CaptureFailReason.OCR_EMPTY, "empty text, confidence=${result.confidence}")
                     return@launch

@@ -108,6 +108,32 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     /** 主动自检：真实执行一次截屏 + OCR + 提取，把每一步结果写出来。 */
     fun runSelfCheck() = viewModelScope.launch {
         _state.update { it.copy(running = true, message = null) }
+        // 整段兜底：OutOfMemoryError / 原生异常都不能冒到 viewModelScope（会直接退出 App）
+        try {
+            runCheck()
+        } catch (t: Throwable) {
+            val items = listOf(
+                CheckItem(
+                    "自检异常",
+                    false,
+                    "${t.javaClass.simpleName}: ${t.message}",
+                    "多为内存不足或 ROM 拦截截屏，重启 App 后重试，仍失败请回到自动化设置页查看"
+                )
+            )
+            runCatching {
+                CaptureDiagnostics.record(
+                    context,
+                    CaptureReport(System.currentTimeMillis(), CaptureFailReason.UNKNOWN,
+                        items.map { DiagnosticStep(it.name, it.ok, it.detail) })
+                )
+            }
+            _state.update {
+                it.copy(running = false, items = items, last = CaptureDiagnostics.last(context))
+            }
+        }
+    }
+
+    private suspend fun runCheck() {
         val items = mutableListOf<CheckItem>()
         items += notificationCheck()
         items += sessionCheck()
@@ -118,17 +144,22 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         if (!screenCapture.hasActiveSession()) {
             reason = CaptureFailReason.NO_SESSION
         } else {
-            val frame = withContext(io) { screenCapture.captureWithReason() }
+            val frame = withContext(io) { screenCapture.captureBitmapScaled() }
+            val bitmap = frame.bitmap
             items += CheckItem(
                 name = "截屏",
-                ok = frame.success,
-                detail = if (frame.success) "取帧成功 ${frame.detail}" else (frame.reason?.title ?: "失败") + "：" + frame.detail,
+                ok = bitmap != null,
+                detail = if (bitmap != null) "取帧成功 ${frame.detail}" else (frame.reason?.title ?: "失败") + "：" + frame.detail,
                 advice = frame.reason?.advice.orEmpty()
             )
-            if (!frame.success) {
+            if (bitmap == null) {
                 reason = frame.reason ?: CaptureFailReason.UNKNOWN
             } else {
-                val result = withContext(io) { ocr.recognizeFromFile(frame.path!!) }
+                val result = try {
+                    withContext(io) { ocr.recognize(bitmap) }
+                } finally {
+                    runCatching { bitmap.recycle() }
+                }
                 preview = result.rawText
                 val textOk = result.rawText.isNotBlank()
                 items += CheckItem(

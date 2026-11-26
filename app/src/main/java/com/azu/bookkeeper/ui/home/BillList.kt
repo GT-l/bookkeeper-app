@@ -43,7 +43,9 @@ fun BillList(
     onBillClick: (Long) -> Unit,
     onSwipeDelete: (Long) -> Unit,
     onLoadMore: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 还有没有更多：false 时连「加载更多」按钮都不显示，避免点了没反应的错觉。 */
+    hasMore: Boolean = true
 ) {
     LazyColumn(modifier = modifier.fillMaxWidth()) {
         groups.forEach { group ->
@@ -57,11 +59,23 @@ fun BillList(
                 )
             }
         }
-        item(key = "load_more") {
-            CuteOutlinedButton(
-                onClick = onLoadMore,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
-            ) { Text("加载更多") }
+        if (hasMore) {
+            item(key = "load_more") {
+                CuteOutlinedButton(
+                    onClick = onLoadMore,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
+                ) { Text("加载更多") }
+            }
+        } else if (groups.isNotEmpty()) {
+            item(key = "list_end") {
+                Text(
+                    text = "— 到底了 —",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp)
+                )
+            }
         }
     }
 }

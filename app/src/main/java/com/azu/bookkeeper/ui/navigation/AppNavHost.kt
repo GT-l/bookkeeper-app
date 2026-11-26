@@ -40,7 +40,10 @@ import com.azu.bookkeeper.ui.settings.AutomationSettingsScreen
 import com.azu.bookkeeper.ui.settings.CaptureDiagnosticsScreen
 import com.azu.bookkeeper.ui.settings.NotificationSettingsScreen
 import com.azu.bookkeeper.ui.settings.QuickGestureSettingsScreen
+import com.azu.bookkeeper.ui.profile.ProfileScreen
+import com.azu.bookkeeper.ui.settings.AboutScreen
 import com.azu.bookkeeper.ui.settings.SettingsScreen
+import com.azu.bookkeeper.ui.settings.StorageAuditScreen
 import com.azu.bookkeeper.ui.unlock.AppLockScreen
 
 /** 底部导航的四个主入口；仅指向既有路由，不新增业务逻辑。 */
@@ -50,7 +53,7 @@ private val bottomTabs = listOf(
     BottomTab(Screen.Home.route, "首页", R.drawable.ic_tab_home),
     BottomTab(Screen.Budget.route, "预算", R.drawable.ic_tab_budget),
     BottomTab(Screen.Statistics.route, "统计", R.drawable.ic_tab_stats),
-    BottomTab(Screen.Settings.route, "设置", R.drawable.ic_tab_settings)
+    BottomTab(Screen.Profile.route, "我的", R.drawable.ic_tab_settings)
 )
 
 /** 可爱风底部栏：奶油白容器 + 浅粉胶囊指示条 + 主色图标 tint。 */
@@ -109,14 +112,24 @@ fun AppNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    // 只有四个主入口显示底部导航。二级页面（详情/编辑/表单/管理）全屏展示，
+    // 否则底部三个操作按钮要跟导航栏抢空间，内容也会少一大截。
+    val showBottomBar = bottomTabs.any { it.route == currentRoute }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         // 各页面自身已有 Scaffold 处理状态栏 inset；此处归零避免顶部留白翻倍。
         // 底部导航栏自身仍会消费系统导航栏 inset。
         contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         bottomBar = {
-            CuteBottomBar(currentRoute = currentRoute) { route ->
-                navController.navigate(route) { launchSingleTop = true }
+            if (showBottomBar) {
+                CuteBottomBar(currentRoute = currentRoute) { route ->
+                    navController.navigate(route) {
+                        launchSingleTop = true
+                        // 切 tab 时不要堆栈：回到该 tab 已有实例，返回键直接退出而不是逐个回退
+                        popUpTo(Screen.Home.route) { saveState = true }
+                        restoreState = true
+                    }
+                }
             }
         }
     ) { padding ->
@@ -160,7 +173,10 @@ fun AppNavHost(
             composable(Screen.Budget.route) { BudgetScreen() }
             composable(Screen.Search.route) { SearchScreen(navController) }
             composable(Screen.Unlock.route) { AppLockScreen(navController) }
+            composable(Screen.Profile.route) { ProfileScreen(navController) }
             composable(Screen.Settings.route) { SettingsScreen(navController) }
+            composable(Screen.StorageAudit.route) { StorageAuditScreen() }
+            composable(Screen.About.route) { AboutScreen() }
 
             composable(Screen.Import.route) { ImportWizardScreen() }
             composable(Screen.Statistics.route) { StatisticsScreen(navController) }

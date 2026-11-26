@@ -20,6 +20,7 @@ object AppEntryRouter {
     /** 允许外部入口跳转的白名单，避免任意字符串进入 NavHost。 */
     private val allowedRoutes: Set<String> = setOf(
         Screen.Home.route,
+        Screen.Profile.route,
         Screen.Settings.route,
         Screen.AutomationSettings.route,
         Screen.Budget.route

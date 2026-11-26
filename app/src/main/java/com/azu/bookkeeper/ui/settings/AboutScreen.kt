@@ -1,0 +1,272 @@
+package com.azu.bookkeeper.ui.settings
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.azu.bookkeeper.BuildConfig
+import com.azu.bookkeeper.ui.common.AppTopBar
+import com.azu.bookkeeper.ui.common.CuteOutlinedButton
+import com.azu.bookkeeper.ui.common.SoftCard
+
+/**
+ * 关于与更新介绍。
+ *
+ * 之前「关于」只是一个跳转项，用户看不到版本和更新内容；反馈问题时还得自己找版本号。
+ * 这里把版本、最近几版改了什么、数据存哪、权限用来干嘛一次讲清，并给一个「复制版本信息」按钮，
+ * 反馈时直接粘贴即可。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AboutScreen() {
+    val context = LocalContext.current
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { AppTopBar(title = "关于", subtitle = "少花点儿 · 本地记账") }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item { Header() }
+
+            item {
+                SoftCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "更新介绍",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        ChangelogRow(
+                            version = "v1.0.0 · 我的页面",
+                            items = listOf(
+                                "底部第 4 个 tab 改成「我的」：本月支出、收入、结余、累计笔数、记账天数、自动记账占比一屏看完",
+                                "本月花在哪 Top3、预算进度直接摊在「我的」里，不用再翻统计页",
+                                "设置入口收进右上角，设置页只留偏好项，改哪一行就点哪一行弹窗",
+                                "新增存储排查：列出历史版本的数据库、备份、日志、缓存，自己勾选保留还是删除",
+                                "记账数据 / 智能记账 / 数据安全三组入口集中到「我的」，去掉重复与内部编号"
+                            )
+                        )
+                        ChangelogRow(
+                            version = "v1.0.0 · 预算与详情",
+                            items = listOf(
+                                "预算页重做：渐变主卡 + 总预算 + 分类预算进度条 + 日均可用",
+                                "账单详情：编辑/复制/删除固定在底部，来源、原文等收进「更多信息」折叠",
+                                "摇一摇换成熟识别算法：去重力 + 双向确认 + 冷却 + 处理中互斥，并支持灵敏度"
+                            )
+                        )
+                        ChangelogRow(
+                            version = "v1.0.0 · 识屏与识别",
+                            items = listOf(
+                                "识屏改走无障碍节点读屏，截图 OCR 只做兜底",
+                                "识别成功率高直接记账；中等弹小卡片确认；失败才开表单",
+                                "新增购买内容识别，备注写成「商户 · 商品」，认不准就当没有",
+                                "同商户同金额 24 小时内重复时先问你，不自动重复记账",
+                                "修复部分机型（Android 17）正则初始化崩溃导致自检闪退"
+                            ),
+                            last = true
+                        )
+                    }
+                }
+            }
+
+            item {
+                InfoCard(
+                    title = "数据存在哪",
+                    lines = listOf(
+                        "账本、账单、账户全部存在本机的加密数据库里（SQLCipher，密钥由系统 Keystore 保管）。",
+                        "没有服务器、没有账号体系，也不会上传任何账单内容。",
+                        "卸载 App 会连数据一起删除，重要数据请先在「备份与恢复」里导出。"
+                    )
+                )
+            }
+
+            item {
+                InfoCard(
+                    title = "权限都用来干什么",
+                    lines = listOf(
+                        "无障碍：读取支付页面的文字来识别金额与商户；只有你主动摇一摇或开启自动记账时才工作。",
+                        "通知使用权 / 短信：识别支付通知与银行短信作为辅助来源，可随时在系统设置里关闭。",
+                        "悬浮窗：只在开启悬浮球时使用。",
+                        "存储排查只读取 App 自己的私有目录，不碰相册、下载和其它应用。"
+                    )
+                )
+            }
+
+            item {
+                CuteOutlinedButton(
+                    onClick = {
+                        val info = buildString {
+                            append("少花点儿 v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+                            append("包名 ${BuildConfig.APPLICATION_ID}\n")
+                            append("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
+                            append("机型 ${Build.MANUFACTURER} ${Build.MODEL}")
+                        }
+                        runCatching {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("bookkeeper-version", info))
+                            Toast.makeText(context, "版本信息已复制", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("复制版本信息（反馈用）") }
+            }
+
+            item {
+                Text(
+                    text = "少花点儿 · 一个只给自己用的记账 App",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Header() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                )
+            )
+            .padding(20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "🐷", fontSize = 28.sp)
+            }
+            Column(modifier = Modifier.padding(start = 14.dp)) {
+                Text(
+                    text = "少花点儿",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME} · 本地记账，不上传",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChangelogRow(version: String, items: List<String>, last: Boolean = false) {
+    Column(modifier = Modifier.padding(top = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Text(
+                text = version,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+        Column(modifier = Modifier.padding(start = 15.dp, top = 4.dp)) {
+            items.forEach { line ->
+                Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(start = 6.dp)
+                    )
+                }
+            }
+        }
+        if (!last) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(title: String, lines: List<String>) {
+    SoftCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            lines.forEach { line ->
+                Row(modifier = Modifier.padding(top = 6.dp)) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}

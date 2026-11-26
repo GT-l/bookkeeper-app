@@ -72,14 +72,26 @@ fun StatisticsScreen(
             actions = { TextButton(onClick = { viewModel.requestScreenshot() }) { Text("截图") } }
         )
 
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+        // 时间范围改成胶囊筛选：原来是一排 TextButton，选中态只靠「✓」前缀，看起来像普通文字
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
             StatsRange.ALL.forEach { range ->
-                TextButton(onClick = { viewModel.setRange(range) }) {
-                    Text(if (state.range == range) "✓${range.label}" else range.label)
-                }
+                androidx.compose.material3.FilterChip(
+                    selected = state.range == range,
+                    onClick = { viewModel.setRange(range) },
+                    label = {
+                        Text(range.label, style = MaterialTheme.typography.labelMedium)
+                    }
+                )
             }
-            OutlinedButton(onClick = { viewModel.setCustomRange(state.bounds.first, state.bounds.second) }) {
-                Text("锁定自定义")
+            OutlinedButton(
+                onClick = { viewModel.setCustomRange(state.bounds.first, state.bounds.second) },
+                modifier = Modifier.padding(start = 2.dp)
+            ) {
+                Text("自定义", style = MaterialTheme.typography.labelMedium)
             }
         }
 

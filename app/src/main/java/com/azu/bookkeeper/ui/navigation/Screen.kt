@@ -26,7 +26,16 @@ sealed class Screen(val route: String) {
     data object Statistics : Screen("statistics")
     data object Export : Screen("export")
     data object Backup : Screen("backup")
+    /** 「我的」：记账总结 + 各功能入口，底部第三个 tab。 */
+    data object Profile : Screen("profile")
+
     data object Settings : Screen("settings")
+
+    /** 存储排查：扫描历史遗留的数据库 / 备份 / 日志，交给用户决定保留还是删除。 */
+    data object StorageAudit : Screen("storage_audit")
+
+    /** 关于与更新介绍。 */
+    data object About : Screen("about")
     data object AutomationSettings : Screen("automation_settings")
     data object NotificationSettings : Screen("notification_settings")
     data object QuickGestureSettings : Screen("quick_gesture_settings")

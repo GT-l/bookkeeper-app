@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.azu.bookkeeper.automation.permission.AccessibilityAnomaly
+import com.azu.bookkeeper.automation.permission.AccessibilityHealth
 import com.azu.bookkeeper.automation.permission.BatteryOptimizationHelper
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.automation.receiver.SmsBroadcastReceiver
@@ -57,6 +59,8 @@ class AutomationSettingsViewModel @Inject constructor(
         /** 安全模式：上次启动崩溃过，悬浮层服务暂不自动启动。 */
         val safeModeActive: Boolean = false,
         val batteryWhitelisted: Boolean = false,
+        /** 无障碍被系统关闭 / 解绑时的一次性异常，弹窗展示。 */
+        val accessibilityAnomaly: AccessibilityAnomaly? = null,
         val message: String? = null
     )
 
@@ -105,10 +109,19 @@ class AutomationSettingsViewModel @Inject constructor(
         }
     }
 
-    /** 把系统权限实时状态叠加到 DataStore 配置态上。 */
+    /** 把系统权限实时状态叠加到 DataStore 配置态上，并顺手检测无障碍是否被系统关闭。 */
     fun refreshPermissions() {
-        _uiState.update { applyPermissionsState(it) }
+        // detect 内部有「同一现场只报一次」的去重，不会每次刷新都弹窗/写日志
+        val anomaly = AccessibilityHealth.detect(context, permissionGuide)
+        _uiState.update { applyPermissionsState(it).copy(accessibilityAnomaly = anomaly) }
     }
+
+    fun dismissAccessibilityAnomaly() = _uiState.update { it.copy(accessibilityAnomaly = null) }
+
+    /** 弹窗里的「复制 log」：无障碍状态 + 保活步骤 + 最近识屏日志。 */
+    fun accessibilityReportText(): String = AccessibilityHealth.reportText(context, permissionGuide)
+
+    fun stableRunGuideText(): String = AccessibilityHealth.stableRunGuideText()
 
     private fun applyPermissionsState(state: UiState): UiState = state.copy(
         accessibilityGranted = permissionGuide.isAccessibilityEnabled(),

@@ -68,6 +68,14 @@ object CaptureLog {
     fun e(context: Context, tag: String, message: String, t: Throwable? = null) =
         write(context, "ERROR", tag, message, t)
 
+    /**
+     * 关键诊断：即使用户没开启「识屏日志」也强制落盘。
+     * 只给无障碍被系统关闭这类「用户必须把 log 发回来才能定位」的事件使用，
+     * 不记录账单内容，也不会把普通日志全量打开。
+     */
+    fun force(context: Context, tag: String, message: String, t: Throwable? = null) =
+        write(context, "ERROR", tag, message, t, force = true)
+
     /** 导出最近日志（默认 600 行），供用户复制。 */
     fun export(context: Context, maxLines: Int = 600): String = runCatching {
         val file = file(context)
@@ -79,9 +87,17 @@ object CaptureLog {
 
     fun clear(context: Context) = runCatching { file(context).delete() }
 
-    private fun write(context: Context, level: String, tag: String, message: String, t: Throwable? = null) {
-        // 未开启识屏时只写 logcat，不落盘（避免无谓占用）
-        if (!enabled) {
+    private fun write(
+        context: Context,
+        level: String,
+        tag: String,
+        message: String,
+        t: Throwable? = null,
+        force: Boolean = false
+    ) {
+        // 未开启识屏时只写 logcat，不落盘（避免无谓占用）；
+        // force=true 仅用于无障碍被关闭等关键诊断，不受开关影响。
+        if (!enabled && !force) {
             runCatching { Log.println(if (level == "ERROR") Log.ERROR else Log.INFO, "BK-$tag", message) }
             return
         }

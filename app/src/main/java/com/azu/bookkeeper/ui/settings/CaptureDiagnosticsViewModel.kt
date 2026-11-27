@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
+import com.azu.bookkeeper.automation.permission.AccessibilityAnomaly
+import com.azu.bookkeeper.automation.permission.AccessibilityHealth
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.automation.service.ScreenCaptureManager
 import com.azu.bookkeeper.core.CaptureChannel
@@ -58,6 +60,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         val currentStep: String = "",
         val last: CaptureReport? = null,
         val textPreview: String = "",
+        /** 无障碍被系统关闭 / 解绑时的一次性异常，调试页弹窗展示。 */
+        val accessibilityAnomaly: AccessibilityAnomaly? = null,
         val message: String? = null
     )
 
@@ -91,21 +95,31 @@ class CaptureDiagnosticsViewModel @Inject constructor(
     fun refresh() {
         val last = runCatching { CaptureDiagnostics.last(context) }.getOrNull()
         val interrupted = runCatching { SelfCheckGuard.lastInterruptedStep(context) }.getOrNull()
+        val anomaly = runCatching { AccessibilityHealth.detect(context, permissionGuide) }.getOrNull()
         _state.update {
             it.copy(
                 last = last,
                 textPreview = last?.textPreview.orEmpty(),
+                accessibilityAnomaly = anomaly,
                 items = buildList {
                     runCatching { crashCheck() }.getOrNull()?.let { add(it) }
                     if (interrupted != null) add(interruptedCheck(interrupted))
                     // 每项独立兜底：某一项读取系统状态失败，只让这一项变红，绝不拖垮整页
                     add(safeItem("通知权限") { notificationCheck() })
+                    add(safeItem("无障碍服务开关") { accessibilitySwitchCheck() })
                     add(safeItem("无障碍截屏通道") { accessibilityChannelCheck() })
                     add(safeItem("媒体投影通道") { projectionChannelCheck() })
                 }
             )
         }
     }
+
+    fun dismissAccessibilityAnomaly() = _state.update { it.copy(accessibilityAnomaly = null) }
+
+    /** 调试页「复制 log」：无障碍状态 + 保活步骤 + 最近识屏日志。 */
+    fun accessibilityReportText(): String = AccessibilityHealth.reportText(context, permissionGuide)
+
+    fun stableRunGuideText(): String = AccessibilityHealth.stableRunGuideText()
 
     /** 单项检查兜底：异常转成一条红色检查项，而不是让页面崩溃。 */
     private fun safeItem(name: String, block: () -> CheckItem): CheckItem =
@@ -161,6 +175,34 @@ class CaptureDiagnosticsViewModel @Inject constructor(
             detail = if (granted) "已授予（识屏进度通知可见）" else "未授予（识屏进度和结果通知不会显示，摇一摇改用 Toast 提醒）",
             advice = if (granted) "" else "到系统设置 → 通知，允许「少花点儿」通知"
         )
+    }
+
+    /**
+     * 无障碍服务开关体检：把「系统开关」和「服务是否真的连上」分开看。
+     * OrangeOS / ColorOS 最常见的是开关还亮着、服务已被 ROM 解绑；
+     * 也可能是系统直接把开关关了。两种都要让用户能一键复制 log。
+     */
+    private fun accessibilitySwitchCheck(): CheckItem {
+        val enabled = permissionGuide.isAccessibilityEnabled()
+        val everConnected = permissionGuide.accessibilityServiceEverConnected()
+        val connected = channels.accessibilityServiceConnected()
+        val lastConnected = permissionGuide.accessibilityLastConnectedAt()
+        val lastDisconnected = permissionGuide.accessibilityLastDisconnectedAt()
+        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        val connectedText = if (lastConnected > 0L) fmt.format(java.util.Date(lastConnected)) else "从未连上"
+        val disconnectedText = if (lastDisconnected > 0L) fmt.format(java.util.Date(lastDisconnected)) else "无记录"
+        val ok = enabled && connected
+        val detail = when {
+            !enabled && everConnected -> "系统开关已关闭（最后连接 $connectedText，最后断开 $disconnectedText）"
+            !enabled -> "从未开启过无障碍服务"
+            !connected -> "系统开关还开着，但服务未连接（最后连接 $connectedText，最后断开 $disconnectedText）"
+            else -> "开关开启且服务已连接（最后连接 $connectedText）"
+        }
+        val advice = if (ok) "" else {
+            "设置 → 无障碍 → 少花点儿，关闭再重新打开；" +
+                "OrangeOS / ColorOS 再把 App 锁定后台，并用 Shevery、Shizuku 等工具的「无障碍服务锁定」锁住本服务。"
+        }
+        return CheckItem("无障碍服务开关", ok, detail, advice)
     }
 
     /** 通道 1：无障碍截屏（API 30+，免录屏授权，首选）。 */

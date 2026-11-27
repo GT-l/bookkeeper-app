@@ -15,12 +15,35 @@ android {
         applicationId = "com.azu.bookkeeper"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    /**
+     * 固定调试签名。
+     *
+     * Android Gradle Plugin 默认会在每台构建机（包括每个 GitHub Actions runner）上
+     * 重新生成 ~/.android/debug.keystore，导致每次 CI 产出的 APK 签名都不同：
+     * 覆盖安装时系统报「签名不一致 / 必须先卸载旧版本」。这里提交一个只用于 debug
+     * 的固定 PKCS12 密钥库（不是发布密钥），让后续所有 CI 构建使用同一签名。
+     *
+     * 注意：这是 debug-only 密钥，口令也是公开的；绝不能用于 release / 上架。
+     */
+    signingConfigs {
+        create("stableDebug") {
+            storeFile = rootProject.file("keystore/bookkeeper-debug.p12")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storeType = "PKCS12"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("stableDebug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

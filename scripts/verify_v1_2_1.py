@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1.2.0 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束。"""
+"""v1.2.1 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
 import os, sys, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,10 +25,25 @@ def check(name, condition, note=""):
 gradle = read("app/build.gradle.kts")
 workflow = read(".github/workflows/android.yml")
 constants = read("app/src/main/java/com/azu/bookkeeper/core/Constants.kt")
-check("T-VER-01 versionCode 3", "versionCode = 3" in gradle)
-check("T-VER-02 versionName 1.2.0", 'versionName = "1.2.0"' in gradle)
-check("T-VER-03 Release tag v1.2.0", "tag_name: v1.2.0-debug" in workflow)
+check("T-VER-01 versionCode 4", "versionCode = 4" in gradle)
+check("T-VER-02 versionName 1.2.1", 'versionName = "1.2.1"' in gradle)
+check("T-VER-03 Release tag v1.2.1", "tag_name: v1.2.1-debug" in workflow)
 check("T-VER-04 DATABASE_VERSION 2", "DATABASE_VERSION = 2" in constants)
+
+# ---------- 1.1 固定调试签名（解决覆盖安装签名不一致） ----------
+check("T-SIGN-01 固定调试签名配置", 'create("stableDebug")' in gradle)
+check("T-SIGN-02 调试密钥库文件存在", os.path.isfile("keystore/bookkeeper-debug.p12"))
+check("T-SIGN-03 debug 使用固定签名",
+      'signingConfig = signingConfigs.getByName("stableDebug")' in gradle)
+
+# ---------- 1.2 无障碍健康检查与异常日志 ----------
+a11y_health = read("app/src/main/java/com/azu/bookkeeper/automation/permission/AccessibilityHealth.kt")
+check("T-A11Y-01 无障碍健康检查文件", "object AccessibilityHealth" in a11y_health)
+check("T-A11Y-02 强制日志入口", "fun force(" in read("app/src/main/java/com/azu/bookkeeper/core/CaptureLog.kt"))
+check("T-A11Y-03 服务连接上报健康状态",
+      "AccessibilityHealth" in read("app/src/main/java/com/azu/bookkeeper/automation/service/PaymentAccessibilityService.kt"))
+check("T-A11Y-04 关于页含 v1.2.1 介绍",
+      "v1.2.1" in read("app/src/main/java/com/azu/bookkeeper/ui/settings/AboutScreen.kt"))
 
 # ---------- 2. 迁移正确性 ----------
 migration = read("app/src/main/java/com/azu/bookkeeper/data/local/db/Migrations.kt")
@@ -95,7 +110,7 @@ for f in files:
     check(f"T-FILE-{os.path.basename(f)}", os.path.isfile(f))
 
 # ---------- 6.1 新增回归测试与 CI 步骤 ----------
-check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_0.py" in workflow)
+check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_1.py" in workflow)
 mapper = read("app/src/main/java/com/azu/bookkeeper/data/mapper/EntityMappers.kt")
 check("T-IMPORT-01 mapper 导入清理且必需类型可解析",
       "InstallmentPaymentStatus" not in mapper
@@ -178,4 +193,4 @@ print(f"通过 {passed} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：", failed)
     sys.exit(1)
-print("v1.2.0 静态一致性测试全部通过")
+print("v1.2.1 静态一致性测试全部通过")

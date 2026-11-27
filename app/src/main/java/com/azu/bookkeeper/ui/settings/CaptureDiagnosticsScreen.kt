@@ -1,5 +1,10 @@
 package com.azu.bookkeeper.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,8 +25,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,6 +41,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.ui.common.CutePrimaryButton
 import com.azu.bookkeeper.ui.common.SoftCard
@@ -62,6 +73,52 @@ fun CaptureDiagnosticsScreen(
     val authLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result -> viewModel.onAuthResult(result.resultCode, result.data) }
+
+    // 从系统无障碍设置返回时重新检测：服务被 ROM 关掉就立即弹窗
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 无障碍被系统关闭 / 解绑：在调试页第一屏弹窗，直接给「复制 log」和「去开启」
+    state.accessibilityAnomaly?.let { anomaly ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAccessibilityAnomaly,
+            title = { Text(anomaly.title) },
+            text = {
+                Column {
+                    Text(anomaly.detail, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        anomaly.advice,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        copyText(context, "无障碍诊断", viewModel.accessibilityReportText())
+                        Toast.makeText(context, "无障碍 log 已复制，直接粘贴发送", Toast.LENGTH_LONG).show()
+                        viewModel.dismissAccessibilityAnomaly()
+                    }
+                ) { Text("复制 log") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissAccessibilityAnomaly()
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                ) { Text("去开启") }
+            }
+        )
+    }
 
     Scaffold(topBar = { AppTopBar("识屏自检") }) { padding ->
         Column(
@@ -209,6 +266,14 @@ fun CaptureDiagnosticsScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             ) { Text("① 复制全部（诊断 + 日志）← 反馈问题点这里") }
 
+            OutlinedButton(
+                onClick = {
+                    copyText(context, "稳定运行设置", viewModel.stableRunGuideText())
+                    Toast.makeText(context, "稳定运行说明已复制", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("复制稳定运行说明（OrangeOS / ColorOS 保活）") }
+
             state.message?.let { msg ->
                 Text(
                     msg,
@@ -311,5 +376,12 @@ private fun CheckRow(item: CheckItem) {
                 )
             }
         }
+    }
+}
+
+private fun copyText(context: Context, label: String, text: String) {
+    runCatching {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText(label, text))
     }
 }

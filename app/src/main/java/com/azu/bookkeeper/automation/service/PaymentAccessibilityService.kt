@@ -108,6 +108,11 @@ class PaymentAccessibilityService : AccessibilityService() {
                 .putBoolean(KEY_CAN_SHOT, canShot)
                 .apply()
         }
+        // 记录「曾经开启」，供调试页识别「连上后又被系统关掉」
+        runCatching {
+            com.azu.bookkeeper.automation.permission.AccessibilityHealth
+                .onServiceConnected(applicationContext)
+        }
         // 手势选择从持久化值回填；设置页改动会通过 QuickGestureCache 立即同步（同进程）
         scope.launch {
             runCatching {
@@ -261,6 +266,11 @@ class PaymentAccessibilityService : AccessibilityService() {
         com.azu.bookkeeper.core.BootTrace.step("A11Y", "onUnbind（被解绑/ROM 回收）")
         Log.w(TAG, "无障碍服务被解绑（系统关闭开关 / ROM 回收）")
         com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "服务被解绑（系统关闭/ROM 回收）")
+        // 强制落盘：即使识屏日志开关没开，也让用户在调试页能复制到这条现场
+        com.azu.bookkeeper.core.CaptureLog.force(
+            applicationContext, "A11Y",
+            "无障碍服务被解绑（系统关闭开关 / ROM 回收） device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
+        )
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putLong(KEY_LAST_DISCONNECTED, System.currentTimeMillis()).apply()
@@ -271,6 +281,10 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         com.azu.bookkeeper.core.BootTrace.step("A11Y", "onDestroy")
         Log.w(TAG, "无障碍服务已销毁")
+        com.azu.bookkeeper.core.CaptureLog.force(
+            applicationContext, "A11Y",
+            "无障碍服务 onDestroy（被系统销毁/进程退出） device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
+        )
         if (instance === this) instance = null
         // 保留最后一次连接时间：设置页/自检页用它区分「从没连上」与「连上后被杀」
         runCatching {

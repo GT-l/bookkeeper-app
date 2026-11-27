@@ -1,6 +1,9 @@
 package com.azu.bookkeeper.ui.settings
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -22,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.azu.bookkeeper.ui.common.AppTopBar
 import com.azu.bookkeeper.R
+import com.azu.bookkeeper.automation.permission.AccessibilityHealth
 import com.azu.bookkeeper.automation.permission.PermissionGuide
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.ui.navigation.Screen
@@ -65,7 +71,11 @@ fun AutomationSettingsScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.retryStartFloatingBallIfNeeded()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.retryStartFloatingBallIfNeeded()
+                // 从系统无障碍页返回时立即重新检测：被 ROM 关掉就弹窗给 log
+                viewModel.refreshPermissions()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -114,6 +124,43 @@ fun AutomationSettingsScreen(
         }
     }
 
+    // 无障碍被系统关闭 / 解绑：不静默失败，弹窗让用户直接复制 log 或去重新开启。
+    // 必须放在 systemSettingsLauncher 之后，弹窗的「去开启」要用到它。
+    state.accessibilityAnomaly?.let { anomaly ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAccessibilityAnomaly,
+            title = { Text(anomaly.title) },
+            text = {
+                Column {
+                    Text(anomaly.detail, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        anomaly.advice,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        copyToClipboard(context, "无障碍诊断", viewModel.accessibilityReportText())
+                        Toast.makeText(context, "无障碍 log 已复制，可直接粘贴发送", Toast.LENGTH_LONG).show()
+                        viewModel.dismissAccessibilityAnomaly()
+                    }
+                ) { Text("复制 log") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissAccessibilityAnomaly()
+                        systemSettingsLauncher.launch(viewModel.accessibilitySettingsIntent())
+                    }
+                ) { Text("去开启") }
+            }
+        )
+    }
+
     Scaffold(topBar = { AppTopBar("自动化设置") }) { padding ->
         Column(
             modifier = Modifier
@@ -147,7 +194,9 @@ fun AutomationSettingsScreen(
                 }
             }
 
-            // OrangeOS / ColorOS 专项提示：国产 ROM 上「权限给了也不生效」绝大多数是这三项没开
+            // OrangeOS / ColorOS 专项：按咔皮记账「稳定运行设置 / 锁定与电量」的思路，
+            // 把「权限给全了仍被系统回收」的保活步骤一次讲清；系统不允许第三方 App 改无障碍开关，
+            // 所以最后一环只能引导用户用 Shevery / Shizuku 类工具锁定服务。
             if (com.azu.bookkeeper.core.RomCompat.needsOppoGuidance()) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -156,15 +205,34 @@ fun AutomationSettingsScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("OrangeOS / ColorOS 用户请确认", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "① 系统设置 → 应用管理 → 少花点儿 → 自启动：允许；" +
-                                "② 通知管理：允许通知；③ 电池：允许后台运行（不限制）。" +
-                                "缺任何一项，常驻通知与手势都可能被系统拦截。" +
-                                "权限弹窗后若服务没启动，回到本页会自动重试。",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
+                        Text("OrangeOS / ColorOS 稳定运行设置", style = MaterialTheme.typography.titleSmall)
+                        AccessibilityHealth.stableRunGuide().forEachIndexed { index, line ->
+                            Text(
+                                "${index + 1}. $line",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Row(modifier = Modifier.padding(top = 8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    systemSettingsLauncher.launch(viewModel.appDetailsIntent())
+                                }
+                            ) { Text("应用详情") }
+                            OutlinedButton(
+                                onClick = {
+                                    systemSettingsLauncher.launch(viewModel.accessibilitySettingsIntent())
+                                },
+                                modifier = Modifier.padding(start = 8.dp)
+                            ) { Text("无障碍设置") }
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                copyToClipboard(context, "稳定运行设置", viewModel.stableRunGuideText())
+                                Toast.makeText(context, "稳定运行说明已复制", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        ) { Text("复制稳定运行说明") }
                     }
                 }
             }
@@ -452,5 +520,13 @@ private fun LaunchedEffectMessage(message: String, onClear: () -> Unit) {
     androidx.compose.runtime.LaunchedEffect(message) {
         kotlinx.coroutines.delay(3000L)
         onClear()
+    }
+}
+
+/** 不依赖 Compose 的剪贴板写入：无障碍异常弹窗和稳定运行说明共用。 */
+private fun copyToClipboard(context: Context, label: String, text: String) {
+    runCatching {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText(label, text))
     }
 }

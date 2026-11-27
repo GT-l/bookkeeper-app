@@ -66,9 +66,10 @@ class DuplicateDetector @Inject constructor(
     ): Boolean {
         // v1.3.2：金额抽不到 / 商户只是页面标题时，去重键会退化成同一个值，
         // 表现为「触发一次后每笔都重复」。这类候选一律放行，宁可漏判也不误挡记账。
-        val amount = candidate.amountFen
         val remark = candidate.merchant.normalizeRemark()
-        if (!DuplicateRules.isValidPair(amount, remark)) return false
+        if (!DuplicateRules.isValidPair(candidate.amountFen, remark)) return false
+        // 上面的 guard 已保证非空，这里显式解包成 Long 供 DAO 精确查询使用
+        val amount = candidate.amountFen ?: return false
         if (isDuplicate(candidate)) return true
 
         // 2) 库级精确键回查：所有源，含归一化备注，不会误合并

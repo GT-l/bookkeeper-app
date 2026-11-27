@@ -144,7 +144,7 @@ watchdog = read("app/src/main/java/com/azu/bookkeeper/automation/service/A11yWat
 health = read("app/src/main/java/com/azu/bookkeeper/automation/permission/AccessibilityHealth.kt")
 check("T-132-01 重复准入规则存在", "object DuplicateRules" in dedup_rules and "isValidPair" in dedup_rules)
 check("T-132-02 无效金额 / 泛化商户不判重复",
-      "DuplicateRules.isValidPair(amount, remark)" in read("app/src/main/java/com/azu/bookkeeper/automation/dedup/DuplicateDetector.kt")
+      "DuplicateRules.isValidPair(candidate.amountFen, remark)" in read("app/src/main/java/com/azu/bookkeeper/automation/dedup/DuplicateDetector.kt")
       and "DuplicateRules.isValidPair(amountFen, name)" in auto_record
       and "DuplicateRules.isValidPair(amountFen, merchant)" in coordinator)
 check("T-132-03 时间窗命中后严格比对金额与账户",

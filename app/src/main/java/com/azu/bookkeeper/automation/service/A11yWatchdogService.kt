@@ -37,7 +37,8 @@ class A11yWatchdogService : android.app.Service() {
         private const val PROMPT_INTERVAL_MS = 10 * 60_000L
 
         /** 由自动记账前台服务定时调用；整段 runCatching，绝不影响宿主服务。 */
-        fun checkNow(context: Context) = runCatching {
+        fun checkNow(context: Context) {
+            runCatching {
             val app = context.applicationContext
             val entry = runCatching {
                 EntryPointAccessors.fromApplication(app, WatchdogEntryPoint::class.java)
@@ -86,6 +87,7 @@ class A11yWatchdogService : android.app.Service() {
                 "自动记账已暂停。点「去开启」回到系统无障碍页重新打开；" +
                     "若反复被关，跑一次 scripts/android_unlock_accessibility.sh restore 让守护自动恢复。"
             )
+            }
         }
 
         private fun showPrompt(

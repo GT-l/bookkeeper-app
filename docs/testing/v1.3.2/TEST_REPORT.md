@@ -29,13 +29,16 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 静态一致性 | 待回填 |
-| JVM 单测 | 待 CI 回填 |
-| Kotlin 编译 | 待 CI 回填 |
+| 静态一致性 | `python3 scripts/verify_v1_3_2.py`：170/170 通过 |
+| JVM 单测 | **T171-F0-E0-S0**（171 项全过，含本轮 3 项 `DuplicateRulesTest`） |
+| Kotlin 编译 | `assembleDebug` 成功，APK 约 92.5 MB |
 
 ## 四、CI 结论
 
-> 待 GitHub Actions 完成后填入。
+- 最终 run **`46040426762`**（远端 commit `4fd2e36`）：`completed success`，静态测试 / 编译 / 单测 / Release 全绿。
+- 过程中修了两次编译错误：`DuplicateDetector` 传可空 `Long?` 给 DAO 的 `Long` 参数、`A11yWatchdogService.checkNow` 表达式体返回 `Result` 与裸 `return` 冲突、`OverlayVerifyView` 缺 Compose `toArgb` 扩展导入。
+- Release：[`v1.3.2-debug`](../../releases/tag/v1.3.2-debug)，附件 `bookkeeper-debug.apk`（92,527,156 字节）。
+- 从 v1.3.1 可直接覆盖安装（固定调试签名，账单不丢）。
 
 ## 五、边界
 

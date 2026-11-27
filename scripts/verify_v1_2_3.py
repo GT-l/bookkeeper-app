@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1.2.2 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
+"""v1.2.3 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
 import os, sys, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,9 +25,9 @@ def check(name, condition, note=""):
 gradle = read("app/build.gradle.kts")
 workflow = read(".github/workflows/android.yml")
 constants = read("app/src/main/java/com/azu/bookkeeper/core/Constants.kt")
-check("T-VER-01 versionCode 5", "versionCode = 5" in gradle)
-check("T-VER-02 versionName 1.2.2", 'versionName = "1.2.2"' in gradle)
-check("T-VER-03 Release tag v1.2.2", "tag_name: v1.2.2-debug" in workflow)
+check("T-VER-01 versionCode 6", "versionCode = 6" in gradle)
+check("T-VER-02 versionName 1.2.3", 'versionName = "1.2.3"' in gradle)
+check("T-VER-03 Release tag v1.2.3", "tag_name: v1.2.3-debug" in workflow)
 check("T-VER-04 DATABASE_VERSION 2", "DATABASE_VERSION = 2" in constants)
 
 # ---------- 1.1 固定调试签名（解决覆盖安装签名不一致） ----------
@@ -47,7 +47,7 @@ about = read("app/src/main/java/com/azu/bookkeeper/ui/settings/AboutScreen.kt")
 check("T-A11Y-01 无障碍健康检查文件", "object AccessibilityHealth" in a11y_health)
 check("T-A11Y-02 强制日志入口", "fun force(" in log)
 check("T-A11Y-03 服务连接上报健康状态", "AccessibilityHealth" in service)
-check("T-A11Y-04 关于页含 v1.2.2 介绍", "v1.2.2" in about)
+check("T-A11Y-04 关于页含 v1.2.3 介绍", "v1.2.3" in about)
 
 # vivo / iQOO 必须命中保活引导（真机 V2505A 原本完全看不到卡片）
 check("T-ROM-01 识别 vivo / iQOO", "fun isVivoFamily(): Boolean" in rom)
@@ -71,6 +71,26 @@ check("T-LOG-02 连接事件强制落盘", "forceInfo(" in service and "服务�
 check("T-LOG-03 旧误导文案已移除", "被系统销毁/进程退出" not in service)
 check("T-LOG-04 记录存活时长与 pid", "KEY_LAST_LIFESPAN" in service and "Process.myPid()" in service)
 check("T-LOG-05 解绑措辞准确", "非崩溃证据" in service and "解绑后的正常销毁" in service)
+
+# ---------- 1.3 v1.2.3 侧载受限设置与最小权限 ----------
+xml = read("app/src/main/res/xml/accessibility_service_config.xml")
+diag_vm = read("app/src/main/java/com/azu/bookkeeper/ui/settings/CaptureDiagnosticsViewModel.kt")
+adb_script_path = "scripts/android_unlock_accessibility.sh"
+check("T-SIDE-01 侧载识别含 packageinstaller", "packageinstaller" in a11y_health)
+check("T-SIDE-02 ADB 命令可复制",
+      "fun adbUnlockText()" in a11y_health and "ACCESS_RESTRICTED_SETTINGS allow" in a11y_health)
+check("T-SIDE-03 Android 17 高级保护模式引导", "高级保护模式" in a11y_health)
+check("T-SIDE-04 pid 稳定性判因",
+      "pidStable" in a11y_health and "KEY_PID_CHANGED" in service
+      and "fun accessibilityPidStable()" in guide)
+check("T-SIDE-05 最小权限 XML 移除高风险声明",
+      "android:packageNames" not in xml and "android:canTakeScreenshot" not in xml
+      and 'android:canRetrieveWindowContent="true"' in xml)
+check("T-SIDE-06 保留读节点与指纹手势 flag",
+      "flagRetrieveInteractiveWindows" in xml and "flagRequestFingerprintGestures" in xml)
+check("T-SIDE-07 ADB 一键解锁脚本存在",
+      os.path.isfile(adb_script_path) and "appops set" in read(adb_script_path))
+check("T-SIDE-08 无截屏能力不再误报", "capabilityRemovedByDesign" in diag_vm)
 
 # ---------- 2. 迁移正确性 ----------
 migration = read("app/src/main/java/com/azu/bookkeeper/data/local/db/Migrations.kt")
@@ -137,7 +157,7 @@ for f in files:
     check(f"T-FILE-{os.path.basename(f)}", os.path.isfile(f))
 
 # ---------- 6.1 新增回归测试与 CI 步骤 ----------
-check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_2.py" in workflow)
+check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_3.py" in workflow)
 mapper = read("app/src/main/java/com/azu/bookkeeper/data/mapper/EntityMappers.kt")
 check("T-IMPORT-01 mapper 导入清理且必需类型可解析",
       "InstallmentPaymentStatus" not in mapper
@@ -220,4 +240,4 @@ print(f"通过 {passed} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：", failed)
     sys.exit(1)
-print("v1.2.2 静态一致性测试全部通过")
+print("v1.2.3 静态一致性测试全部通过")

@@ -217,6 +217,9 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
         val connectedText = if (lastConnected > 0L) fmt.format(java.util.Date(lastConnected)) else "从未连上"
         val killedAfterConnect = lastDisconnected > lastConnected && lastConnected > 0L
+        // v1.2.3 起服务声明移除了 canTakeScreenshot（降低侧载风控触发面），
+        // 没有截屏能力是预期状态而不是故障：识屏主链路读节点，兜底走媒体投影 / OCR。
+        val capabilityRemovedByDesign = connected && !capable
 
         val detail = when {
             disabled -> "已自动停用（上次使用该通道时进程崩溃） · 最后连接 $connectedText"
@@ -224,6 +227,8 @@ class CaptureDiagnosticsViewModel @Inject constructor(
             ready -> "可用 · 最后连接 $connectedText"
             !connected && killedAfterConnect -> "服务未连接 · 上次 $connectedText 连上后被系统解绑"
             !connected -> "服务未连接 · 最后连接 $connectedText"
+            capabilityRemovedByDesign ->
+                "已按最小权限关闭无障碍截屏（v1.2.3 起预期行为） · 读节点与媒体投影不受影响 · $connectedText"
             else -> "服务已连但缺少截屏能力（canTakeScreenshot 未生效） · $connectedText"
         }
         val advice = when {
@@ -231,9 +236,10 @@ class CaptureDiagnosticsViewModel @Inject constructor(
             !optIn && capable -> "如需免录屏授权截屏，可在自动化设置打开「无障碍截屏（实验）」；若本机曾闪退则不建议开启"
             ready -> ""
             !connected -> "设置 → 无障碍 → 少花点儿，打开服务；打开后回到本页应显示「可用」"
+            capabilityRemovedByDesign -> "无需处理：识屏主链路读节点不依赖截屏，兜底走媒体投影 / OCR"
             else -> "关闭无障碍服务再重新打开一次，让截屏能力重新注册"
         }
-        return CheckItem("无障碍截屏通道", ready, detail, advice)
+        return CheckItem("无障碍截屏通道", ready || capabilityRemovedByDesign, detail, advice)
     }
 
     /** 通道 2：媒体投影（需系统录屏授权，覆盖 Android 8~10 与无障碍不可用场景）。 */

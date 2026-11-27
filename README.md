@@ -2,24 +2,28 @@
 
 **纯本地、不联网的个人记账应用。** 手动记 / 自动识别 / 一键补记三条路都能进账，数据用 SQLCipher 加密后只存在这台手机上。
 
-当前版本 **v1.2.2**（versionCode 5，Debug APK，Android 8.0+）
+当前版本 **v1.2.3**（versionCode 6，Debug APK，Android 8.0+）
 
 ---
 
-## 这一版（v1.2.2）改了什么
+## 这一版（v1.2.3）改了什么
 
-依据 vivo V2505A / Android 17 真机诊断日志（服务连上后仅存活 1.0 秒 / 27.3 秒，系统开关已变「关」）修正无障碍排查链路：
+第二轮真机日志（vivo V2505A / Android 17 API 37）给了决定性证据：**连接 6 次、被撤销 4 次，但 pid 始终 23522、进程已运行 3.4 分钟**——进程根本没被杀。安装来源 `com.android.packageinstaller` 是手动装 APK 的侧载。
 
-- **诊断自动判因**：确认这是「系统主动撤销无障碍授权」，不是 App 崩溃、ANR 或省电杀进程——后台被杀时开关通常还亮着，而这里 `Settings.Secure` 已是「关」。弹窗与复制的 log 直接给出结论。
-- **修正误导性日志**：`onUnbind` / `onDestroy` 原本写成「被系统销毁 / 进程退出」，实际是解绑后的正常销毁；现改为准确措辞，并记录存活时长、pid、进程已运行时长、累计连接 / 被撤销次数。
-- **连接事件强制落盘**：v1.2.1 只记录断开，复制回来的 log 全是 ERROR；现在连上也写一条 INFO，能还原完整时间线。
-- **修复 vivo 看不到保活卡片**：判断原来只覆盖 OPPO 系，vivo / iQOO（OriginOS）用户完全看不到；现在按厂商显示标题并覆盖两家。
-- **补两条系统侧关键设置**：Android 13+ 侧载 APK 需先「允许受限设置」（右上角 ⋮）；vivo 官方对「无障碍自动关闭」要求「后台高耗电 + 一键加速白名单」。诊断报告里也带上安装来源。
-- **关于页**：补上 v1.2.2 更新介绍。
+- **纠正排查方向**：v1.2.2 把后台保活 / 电池白名单放在第一位是错的。进程没死时这些设置无效；现在诊断直接写明「pid 稳定，不要再往保活方向排查」。
+- **修好侧载识别**：`com.android.packageinstaller` 过去被当成正常安装来源，结论因此漏了「允许受限设置」。现在把 Android 13+ 受限设置与 Android 17 高级保护模式列为首要嫌疑。
+- **给确定性解法**：新增 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)（`status` / `unlock` / `check`），用 adb 一次性解除受限设置，无需 root；完整命令也写进 App 内「复制稳定运行说明」，手机上就能复制。
+- **服务声明最小权限化**：移除 `packageNames`（原样列出微信 / 支付宝 / 银行包名，最易触发支付风控；事件过滤本来就在代码里做）与 `canTakeScreenshot`（默认关闭的实验通道，兜底还有媒体投影 / OCR）。读节点主链路与指纹手势不受影响，`canCaptureScreen()` 返回 false 属预期。
+- **诊断与自检**：报告新增「进程 pid 是否稳定」「安装来源（侧载）」；自检页不再把无截屏能力误报成故障。
 
-### 上一版（v1.2.1）已有
+### 装上后先做两步
 
-无障碍健康检查弹窗与一键复制 log、OrangeOS 稳定运行设置、固定调试签名（覆盖安装）、关于页 v1.2.0 介绍。
+1. 设置 → 安全 → 高级保护模式：确认关闭。
+2. 设置 → 应用管理 → 少花点儿 → 右上角 ⋮ → 允许受限设置；找不到菜单就执行上面的 ADB 命令。
+
+### 上一版（v1.2.2 / v1.2.1）已有
+
+诊断自动判因与完整日志时间线、vivo / OriginOS 保活引导可见性、无障碍健康检查弹窗与一键复制 log、固定调试签名（覆盖安装）。
 
 ### 更早（v1.2.0 / v1.1.0）仍在
 
@@ -50,7 +54,7 @@ adb install -r bookkeeper-debug.apk
 
 每次 push 到 `main`，GitHub Actions 会自动构建、跑单元测试，并把 APK 更新到对应的 Release。
 
-> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 升到 v1.2.2 可直接覆盖安装。
+> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.2.3）可直接覆盖安装。
 
 ## 技术栈
 
@@ -58,7 +62,7 @@ Kotlin + Jetpack Compose（Material3 / Navigation）、MVVM + UseCase + Reposito
 
 构建环境：JDK 17、Android SDK Platform 35、Gradle 8.9。
 
-v1.2.2 的测试记录见 [`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)；静态一致性测试可执行 `python3 scripts/verify_v1_2_2.py`。历史记录见 [`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
+v1.2.3 的测试记录见 [`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)；静态一致性测试可执行 `python3 scripts/verify_v1_2_3.py`。ADB 一键解除受限设置见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)。历史记录见 [`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
 
 ```bash
 ./gradlew assembleDebug        # 构建

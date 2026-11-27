@@ -1,11 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  最小权限声明（v1.2.3）。
+
+  真机 vivo V2505A / Android 17 上，侧载 APK 的无障碍授权会在服务连上 0.6~67 秒后
+  被系统撤销：pid 全程不变，进程没死，也不是 App 崩溃。为降低厂商支付风控与
+  Android 17 高级保护模式的触发面，移除两项对主链路没有价值的声明：
+
+  1) packageNames：原本直接列出微信 / 支付宝 / 银行包名，最容易被系统判定为
+     「监听支付页面」的高风险服务。事件过滤本来就在
+     PaymentAccessibilityService.dispatchEvent 里用 Constants.PAYMENT_PACKAGES 完成，
+     去掉这一行不影响识别能力，只是不再向系统明示「我要盯支付 App」。
+  2) canTakeScreenshot：无障碍截屏由 A11yShotOptIn 控制、默认关闭，兜底还有
+     MediaProjection 与独立进程 OCR。去掉后 canCaptureScreen() 返回 false 属预期，
+     不是服务异常。
+
+  保留 flagRetrieveInteractiveWindows / flagRequestFingerprintGestures，避免影响
+  读节点树与指纹手势记账。
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagRequestFingerprintGestures"
     android:canRetrieveWindowContent="true"
-    android:canTakeScreenshot="true"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="150"
-    android:packageNames="com.tencent.mm,com.eg.android.AlipayGphone,com.chinapay.pay,com.icbc,com.ccb,com.android.bankccc,com.ss.android.ugc.aweme"
     android:settingsActivity="com.azu.bookkeeper.MainActivity" />

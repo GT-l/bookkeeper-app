@@ -107,6 +107,19 @@ class PermissionGuide @Inject constructor(
     }.getOrDefault(0L)
 
     /**
+     * 多次连接期间 pid 是否始终相同。true 表示进程从未被杀，
+     * 于是「后台保活 / 自启动 / 电池白名单」这条排查线可以直接排除。
+     */
+    fun accessibilityPidStable(): Boolean = runCatching {
+        val p = a11yPrefs()
+        p.getInt(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_CONNECT_COUNT, 0
+        ) >= 2 && !p.getBoolean(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_PID_CHANGED, false
+        )
+    }.getOrDefault(false)
+
+    /**
      * 安装来源。GitHub 下载的 APK 属于侧载，Android 13+ 的「受限设置」会把
      * 无障碍开关置灰或开了又自动关掉；把来源写进诊断报告能一眼确认这一点。
      */

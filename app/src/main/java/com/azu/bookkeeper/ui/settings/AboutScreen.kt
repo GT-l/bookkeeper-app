@@ -69,6 +69,16 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
+                            version = "v1.2.3 · 侧载受限设置与最小权限",
+                            items = listOf(
+                                "依据第二轮真机日志纠正排查方向：6 次连接 / 4 次撤销期间 pid 始终不变、进程存活 3.4 分钟，说明后台保活、省电白名单对本案完全无效",
+                                "修好侧载识别：com.android.packageinstaller 原本被当成正常来源，导致结论没提示「允许受限设置」；现在按 Android 13+ 受限设置与 Android 17 高级保护模式给出首要解法",
+                                "新增 ADB 一次性解除受限设置：完整命令可直接在 App 内复制，仓库另附一键脚本，无需 root",
+                                "无障碍服务声明最小权限化：去掉列出微信 / 支付宝 / 银行包名的 packageNames 和默认关闭的截屏能力，降低支付风控触发面；读节点主链路不受影响",
+                                "诊断报告新增进程 pid 稳定性与侧载标记；自检页不再把「无截屏能力」误报成故障"
+                            )
+                        )
+                        ChangelogRow(
                             version = "v1.2.2 · 无障碍诊断判因 + vivo 适配",
                             items = listOf(
                                 "依据 vivo V2505A / Android 17 真机日志修正判断：服务连上 1 秒 / 27 秒就被关，是系统撤销授权，不是 App 崩溃或省电杀进程；弹窗和复制的 log 现在直接给出结论",

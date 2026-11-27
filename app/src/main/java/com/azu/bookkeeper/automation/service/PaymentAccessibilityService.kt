@@ -112,17 +112,21 @@ class PaymentAccessibilityService : AccessibilityService() {
             val age = runCatching {
                 SystemClock.uptimeMillis() - Process.getStartUptimeMillis()
             }.getOrDefault(0L)
+            val previousPid = prefs.getInt(KEY_CONNECT_PID, 0)
+            val pidChanged = previousPid != 0 && previousPid != pid
+            val everChanged = prefs.getBoolean(KEY_PID_CHANGED, false) || pidChanged
             val now = System.currentTimeMillis()
             prefs.edit()
                 .putLong(KEY_LAST_CONNECTED, now)
                 .putBoolean(KEY_CAN_SHOT, canShot)
                 .putInt(KEY_CONNECT_COUNT, count)
                 .putInt(KEY_CONNECT_PID, pid)
+                .putBoolean(KEY_PID_CHANGED, everChanged)
                 .putLong(KEY_PROCESS_AGE, age)
                 .apply()
             com.azu.bookkeeper.core.CaptureLog.forceInfo(
                 applicationContext, "A11Y",
-                "服务已连接 #$count pid=$pid 进程已运行=${age}ms canShot=$canShot " +
+                "服务已连接 #$count pid=$pid pidChanged=$pidChanged 进程已运行=${age}ms canShot=$canShot " +
                     "device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
             )
         }
@@ -340,6 +344,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         const val KEY_CONNECT_COUNT = "connect_count"
         const val KEY_CONNECT_PID = "connect_pid"
         const val KEY_PROCESS_AGE = "process_age_at_connect"
+        /** 多次连接的 pid 是否变过：不变 = 进程没被杀，后台保活类排查可排除。 */
+        const val KEY_PID_CHANGED = "connect_pid_changed"
 
         /**
          * 当前活着的服务实例。无障碍截屏（API 30+ takeScreenshot）必须由服务实例发起，

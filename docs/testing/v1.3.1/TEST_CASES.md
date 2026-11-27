@@ -8,7 +8,7 @@
 
 | 项目 | 命令 / 方式 | 判定 |
 | --- | --- | --- |
-| 静态一致性 | `python3 scripts/verify_v1_3_1.py` | 全部 PASS（153+ 项） |
+| 静态一致性 | `python3 scripts/verify_v1_3_1.py` | 156/156 PASS |
 | ADB 脚本语法 | `bash -n scripts/android_unlock_accessibility.sh` | 无语法错误 |
 | JVM 单测 | CI `testDebugUnitTest` | `T*-F0-E0-S0` |
 | Kotlin 编译 | CI `assembleDebug` | 构建成功并产出 `bookkeeper-debug.apk` |

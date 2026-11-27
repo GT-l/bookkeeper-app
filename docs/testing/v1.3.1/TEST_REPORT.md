@@ -42,14 +42,18 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 静态一致性 | 待本轮脚本执行后回填 |
-| ADB 脚本语法 | `bash -n` 通过 |
-| JVM 单测 | 待 CI 回填 |
-| Kotlin 编译 | 待 CI 回填 |
+| 静态一致性 | `python3 scripts/verify_v1_3_1.py`：**156/156 通过** |
+| ADB 脚本语法 | `bash -n scripts/android_unlock_accessibility.sh` 通过 |
+| JVM 单测 | **T168-F0-E0-S0**（168 项全过，含本轮 12 项新增） |
+| Kotlin 编译 | `assembleDebug` 成功，`bookkeeper-debug.apk` 约 92.5 MB |
 
 ## 四、CI 结论
 
-> 待 GitHub Actions 完成后填入：run ID、结论、单测统计、Release tag 与 APK 大小。
+- 最终 run **`46032727986`**（commit `f538b0d`）：`completed success`，静态测试 / 编译 / 单测 / Release 全部成功。
+- 上一轮 run `46031548772`（`2a71709`）单测失败 1 项：`抖音收银台文本不被补标签` —— 标签补齐触发条件只看「实付」，收银台也含该词。已改为「订单详情 或 实付 + 订单上下文」才补齐，修复后全绿。
+- 单测 artifact：`unit-test-reports-T168-F0-E0-S0`。
+- Release：[`v1.3.1-debug`](../../releases/tag/v1.3.1-debug)，附件 `bookkeeper-debug.apk`（92,527,156 字节）。
+- 从 v1.3.0 可直接覆盖安装（固定调试签名，账单不丢）。
 
 ## 五、边界与待确认
 

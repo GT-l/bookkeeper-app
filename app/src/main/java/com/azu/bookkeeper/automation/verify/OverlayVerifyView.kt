@@ -13,6 +13,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
+import androidx.compose.ui.graphics.toArgb
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.CaptureCandidate
 import com.azu.bookkeeper.ui.theme.DarkOnSurface

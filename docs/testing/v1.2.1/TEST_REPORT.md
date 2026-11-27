@@ -18,7 +18,8 @@
 | 测试 | 结果 |
 |---|---|
 | `python3 scripts/verify_v1_2_1.py` | **96/96 通过**（本地） |
-| CI `assembleDebug` / `testDebugUnitTest` | 待本轮 CI 回填 |
+| CI `assembleDebug` / `testDebugUnitTest` | **成功**：run `45924605332`（提交 `f01b1e6`），`unit-test-reports-T144-F0-E0-S0`，144 例全过 |
+| Release | `v1.2.1-debug` 已创建，`bookkeeper-debug.apk` 约 55.3 MB；正文为 v1.2.1 修复模板 |
 | 真机保活 / 覆盖安装 | 需用户按 `TEST_CASES.md` 执行；本机无 Android SDK / JDK / 模拟器 |
 
 ## 三、风险与说明
@@ -32,4 +33,4 @@
 ## 四、结论
 
 - 静态一致性 96/96 通过；关于页、无障碍诊断、固定签名均已落地。
-- 编译与单测以本轮 GitHub Actions 为准；真机保活与覆盖安装需用户按测试用例确认。
+- 编译与单测已由 GitHub Actions run `45924605332` 验证通过；Release `v1.2.1-debug` 与 APK 已发布。真机保活与覆盖安装仍需用户按测试用例确认。

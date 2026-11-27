@@ -74,4 +74,4 @@
 
 ## 五、CI 结论
 
-见 `TEST_REPORT.md`「CI 结论」小节（构建完成后回填）。
+run `45943449003`（提交 `fa59b21`）`completed success`：静态一致性 119 项、`assembleDebug`、单测 `T144-F0-E0-S0`（144 例全过）、Release `v1.2.3-debug` 均成功。详见 `TEST_REPORT.md`「CI 结论」。

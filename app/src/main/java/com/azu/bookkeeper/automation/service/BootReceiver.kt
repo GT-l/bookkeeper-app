@@ -56,8 +56,7 @@ class BootReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 if (!automationSettings.enabled.first()) return@launch
-                // v1.3.1：开机 / 升级后先起无障碍守护，检测系统是否撤销了授权
-                A11yWatchdogService.start(context.applicationContext)
+                // v1.3.2：无障碍守护已并入自动记账前台服务，不再单独启动（只保留一条常驻通知）
                 // 开机恢复同样尊重失败退避，避免开机后立刻陷入反复拉起。
                 if (!automationSettings.canStartService(System.currentTimeMillis())) return@launch
                 if (automationSettings.serviceRunning.first()) return@launch

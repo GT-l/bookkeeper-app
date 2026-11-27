@@ -544,8 +544,9 @@ class ShakeQuickAddService : Service() {
         val action = ShakeActions.label(QuickGestureCache.shakeAction)
         return NotificationCompat.Builder(this, ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_quick_add)
-            .setContentTitle("摇一摇记一笔运行中")
-            .setContentText("当前动作：$action · 摇动手机触发")
+            // v1.3.2：与自动记账共用同一个通知 ID，通知栏只保留一条常驻项
+            .setContentTitle("自动记账 · 摇一摇就绪")
+            .setContentText("摇动手机识屏记账（$action）· 点此打开设置")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -573,7 +574,8 @@ class ShakeQuickAddService : Service() {
         const val ACTION_CAPTURE_NOW = "com.azu.bookkeeper.action.SHAKE_QUICK_ADD_CAPTURE_NOW"
         /** 金额+商户同时命中（confidence≥0.8）就认为可靠，不再打扰用户。 */
         private const val AUTO_RECORD_CONFIDENCE = 0.8f
-        private const val NOTIFICATION_ID = 1020
+        /** v1.3.2：与自动记账前台服务共用通知 ID，通知栏只显示一条常驻项。 */
+        private const val NOTIFICATION_ID = Constants.FOREGROUND_SERVICE_ID
         /** 底部悬浮卡片不可用时的「点击才打开」兜底通知。 */
         private const val CONFIRM_NOTIFICATION_ID = 1021
         private const val ONGOING_CHANNEL_ID = "shake_ongoing"

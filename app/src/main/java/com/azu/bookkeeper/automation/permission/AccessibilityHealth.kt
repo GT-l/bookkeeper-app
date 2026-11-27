@@ -56,11 +56,15 @@ object AccessibilityHealth {
      * 守护服务检测到开关被撤销时可直接把本服务写回系统列表，无需用户再手动开一次。
      * 普通安装没有这个签名级权限 → 返回 false，改由轻弹窗引导。
      */
+    fun canAutoRestore(context: Context): Boolean = runCatching {
+        context.applicationContext.checkCallingOrSelfPermission(
+            android.Manifest.permission.WRITE_SECURE_SETTINGS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }.getOrDefault(false)
+
     fun tryRestore(context: Context): Boolean = runCatching {
         val app = context.applicationContext
-        val granted = app.checkCallingOrSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) return@runCatching false
+        if (!canAutoRestore(app)) return@runCatching false
         val cr = app.contentResolver
         val component = "${app.packageName}/com.azu.bookkeeper.automation.service.PaymentAccessibilityService"
         val current = android.provider.Settings.Secure.getString(
@@ -319,6 +323,8 @@ object AccessibilityHealth {
             appendLine("连接时 pid：${guide.accessibilityConnectPid()} · 进程已运行 ${formatDuration(guide.accessibilityProcessAgeAtConnectMs())}")
             appendLine("截屏能力：${guide.accessibilityCanTakeScreenshot()}（v1.2.3 起移除高风险声明，false 属预期）")
             appendLine("安装来源：$source${if (isSideloaded(source)) "（侧载）" else ""}")
+            appendLine("自动恢复权限（WRITE_SECURE_SETTINGS）：" +
+                if (canAutoRestore(app)) "已授予（守护会自动写回）" else "未授予（需跑 ADB restore）")
             appendLine()
             appendLine("=== 诊断结论 ===")
             appendLine(diagnose(guide.isAccessibilityEnabled(), guide.accessibilityServiceEverConnected(),

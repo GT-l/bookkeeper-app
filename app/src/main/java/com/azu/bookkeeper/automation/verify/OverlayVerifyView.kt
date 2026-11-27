@@ -10,12 +10,22 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.CaptureCandidate
+import com.azu.bookkeeper.ui.theme.DarkOnSurface
+import com.azu.bookkeeper.ui.theme.DarkOutline
+import com.azu.bookkeeper.ui.theme.DarkPrimaryContainer
+import com.azu.bookkeeper.ui.theme.DarkSurface
+import com.azu.bookkeeper.ui.theme.LightOnSurface
+import com.azu.bookkeeper.ui.theme.LightOutline
+import com.azu.bookkeeper.ui.theme.LightSurface
+import com.azu.bookkeeper.ui.theme.PinkContainer
+import com.azu.bookkeeper.ui.theme.Primary
+import com.azu.bookkeeper.ui.theme.PrimaryDark
+import com.azu.bookkeeper.ui.theme.PrimaryLight
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -51,6 +61,12 @@ class OverlayVerifyView @Inject constructor(
     private fun canDrawOverlay(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
             android.provider.Settings.canDrawOverlays(context)
+
+    private fun isDark(context: Context): Boolean {
+        val uiMode = context.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        return uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
 
     /** 校对链原有入口：低置信度候选的底部确认卡片。 */
     fun show(candidate: CaptureCandidate, onConfirm: () -> Unit, onDiscard: () -> Unit): Boolean =
@@ -101,44 +117,97 @@ class OverlayVerifyView @Inject constructor(
                 dismissInternal()
                 val host = PaymentAccessibilityService.current() ?: context
                 val density = host.resources.displayMetrics.density
-                val pad = (16 * density).toInt()
+                val dp = { value: Int -> (value * density).toInt() }
+                val dark = isDark(host)
+                val cardBg = (if (dark) DarkSurface else LightSurface).toArgb()
+                val textColor = (if (dark) DarkOnSurface else LightOnSurface).toArgb()
+                val accent = (if (dark) PrimaryLight else Primary).toArgb()
+                val chipBg = (if (dark) DarkPrimaryContainer else PinkContainer).toArgb()
+                val border = (if (dark) DarkOutline else LightOutline).toArgb()
+
+                // 外层只负责左右留白，真正卡片是里面的圆角容器 —— 与 App 内的 SoftCard 一致
                 val container = LinearLayout(host).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#FAFAFA"))
-                        cornerRadius = 20f * density
-                    }
-                    setPadding(pad * 2, pad, pad * 2, pad * 2)
-                    elevation = 8f * density
+                    setPadding(dp(12), 0, dp(12), dp(8))
+                    clipChildren = false
+                    clipToPadding = false
                 }
-                container.addView(TextView(host).apply {
+                val card = LinearLayout(host).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = GradientDrawable().apply {
+                        setColor(cardBg)
+                        cornerRadius = dp(24).toFloat()
+                        setStroke(dp(1), border)
+                    }
+                    elevation = dp(12).toFloat()
+                    setPadding(dp(18), dp(16), dp(18), dp(16))
+                }
+                // 顶部：圆形粉色徽标 + 标题，和「我的」页卡片头风格一致
+                val header = LinearLayout(host).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                header.addView(TextView(host).apply {
+                    text = if (confirmLabel.isBlank()) "✓" else "✦"
+                    textSize = 16f
+                    setTextColor(accent)
+                    gravity = Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(chipBg)
+                    }
+                    layoutParams = LinearLayout.LayoutParams(dp(34), dp(34))
+                })
+                header.addView(TextView(host).apply {
                     text = title
                     textSize = 15f
-                    setTextColor(Color.parseColor("#222222"))
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTextColor(textColor)
+                    maxLines = 2
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { leftMargin = dp(10) }
                 })
+                card.addView(header)
                 if (detail.isNotBlank()) {
-                    container.addView(TextView(host).apply {
+                    card.addView(TextView(host).apply {
                         text = detail
-                        textSize = 18f
-                        setTextColor(Color.parseColor("#C62828"))
-                        setPadding(0, pad / 2, 0, pad / 2)
+                        textSize = 16f
+                        setTextColor(if (dark) 0xFFFFD9E5.toInt() else PrimaryDark.toArgb())
+                        setPadding(0, dp(10), 0, 0)
                     })
                 }
                 if (confirmLabel.isNotBlank()) {
-                    val actions = LinearLayout(host).apply { orientation = LinearLayout.HORIZONTAL }
-                    fun action(label: String, block: () -> Unit) = Button(host).apply {
-                        text = label
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        setOnClickListener {
-                            dismiss()
-                            runCatching(block)
-                        }
+                    val actions = LinearLayout(host).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, dp(14), 0, 0)
                     }
-                    actions.addView(action(confirmLabel, onConfirm))
-                    editLabel?.takeIf { it.isNotBlank() }?.let { actions.addView(action(it, onEdit)) }
-                    actions.addView(action("忽略", onDiscard))
-                    container.addView(actions)
+                    fun pill(label: String, primary: Boolean, block: () -> Unit) =
+                        TextView(host).apply {
+                            text = label
+                            textSize = 14f
+                            gravity = Gravity.CENTER
+                            setPadding(dp(10), dp(9), dp(10), dp(9))
+                            setTextColor(if (primary) Color.WHITE else accent)
+                            background = GradientDrawable().apply {
+                                cornerRadius = dp(999).toFloat()
+                                if (primary) setColor(accent) else {
+                                    setColor(Color.TRANSPARENT)
+                                    setStroke(dp(1), accent)
+                                }
+                            }
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                .apply { rightMargin = dp(8) }
+                            setOnClickListener {
+                                dismiss()
+                                runCatching(block)
+                            }
+                        }
+                    actions.addView(pill(confirmLabel, true, onConfirm))
+                    editLabel?.takeIf { it.isNotBlank() }?.let { actions.addView(pill(it, false, onEdit)) }
+                    actions.addView(pill("忽略", false, onDiscard))
+                    card.addView(actions)
                 }
+                container.addView(card)
 
                 val service = PaymentAccessibilityService.current()
                 val type = when {

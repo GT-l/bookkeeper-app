@@ -98,6 +98,11 @@ class PaymentTextAnalyzer @Inject constructor() {
         if (DATE_REGEX.containsMatchIn(line) && !line.contains("¥") && !line.contains("￥") && !line.contains("元")) {
             return false
         }
+        // v1.3.2：余额 / 可用 / 优惠 / 退款金额不是「本次实付」。
+        // 抽到这些固定数字会让不同支付的金额相同，进而触发错误的重复提醒。
+        if (NON_PAYMENT_AMOUNT_HINTS.any { line.contains(it) } &&
+            AMOUNT_STRONG_LABELS.none { line.contains(it) }
+        ) return false
         return true
     }
 
@@ -194,6 +199,7 @@ class PaymentTextAnalyzer @Inject constructor() {
         private val AMOUNT_YUAN = SafeRegex.of("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
 
         private val AMOUNT_STRONG_LABELS = listOf("实付", "付款金额", "支付金额", "扣款金额", "交易金额")
+        private val NON_PAYMENT_AMOUNT_HINTS = listOf("余额", "剩余", "可用", "优惠", "红包", "积分", "退款", "返现")
         private val AMOUNT_SOFT_LABELS = listOf("订单金额", "合计", "金额", "支付成功", "付款成功", "交易成功", "扣款成功")
 
         private val PAID_OK_KEYWORDS = listOf(

@@ -8,7 +8,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
@@ -104,9 +106,23 @@ class AutoCaptureForegroundService : Service() {
     /** 只有真正进入前台后才置 true；失败路径不写回 running=true。 */
     private var startedSuccessfully = false
 
+    /**
+     * v1.3.2：无障碍守护与通知刷新都挂在本服务上，全 App 只保留这一条常驻通知。
+     * 两个周期任务都走主线程 Handler，异常全部 runCatching，绝不影响自动记账主链路。
+     */
+    private val maintenanceHandler = Handler(Looper.getMainLooper())
+    private val maintenanceRunnable = object : Runnable {
+        override fun run() {
+            runCatching { A11yWatchdogService.checkNow(applicationContext) }
+            runCatching { refreshSummary() }
+            maintenanceHandler.postDelayed(this, MAINTENANCE_INTERVAL_MS)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        maintenanceHandler.postDelayed(maintenanceRunnable, MAINTENANCE_INTERVAL_MS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -175,6 +191,7 @@ class AutoCaptureForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        runCatching { maintenanceHandler.removeCallbacks(maintenanceRunnable) }
         // 先取消未完成的异步写入（如 markServiceStarted），杜绝销毁后继续写库/反向覆盖。
         scope.cancel()
         if (startedSuccessfully) {
@@ -215,6 +232,8 @@ class AutoCaptureForegroundService : Service() {
         const val ACTION_START_PROJECTION = "com.azu.bookkeeper.action.AUTO_CAPTURE_START_PROJECTION"
 
         private const val AUTO_DISABLED_NOTIFICATION_ID = 1004
+        /** 无障碍守护检查 + 通知刷新周期：15 秒。 */
+        private const val MAINTENANCE_INTERVAL_MS = 15_000L
         private const val STATE_WRITE_TIMEOUT_MS = 500L
 
         /**

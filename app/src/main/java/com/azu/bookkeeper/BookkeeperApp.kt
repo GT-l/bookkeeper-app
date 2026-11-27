@@ -69,11 +69,7 @@ class BookkeeperApp : Application(), Configuration.Provider {
         // WorkManager / 种子数据 / 识别规则，更要避免两个进程同时打开 SQLCipher 库。
         // Hilt 组件已在 super.onCreate() 里建好，这里提前返回不影响 EntryPointAccessors。
         if (!com.azu.bookkeeper.core.CrashGuard.isMainProcess(this)) return
-        // 无障碍存活守护：每 60 秒检查系统开关；已授予 WRITE_SECURE_SETTINGS 时自动恢复，
-        // 未授予时限频弹底部轻卡片提示。IMPORTANCE_MIN 通知不弹横幅。
-        runCatching {
-            com.azu.bookkeeper.automation.service.A11yWatchdogService.start(this)
-        }
+        // 无障碍守护已并入自动记账前台服务（每 15 秒检查），不再单独占一条常驻通知。
         // 截屏通道对账：上次调用没收尾（进程被杀）→ 自动熔断该通道，避免反复闪退
         runCatching { com.azu.bookkeeper.core.CaptureBreakerStore.reconcile(this) }
         val workManager = WorkManager.getInstance(this)

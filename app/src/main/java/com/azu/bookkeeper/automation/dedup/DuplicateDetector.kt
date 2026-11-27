@@ -64,6 +64,11 @@ class DuplicateDetector @Inject constructor(
         candidate: CaptureCandidate,
         toleranceSec: Long = 0L
     ): Boolean {
+        // v1.3.2：金额抽不到 / 商户只是页面标题时，去重键会退化成同一个值，
+        // 表现为「触发一次后每笔都重复」。这类候选一律放行，宁可漏判也不误挡记账。
+        val amount = candidate.amountFen
+        val remark = candidate.merchant.normalizeRemark()
+        if (!DuplicateRules.isValidPair(amount, remark)) return false
         if (isDuplicate(candidate)) return true
 
         // 2) 库级精确键回查：所有源，含归一化备注，不会误合并
@@ -77,7 +82,6 @@ class DuplicateDetector @Inject constructor(
         val windowSec = if (isSms) toleranceSec else CROSS_SOURCE_WINDOW_SEC
         if (windowSec <= 0L) return false
         val time = candidate.billTime ?: return false
-        val amount = candidate.amountFen ?: return false
         val accountId = candidate.accountId ?: 0L
         val windowMs = windowSec * 1000L
         val windowHit = runCatching {
@@ -91,8 +95,11 @@ class DuplicateDetector @Inject constructor(
         }.getOrNull() ?: return false
         // 短信源：键不含 remark，命中即判重复（沿用增量 §2.4 设计）
         if (isSms) return true
-        // 非短信源：额外要求备注一致，避免误合并
-        return windowHit.remark.normalizeRemark() == candidate.merchant.normalizeRemark()
+        // 非短信源：金额 / 账户 / 商户三元组严格一致才算重复（SQL 已过滤，这里再兜一层，
+        // 防止 mock / 未来 DAO 改动引入「金额不同也命中」的回归）
+        if (windowHit.amountFen != amount) return false
+        if (windowHit.accountFrom != accountId) return false
+        return DuplicateRules.merchantMatches(windowHit.remark, remark)
     }
 
     /** 供领域层重用的精确键构造（避免两处字符串拼接漂移）。 */

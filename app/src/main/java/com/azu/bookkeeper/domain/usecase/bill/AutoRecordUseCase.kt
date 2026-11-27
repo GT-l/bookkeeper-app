@@ -4,6 +4,7 @@ import com.azu.bookkeeper.core.AppError
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.composeRemark
+import com.azu.bookkeeper.automation.dedup.DuplicateRules
 import com.azu.bookkeeper.core.getOrNull
 import com.azu.bookkeeper.core.normalizeRemark
 import com.azu.bookkeeper.domain.model.Bill
@@ -94,9 +95,13 @@ class AutoRecordUseCase @Inject constructor(
      * 用既有的 [BillRepository.findByTimeRange] 在内存里比对，而不是新增一条 DAO 查询：
      * 24 小时的账单量（通常几十到几百条）对内存过滤毫无压力，却省掉一次 schema 相关的改库风险。
      */
+    /** 同一笔旧账单只提示一次：避免反复识别同一页面时每笔都被判重复。 */
+    private val hintedBillIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+
     suspend fun findRecentDuplicate(amountFen: Long, merchant: String): DuplicateHint? {
         val name = merchant.normalizeRemark()
-        if (amountFen <= 0L || name.length < 2) return null
+        // v1.3.2：金额无效 / 商户泛化 → 键退化，必须直接放行，不能判重复
+        if (!DuplicateRules.isValidPair(amountFen, name)) return null
         val bookId = resolveBookId()
         if (bookId <= 0L) return null
         val now = System.currentTimeMillis()
@@ -104,20 +109,16 @@ class AutoRecordUseCase @Inject constructor(
             billRepository.findByTimeRange(bookId, now - DUPLICATE_WINDOW_MILLIS, now).getOrNull()
         }.getOrNull().orEmpty()
         val hit = bills.filter { bill ->
-            bill.amountFen == amountFen && matchesMerchant(bill.remark, name)
+            bill.amountFen == amountFen && DuplicateRules.merchantMatches(bill.remark, name)
         }.maxByOrNull { it.billTime } ?: return null
+        // 同一笔旧账单只提醒一次；金额不同、商户不同都算新的，不受影响
+        if (!hintedBillIds.add(hit.billId)) return null
         return DuplicateHint(
             billId = hit.billId,
             amountFen = hit.amountFen,
             remark = hit.remark,
             billTime = hit.billTime
         )
-    }
-
-    /** 备注是否属于这个商户：自动记账写的是「商户 · 购买内容」，所以商户是前缀。 */
-    private fun matchesMerchant(remark: String, merchant: String): Boolean {
-        val text = remark.normalizeRemark()
-        return text == merchant || text.startsWith(merchant)
     }
 
     private suspend fun resolveBookId(): Long {

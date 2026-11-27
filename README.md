@@ -2,21 +2,20 @@
 
 **纯本地记账应用。** 手动记 / 自动识别 / 一键补记三条路都能进账，数据用 SQLCipher 加密后只存在这台手机上；只有你在关于页主动点「检查更新」时才会联网读取 GitHub Releases。
 
-当前版本 **v1.3.1**（versionCode 8，Debug APK，Android 8.0+）
+当前版本 **v1.3.2**（versionCode 9，Debug APK，Android 8.0+）
 
 ---
 
-## 这一版（v1.3.1）改了什么
+## 这一版（v1.3.2）改了什么
 
-本轮全部来自真机反馈，重点是「少打扰 + 结果一致 + 能自愈」。
+- **修复重复误判**：金额无效或商户名泛化时不再判重复；同一笔旧账单只提醒一次；余额 / 优惠等非实付金额不再被当成支付金额。
+- **弹窗重做**：按软件草莓粉风格重新设计底部轻卡片；高置信度只弹 3 秒轻提示，重复 / 异常才弹确认。
+- **文案精简**：关于页「检查 GitHub 更新」改为「检查更新」；更新介绍只写更新了什么、修复了什么。
+- **通知栏收敛**：自动记账 / 无障碍守护 / 摇一摇合并为一条常驻通知，守护检查并入自动记账服务（15 秒一次）。
 
-- **高置信度静默入账**：金额 + 有效商户都识别到就直接记账，弹一张 3 秒自消的底部轻卡片「✓ 记账成功」；只有把握低时才弹轻确认。所有反馈都不拉起软件界面、不落常驻通知栏。
-- **修好「只识别到『支付』两个字的回归」**：v1.3.0 遍历后 `child.recycle()`，而多个根节点共享同一子树，第一次回收后后面的遍历只剩根节点标题。现在统一走 `ScreenTextCollector`：整页优先、按行去重、不回收共享节点；日志新增 `len=` / `preview=` 便于定位。
-- **两条链路结果一致**：摇一摇与自动识屏现在共用同一采集/去重/标签补齐入口；自动链路也用 `PaymentTextAnalyzer` 抽商户与购买内容，备注统一写成「商户 · 购买内容」，去重键随之统一，跨链路重复也能识别。
-- **打开同一笔付款记录也能提示重复**：账单详情页不再被直接丢弃，会提交去重；确定重复弹「已记过」轻提示，疑似重复弹底部轻卡片。
-- **抖音订单页修复**：支持只有「实付 ¥xx + 订单详情」、没有通用成功词的页面，并补齐金额/商户标签。
-- **无障碍守护**：IMPORTANCE_MIN 静默前台通知 + 每 60 秒检查系统开关；已授予 `WRITE_SECURE_SETTINGS` 时自动写回恢复，未授予时限频弹底部轻提示。ADB 脚本新增 `grant` / `restore`。
-- **关于页自动更新**：检查 GitHub Releases → 自动下载 APK → 拉起系统安装器（系统不允许无声安装，最后一步需点「安装」；同签名覆盖不丢账单）。
+### 上一版（v1.3.1 / v1.3.0）已有
+
+静默入账、统一识屏采集、抖音订单页识别、无障碍守护、关于页检查更新；支付页面识别、微信空节点重读、底部轻确认卡片。
 
 ### 上一版（v1.2.3 / v1.2.2）已有
 
@@ -51,7 +50,7 @@ adb install -r bookkeeper-debug.apk
 
 每次 push 到 `main`，GitHub Actions 会自动构建、跑单元测试，并把 APK 更新到对应的 Release。
 
-> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.3.1）可直接覆盖安装。
+> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.3.2）可直接覆盖安装。
 
 ## 技术栈
 
@@ -59,7 +58,7 @@ Kotlin + Jetpack Compose（Material3 / Navigation）、MVVM + UseCase + Reposito
 
 构建环境：JDK 17、Android SDK Platform 35、Gradle 8.9。
 
-v1.3.1 的测试记录见 [`docs/testing/v1.3.1/`](docs/testing/v1.3.1/)；静态一致性测试可执行 `python3 scripts/verify_v1_3_1.py`。ADB 一键解除受限设置 / 自动恢复见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)（`unlock` / `grant` / `restore`）。历史记录见 [`docs/testing/v1.3.0/`](docs/testing/v1.3.0/)、[`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)、[`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
+v1.3.2 的测试记录见 [`docs/testing/v1.3.2/`](docs/testing/v1.3.2/)；静态一致性测试可执行 `python3 scripts/verify_v1_3_2.py`。ADB 一键解除受限设置 / 自动恢复见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)（`unlock` / `grant` / `restore`）。历史记录见 [`docs/testing/v1.3.1/`](docs/testing/v1.3.1/)、[`docs/testing/v1.3.0/`](docs/testing/v1.3.0/)、[`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)、[`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
 
 ```bash
 ./gradlew assembleDebug        # 构建

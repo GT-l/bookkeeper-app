@@ -139,7 +139,7 @@ class VerificationController @Inject constructor(
     /** 悬浮窗「记一笔」：直接按识别字段确认入账（用户已点确认视为介入）。 */
     private fun submitFromOverlay(candidate: CaptureCandidate) {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            submitDecision(
+            val result = submitDecision(
                 VerifyDecision(
                     eventId = candidate.eventId,
                     accepted = true,
@@ -149,6 +149,14 @@ class VerificationController @Inject constructor(
                     accountId = candidate.accountId
                 )
             )
+            // v1.3.2：过去失败被静默吞掉，用户点了「记一笔」却什么都没发生。
+            // 现在给一张 3 秒轻提示说明原因，绝不让确认按钮「假成功」。
+            if (result is Result.Error) {
+                overlay.showInfo(
+                    title = "记账未完成",
+                    detail = result.error.userMessage.ifBlank { "请手动记一笔" }
+                )
+            }
         }
     }
 

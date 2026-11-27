@@ -2,6 +2,7 @@ package com.azu.bookkeeper.automation.capture
 
 import com.azu.bookkeeper.automation.classify.ClassificationRuleEngine
 import com.azu.bookkeeper.automation.dedup.DuplicateDetector
+import com.azu.bookkeeper.automation.dedup.DuplicateRules
 import com.azu.bookkeeper.automation.ocr.ConfidenceCalculator
 import com.azu.bookkeeper.automation.ocr.ExtractedFields
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
@@ -26,10 +27,12 @@ import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.CaptureCandidate
 import com.azu.bookkeeper.domain.model.CaptureEventStatus
 import com.azu.bookkeeper.domain.model.CaptureType
+import com.azu.bookkeeper.domain.model.CategoryKind
 import com.azu.bookkeeper.domain.model.VerifyStatus
 import com.azu.bookkeeper.domain.repository.AccountRepository
 import com.azu.bookkeeper.domain.repository.BillRepository
 import com.azu.bookkeeper.domain.repository.BookRepository
+import com.azu.bookkeeper.domain.repository.CategoryRepository
 import com.azu.bookkeeper.domain.repository.SettingsRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
@@ -58,6 +61,7 @@ class CaptureCoordinator @Inject constructor(
     private val verifier: VerificationController,
     private val billRepository: BillRepository,
     private val bookRepository: BookRepository,
+    private val categoryRepository: CategoryRepository,
     private val accountRepository: AccountRepository,
     private val settings: SettingsRepository,
     private val automationSettings: AutomationSettingsDataStore,
@@ -164,7 +168,8 @@ class CaptureCoordinator @Inject constructor(
             amountFen = fields.amountFen,
             merchant = displayRemark,
             billTime = fields.billTime,
-            categoryId = ruleHit.categoryId.takeIf { it > 0L },
+            categoryId = ruleHit.categoryId.takeIf { it > 0L }
+                ?: fallbackCategoryId(bookId).takeIf { it > 0L },
             accountId = ruleHit.accountId.takeIf { it > 0L },
             imagePath = event.imagePath,
             ocrConfidence = ocrResult?.confidence ?: 1f,
@@ -262,6 +267,28 @@ class CaptureCoordinator @Inject constructor(
     }.getOrDefault(ExtractedFields() to 0L)
 
     /**
+     * v1.3.2：规则没命中分类时也必须给候选一个可用分类。
+     * 否则低置信度轻卡片点「记一笔」会在 VerificationController.submitDecision 里
+     * 因 categoryId<=0 被拒，表现为「点了没记录、也没有任何提示」。
+     */
+    private suspend fun fallbackCategoryId(bookId: Long): Long {
+        val preferred = runCatching { settings.defaultExpenseCategoryId.first() }.getOrDefault(0L)
+        var categories = runCatching {
+            categoryRepository.observeByBook(bookId, CategoryKind.EXPENSE).first()
+        }.getOrDefault(emptyList())
+        if (categories.isEmpty()) {
+            runCatching { categoryRepository.ensureDefaults(bookId) }
+            categories = runCatching {
+                categoryRepository.observeByBook(bookId, CategoryKind.EXPENSE).first()
+            }.getOrDefault(emptyList())
+        }
+        return categories.firstOrNull { it.categoryId == preferred }?.categoryId
+            ?: categories.firstOrNull { it.name.contains("其他") }?.categoryId
+            ?: categories.firstOrNull()?.categoryId
+            ?: 0L
+    }
+
+    /**
      * 统计近 24 小时内同账本 + 同商户（写库时统一归一化）+ 同金额的账单条数。
      *
      * 商户为空或金额非正时无从判断重复程度，返回 0（保持原有「确定重复 → 丢弃」语义）。
@@ -273,7 +300,7 @@ class CaptureCoordinator @Inject constructor(
     ): Int {
         val amountFen = candidate.amountFen ?: 0L
         val merchant = candidate.merchant.normalizeRemark()
-        if (amountFen <= 0L || merchant.isBlank()) return 0
+        if (!DuplicateRules.isValidPair(amountFen, merchant)) return 0
         val sinceMillis = System.currentTimeMillis() - SUSPECTED_DUPLICATE_WINDOW_MILLIS
         return try {
             billDao.countRecentSameAmountMerchant(

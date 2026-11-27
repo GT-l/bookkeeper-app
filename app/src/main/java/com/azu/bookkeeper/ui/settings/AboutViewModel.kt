@@ -1,6 +1,8 @@
 package com.azu.bookkeeper.ui.settings
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.BuildConfig
@@ -30,6 +32,7 @@ class AboutViewModel @Inject constructor(
         val downloading: Boolean = false,
         val progress: Int = 0,
         val message: String? = null,
+        val messageIsError: Boolean = false,
         val update: UpdateInfo? = null
     )
 
@@ -42,20 +45,28 @@ class AboutViewModel @Inject constructor(
             _ui.update {
                 it.copy(
                     checking = true, downloading = false, progress = 0,
-                    update = null, message = "正在检查 GitHub 更新…"
+                    update = null, message = "正在检查 GitHub 更新…", messageIsError = false
                 )
             }
             val outcome = withContext(Dispatchers.IO) {
                 GithubUpdateChecker.check(BuildConfig.VERSION_NAME)
             }
             if (outcome.error != null) {
-                _ui.update { it.copy(checking = false, message = "检查失败：${outcome.error}") }
+                _ui.update {
+                    it.copy(
+                        checking = false, messageIsError = true,
+                        message = "检查失败：${outcome.error}"
+                    )
+                }
                 return@launch
             }
             val update = outcome.update
             if (update == null) {
                 _ui.update {
-                    it.copy(checking = false, message = "已是最新版本 v${BuildConfig.VERSION_NAME}")
+                    it.copy(
+                    checking = false, messageIsError = false,
+                    message = "已是最新版本 v${BuildConfig.VERSION_NAME}"
+                )
                 }
                 return@launch
             }
@@ -65,19 +76,26 @@ class AboutViewModel @Inject constructor(
                     checking = false,
                     downloading = true,
                     update = update,
+                    messageIsError = false,
                     message = "发现 v${update.version}（${GithubUpdateChecker.formatSize(update.sizeBytes)}），正在下载…"
                 )
             }
             val dir = File(context.filesDir, "updates")
             val target = File(dir, "bookkeeper-${update.version}-debug.apk")
-            val apk = withContext(Dispatchers.IO) {
-                GithubUpdateChecker.download(update.downloadUrl, target) { percent ->
+            val result = withContext(Dispatchers.IO) {
+                GithubUpdateChecker.download(update, target) { percent ->
                     _ui.update { it.copy(progress = percent) }
                 }
             }
+            val apk = result.file
             if (apk == null) {
                 _ui.update {
-                    it.copy(downloading = false, message = "下载失败，请检查网络后重试")
+                    it.copy(
+                        downloading = false, messageIsError = true,
+                        message = "下载失败：${result.error}\n" +
+                            "可点下方「用浏览器下载」或「选本地 APK 安装」。Clash 用户请放行 " +
+                            "githubusercontent.com，并使用 TUN / 全局模式。"
+                    )
                 }
                 return@launch
             }
@@ -85,6 +103,7 @@ class AboutViewModel @Inject constructor(
             _ui.update {
                 it.copy(
                     downloading = false,
+                    messageIsError = !opened,
                     message = if (opened) {
                         "已下载完成，正在打开系统安装器。点系统页面的「安装」即可（同签名可直接覆盖）"
                     } else {
@@ -95,5 +114,33 @@ class AboutViewModel @Inject constructor(
         }
     }
 
-    fun clearMessage() = _ui.update { it.copy(message = null) }
+    /** 兜底：交给系统浏览器下载，浏览器更容易沿用用户已配置好的代理。 */
+    fun openInBrowser() {
+        val url = _ui.value.update?.browserUrl ?: return
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.onFailure {
+            _ui.update {
+                it.copy(
+                    messageIsError = true,
+                    message = "没有可用的浏览器，请复制下载链接后到浏览器打开"
+                )
+            }
+        }
+    }
+
+    /** 兜底：用户在 PC 上用代理下载 APK 后传进手机，从文件选择器直接安装。 */
+    fun installLocalApk(uri: Uri) {
+        val ok = UpdateInstaller.installFromUri(context, uri)
+        _ui.update {
+            it.copy(
+                messageIsError = !ok,
+                message = if (ok) "已打开系统安装器，点「安装」即可" else "这个文件不是可安装的 APK"
+            )
+        }
+    }
+
+    fun clearMessage() = _ui.update { it.copy(message = null, messageIsError = false) }
 }

@@ -3,8 +3,11 @@ package com.azu.bookkeeper.ui.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +57,9 @@ fun AboutScreen() {
     val context = LocalContext.current
     val updateViewModel: AboutViewModel = hiltViewModel()
     val updateState by updateViewModel.ui.collectAsState()
+    val pickApkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> if (uri != null) updateViewModel.installLocalApk(uri) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -69,7 +75,9 @@ fun AboutScreen() {
             item {
                 UpdateCard(
                     state = updateState,
-                    onCheck = updateViewModel::checkForUpdate
+                    onCheck = updateViewModel::checkForUpdate,
+                    onOpenBrowser = updateViewModel::openInBrowser,
+                    onPickLocal = { pickApkLauncher.launch("application/vnd.android.package-archive") }
                 )
             }
 
@@ -80,6 +88,15 @@ fun AboutScreen() {
                             text = "更新介绍",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
+                        )
+                        ChangelogRow(
+                            version = "v1.3.3 · 更新下载排障",
+                            items = listOf(
+                                "修复：下载失败不再只提示「请检查网络」，会显示具体 HTTP 码与卡住的域名",
+                                "修复：下载改走 GitHub 双通道自动降级，并校验 APK 文件头，挡掉代理拦截页",
+                                "新增：下载失败可用浏览器下载，或选本地 APK 直接安装",
+                                "提示：Clash 用户需放行 githubusercontent.com 并使用 TUN / 全局模式"
+                            )
                         )
                         ChangelogRow(
                             version = "v1.3.2 · 弹窗重做与重复修复",
@@ -211,9 +228,14 @@ fun AboutScreen() {
     }
 }
 
-/** GitHub 更新：检查 → 下载 → 自动打开系统安装器（最后一步系统强制要求用户点「安装」）。 */
+/** 检查 → 下载 → 打开系统安装器；网络不通时给浏览器下载 / 本地安装两条兜底路。 */
 @Composable
-private fun UpdateCard(state: AboutViewModel.UiState, onCheck: () -> Unit) {
+private fun UpdateCard(
+    state: AboutViewModel.UiState,
+    onCheck: () -> Unit,
+    onOpenBrowser: () -> Unit,
+    onPickLocal: () -> Unit
+) {
     SoftCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text(
@@ -223,6 +245,7 @@ private fun UpdateCard(state: AboutViewModel.UiState, onCheck: () -> Unit) {
             )
             Text(
                 text = "检查是否有新版本；发现更新会自动下载 APK 并打开系统安装器。" +
+                    "下载失败时可改用浏览器下载，或选本地 APK 安装。" +
                     "Android 不允许无声安装，最后一步需要你点系统页面的「安装」（同签名可直接覆盖，账单不丢）。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -243,9 +266,25 @@ private fun UpdateCard(state: AboutViewModel.UiState, onCheck: () -> Unit) {
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (state.messageIsError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                     modifier = Modifier.padding(top = 8.dp)
                 )
+            }
+            if (state.messageIsError) {
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    CuteOutlinedButton(
+                        onClick = onOpenBrowser,
+                        modifier = Modifier.weight(1f).padding(end = 4.dp)
+                    ) { Text("用浏览器下载") }
+                    CuteOutlinedButton(
+                        onClick = onPickLocal,
+                        modifier = Modifier.weight(1f).padding(start = 4.dp)
+                    ) { Text("选本地 APK") }
+                }
             }
             CuteOutlinedButton(
                 onClick = onCheck,

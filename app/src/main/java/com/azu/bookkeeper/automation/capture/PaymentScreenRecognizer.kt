@@ -239,9 +239,11 @@ object PaymentScreenRecognizer {
     fun refineDouyinText(text: String): String {
         if (text.isBlank()) return text
         val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
-        val isOrderPage = lines.any { line ->
-            DOUYIN_SUCCESS_HINTS.any { line.contains(it) } || isDetailText(line)
-        }
+        // 只处理订单现场：收银台也会写「实付 ¥xx」，不能因为一个金额标签就补结构化行。
+        // 必须有「订单详情 / 交易详情」或「实付 + 订单上下文」才补。
+        val isOrderPage = lines.any { isDetailText(it) } ||
+            (lines.any { line -> DOUYIN_SUCCESS_HINTS.any { line.contains(it) } } &&
+                DOUYIN_ORDER_CONTEXT.any { ctx -> lines.any { it.contains(ctx) } })
         if (!isOrderPage) return text
 
         val amountLine = lines.firstOrNull { line ->

@@ -69,6 +69,17 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
+                            version = "v1.2.2 · 无障碍诊断判因 + vivo 适配",
+                            items = listOf(
+                                "依据 vivo V2505A / Android 17 真机日志修正判断：服务连上 1 秒 / 27 秒就被关，是系统撤销授权，不是 App 崩溃或省电杀进程；弹窗和复制的 log 现在直接给出结论",
+                                "修正误导性日志文案：解绑 / 销毁原本写成「进程退出」，实际是撤销授权后的正常生命周期；补上存活时长、pid、累计被撤销次数",
+                                "连接事件也强制写入日志，复制回来的 log 不再只有一堆断开 ERROR，能还原完整时间线",
+                                "修复 vivo / iQOO（OriginOS）看不到稳定运行设置卡片：原来只判断 OPPO 系，现在按厂商显示",
+                                "补两条关键系统设置：Android 13+ 侧载 APK 需先「允许受限设置」；vivo 官方要求「后台高耗电 + 一键加速白名单」",
+                                "诊断报告新增安装来源、Android 版本、服务存活时长和自动结论"
+                            )
+                        )
+                        ChangelogRow(
                             version = "v1.2.1 · 无障碍保活 + 覆盖安装",
                             items = listOf(
                                 "新增无障碍健康检查：服务被系统关闭或解绑时弹窗，可直接复制完整 log 发给开发者",

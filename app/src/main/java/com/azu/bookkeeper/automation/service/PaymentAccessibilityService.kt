@@ -8,6 +8,8 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
@@ -100,13 +102,29 @@ class PaymentAccessibilityService : AccessibilityService() {
         Log.w(TAG, "无障碍服务已连接: canTakeScreenshot=$canShot sdk=${Build.VERSION.SDK_INT}")
         com.azu.bookkeeper.core.CaptureLog.i(applicationContext, "A11Y", "服务已连接 canTakeScreenshot=$canShot")
         runCatching { logScreenshotCapability() }
-        // 心跳：主进程读这个标记判断服务是否真的连上（系统开关状态在部分 ROM 上不可靠）
+        // 心跳 + 进程现场：pid / 进程已运行时长 / 第几次连接。
+        // v1.2.2：连接事件也强制落盘，否则用户复制回来的 log 只有一堆断开 ERROR，
+        // 还原不出「连上 → 1 秒后被撤销」的完整时间线。
         runCatching {
-            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(KEY_LAST_CONNECTED, System.currentTimeMillis())
+            val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val count = prefs.getInt(KEY_CONNECT_COUNT, 0) + 1
+            val pid = Process.myPid()
+            val age = runCatching {
+                SystemClock.uptimeMillis() - Process.getStartUptimeMillis()
+            }.getOrDefault(0L)
+            val now = System.currentTimeMillis()
+            prefs.edit()
+                .putLong(KEY_LAST_CONNECTED, now)
                 .putBoolean(KEY_CAN_SHOT, canShot)
+                .putInt(KEY_CONNECT_COUNT, count)
+                .putInt(KEY_CONNECT_PID, pid)
+                .putLong(KEY_PROCESS_AGE, age)
                 .apply()
+            com.azu.bookkeeper.core.CaptureLog.forceInfo(
+                applicationContext, "A11Y",
+                "服务已连接 #$count pid=$pid 进程已运行=${age}ms canShot=$canShot " +
+                    "device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
+            )
         }
         // 记录「曾经开启」，供调试页识别「连上后又被系统关掉」
         runCatching {
@@ -263,27 +281,39 @@ class PaymentAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
-        com.azu.bookkeeper.core.BootTrace.step("A11Y", "onUnbind（被解绑/ROM 回收）")
-        Log.w(TAG, "无障碍服务被解绑（系统关闭开关 / ROM 回收）")
-        com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "服务被解绑（系统关闭/ROM 回收）")
-        // 强制落盘：即使识屏日志开关没开，也让用户在调试页能复制到这条现场
+        com.azu.bookkeeper.core.BootTrace.step("A11Y", "onUnbind（系统撤销授权）")
+        Log.w(TAG, "无障碍服务被解绑：系统撤销授权或关闭开关")
+        com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "服务被解绑（系统撤销授权）")
+        val now = System.currentTimeMillis()
+        val lifespan = runCatching {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_LAST_CONNECTED, 0L)
+        }.getOrDefault(0L).let { if (it > 0L) now - it else 0L }
+        // 强制落盘：即使识屏日志开关没开，也让用户在调试页能复制到这条现场。
+        // 措辞必须准确：解绑后紧接 onDestroy 是「系统撤销授权」的正常生命周期，
+        // 不是 App 崩溃 / 进程被杀的证据；v1.2.1 写成「被系统销毁」把排查方向带偏了。
         com.azu.bookkeeper.core.CaptureLog.force(
             applicationContext, "A11Y",
-            "无障碍服务被解绑（系统关闭开关 / ROM 回收） device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
+            "无障碍服务被解绑（系统撤销授权 / 关闭开关，非崩溃证据） " +
+                "存活=${lifespan}ms pid=${Process.myPid()} " +
+                "device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
         )
         runCatching {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putLong(KEY_LAST_DISCONNECTED, System.currentTimeMillis()).apply()
+                .edit()
+                .putLong(KEY_LAST_DISCONNECTED, now)
+                .putLong(KEY_LAST_LIFESPAN, lifespan)
+                .apply()
         }
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         com.azu.bookkeeper.core.BootTrace.step("A11Y", "onDestroy")
-        Log.w(TAG, "无障碍服务已销毁")
+        Log.w(TAG, "无障碍服务已销毁（解绑后的正常销毁）")
         com.azu.bookkeeper.core.CaptureLog.force(
             applicationContext, "A11Y",
-            "无障碍服务 onDestroy（被系统销毁/进程退出） device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
+            "无障碍服务 onDestroy（解绑后的正常销毁，非崩溃 / 非进程被杀） pid=${Process.myPid()} " +
+                "device=${com.azu.bookkeeper.core.RomCompat.displayName()}"
         )
         if (instance === this) instance = null
         // 保留最后一次连接时间：设置页/自检页用它区分「从没连上」与「连上后被杀」
@@ -305,6 +335,11 @@ class PaymentAccessibilityService : AccessibilityService() {
         const val KEY_LAST_CONNECTED = "last_connected_at"
         const val KEY_LAST_DISCONNECTED = "last_disconnected_at"
         const val KEY_CAN_SHOT = "can_take_screenshot"
+        /** v1.2.2 诊断现场：本次连接存活时长、累计连接次数、连接时 pid、连接时进程已运行时长。 */
+        const val KEY_LAST_LIFESPAN = "last_lifespan_ms"
+        const val KEY_CONNECT_COUNT = "connect_count"
+        const val KEY_CONNECT_PID = "connect_pid"
+        const val KEY_PROCESS_AGE = "process_age_at_connect"
 
         /**
          * 当前活着的服务实例。无障碍截屏（API 30+ takeScreenshot）必须由服务实例发起，

@@ -195,10 +195,11 @@ fun AutomationSettingsScreen(
                 }
             }
 
-            // OrangeOS / ColorOS 专项：按咔皮记账「稳定运行设置 / 锁定与电量」的思路，
-            // 把「权限给全了仍被系统回收」的保活步骤一次讲清；系统不允许第三方 App 改无障碍开关，
-            // 所以最后一环只能引导用户用 Shevery / Shizuku 类工具锁定服务。
-            if (com.azu.bookkeeper.core.RomCompat.needsOppoGuidance()) {
+            // 国产定制 ROM 专项：按咔皮记账「稳定运行设置 / 锁定与电量」的思路，
+            // 把「权限给全了仍被系统撤销授权」的系统侧步骤一次讲清。
+            // v1.2.2：判断必须覆盖 vivo / iQOO（OriginOS），真机 V2505A 之前因为只判 OPPO 系，
+            // 用户根本看不到这张卡片；标题也按厂商显示，别再把 vivo 用户写成 ColorOS。
+            if (com.azu.bookkeeper.core.RomCompat.needsKeepAliveGuidance()) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.tertiaryContainer
@@ -206,7 +207,10 @@ fun AutomationSettingsScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("OrangeOS / ColorOS 稳定运行设置", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            com.azu.bookkeeper.core.RomCompat.keepAliveLabel(),
+                            style = MaterialTheme.typography.titleSmall
+                        )
                         AccessibilityHealth.stableRunGuide().forEachIndexed { index, line ->
                             Text(
                                 "${index + 1}. $line",

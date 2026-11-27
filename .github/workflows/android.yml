@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.2.1)
+      - name: Static consistency tests (v1.2.2)
         shell: bash
-        run: python3 scripts/verify_v1_2_1.py
+        run: python3 scripts/verify_v1_2_2.py
 
       - name: Build debug APK
         shell: bash
@@ -141,18 +141,23 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.1-debug
-          name: 少花点儿 v1.2.1 (Debug APK)
+          tag_name: v1.2.2-debug
+          name: 少花点儿 v1.2.2 (Debug APK)
           body: |
-            # 少花点儿 v1.2.1
+            # 少花点儿 v1.2.2
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可。纯本地记账，不联网、不上云。
 
-            ## 本版修复
-            - **无障碍健康检查**：服务被系统关闭 / 解绑时弹窗，可一键复制完整 log；调试页新增「无障碍服务开关」检查项。
-            - **OrangeOS / ColorOS 保活**：按咔皮记账「稳定运行设置」思路，给出锁定后台、自启动、电池白名单和 Shevery / Shizuku 无障碍服务锁定的完整步骤。
-            - **覆盖安装**：CI 改用固定调试签名，从这一版起后续构建不用每次先卸载旧版（首次从旧签名升级仍需卸载一次）。
-            - **关于页**：补上 v1.2.0 / v1.2.1 更新介绍，不再只显示 v1.1.0。
+            ## 本版修复（依据 vivo V2505A / Android 17 真机日志）
+            - **诊断自动判因**：真机日志里服务连上后只存活 1.0 秒 / 27.3 秒，系统开关已变「关」。判定为系统主动撤销无障碍授权，不是 App 崩溃、ANR 或省电杀进程；弹窗与复制的 log 直接给出结论。
+            - **修正误导性日志**：解绑与销毁原本写成「被系统销毁 / 进程退出」，实际是撤销授权后的正常生命周期；现改为准确措辞，并补上存活时长、pid、进程已运行时长、累计连接 / 被撤销次数。
+            - **连接事件也落盘**：上一版只记录断开，复制回来的 log 全是 ERROR；现在连上也强制写一条 INFO，时间线完整。
+            - **vivo 看不到引导已修**：保活卡片原来只判 OPPO 系，vivo / iQOO（OriginOS）用户完全看不到；现在按厂商显示标题并覆盖两家。
+            - **补两条关键系统设置**：Android 13+ 侧载 APK 需先「允许受限设置」；vivo 官方要求「后台高耗电 + 一键加速白名单」。安装来源也写进诊断报告。
+            - **关于页**：补上 v1.2.2 更新介绍。
+
+            ## v1.2.1 已有
+            无障碍健康检查弹窗与一键复制 log、固定调试签名（覆盖安装）、稳定运行设置。
 
             ## v1.2.0 已有
             日历 / 热力图 / 同比环比、年度预算、退款与报销、批量记账、债务与分期、信用卡账单日提醒；数据库幂等迁移。
@@ -163,7 +168,7 @@ jobs:
             ## 隐私
             数据用 SQLCipher 加密后只存在本机，无账号、无服务端、不采集任何信息。
 
-            反馈请附：机型 + Android 版本 + App「关于」页一键复制的版本信息。
+            反馈请附：机型 + Android 版本 + App「关于」页一键复制的版本信息 + 自动化设置的「复制 log」。
 
           files: release-asset/bookkeeper-debug.apk
           overwrite_files: true

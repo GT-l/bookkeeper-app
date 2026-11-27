@@ -76,6 +76,14 @@ object CaptureLog {
     fun force(context: Context, tag: String, message: String, t: Throwable? = null) =
         write(context, "ERROR", tag, message, t, force = true)
 
+    /**
+     * 与 [force] 相同（不受识屏日志开关影响），但以 INFO 级别落盘。
+     * 专用于「服务连上」这类正常却关键的现场：v1.2.1 只记录断开不记录连接，
+     * 用户复制回来的 log 全是 ERROR，无法还原「连上 → 1 秒后被撤销」的完整时间线。
+     */
+    fun forceInfo(context: Context, tag: String, message: String) =
+        write(context, "INFO", tag, message, force = true)
+
     /** 导出最近日志（默认 600 行），供用户复制。 */
     fun export(context: Context, maxLines: Int = 600): String = runCatching {
         val file = file(context)

@@ -74,6 +74,60 @@ class PermissionGuide @Inject constructor(
         )
     }.getOrDefault(false)
 
+    /** 本次「连上 → 被撤销」的存活毫秒数；0 表示没有记录。 */
+    fun accessibilityLastLifespanMs(): Long = runCatching {
+        a11yPrefs().getLong(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_LAST_LIFESPAN,
+            0L
+        )
+    }.getOrDefault(0L)
+
+    /** 服务累计连上次数（进程重启后仍累加，用来看是不是「反复秒关」）。 */
+    fun accessibilityConnectCount(): Int = runCatching {
+        a11yPrefs().getInt(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_CONNECT_COUNT,
+            0
+        )
+    }.getOrDefault(0)
+
+    /** 上次连上时的进程 pid：连接 / 断开 pid 相同说明是解绑，不同说明进程被重建过。 */
+    fun accessibilityConnectPid(): Int = runCatching {
+        a11yPrefs().getInt(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_CONNECT_PID,
+            0
+        )
+    }.getOrDefault(0)
+
+    /** 上次连上时该进程已运行的毫秒数。 */
+    fun accessibilityProcessAgeAtConnectMs(): Long = runCatching {
+        a11yPrefs().getLong(
+            com.azu.bookkeeper.automation.service.PaymentAccessibilityService.KEY_PROCESS_AGE,
+            0L
+        )
+    }.getOrDefault(0L)
+
+    /**
+     * 安装来源。GitHub 下载的 APK 属于侧载，Android 13+ 的「受限设置」会把
+     * 无障碍开关置灰或开了又自动关掉；把来源写进诊断报告能一眼确认这一点。
+     */
+    fun installSourceText(): String = runCatching {
+        val pm = context.packageManager
+        val source = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val info = pm.getInstallSourceInfo(context.packageName)
+            listOfNotNull(info.installingPackageName, info.initiatingPackageName)
+                .distinct().joinToString(", ")
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getInstallerPackageName(context.packageName).orEmpty()
+        }
+        source.ifBlank { "未知 / 侧载或 ADB 安装（非应用商店）" }
+    }.getOrDefault("读取失败")
+
+    private fun a11yPrefs() = context.getSharedPreferences(
+        com.azu.bookkeeper.automation.service.PaymentAccessibilityService.PREFS,
+        Context.MODE_PRIVATE
+    )
+
     fun isNotificationListenerEnabled(): Boolean {
         val listeners = Settings.Secure.getString(
             context.contentResolver,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1.2.1 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
+"""v1.2.2 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
 import os, sys, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,9 +25,9 @@ def check(name, condition, note=""):
 gradle = read("app/build.gradle.kts")
 workflow = read(".github/workflows/android.yml")
 constants = read("app/src/main/java/com/azu/bookkeeper/core/Constants.kt")
-check("T-VER-01 versionCode 4", "versionCode = 4" in gradle)
-check("T-VER-02 versionName 1.2.1", 'versionName = "1.2.1"' in gradle)
-check("T-VER-03 Release tag v1.2.1", "tag_name: v1.2.1-debug" in workflow)
+check("T-VER-01 versionCode 5", "versionCode = 5" in gradle)
+check("T-VER-02 versionName 1.2.2", 'versionName = "1.2.2"' in gradle)
+check("T-VER-03 Release tag v1.2.2", "tag_name: v1.2.2-debug" in workflow)
 check("T-VER-04 DATABASE_VERSION 2", "DATABASE_VERSION = 2" in constants)
 
 # ---------- 1.1 固定调试签名（解决覆盖安装签名不一致） ----------
@@ -36,14 +36,41 @@ check("T-SIGN-02 调试密钥库文件存在", os.path.isfile("keystore/bookkeep
 check("T-SIGN-03 debug 使用固定签名",
       'signingConfig = signingConfigs.getByName("stableDebug")' in gradle)
 
-# ---------- 1.2 无障碍健康检查与异常日志 ----------
+# ---------- 1.2 无障碍健康检查与异常日志（v1.2.2 真机日志驱动的修复） ----------
 a11y_health = read("app/src/main/java/com/azu/bookkeeper/automation/permission/AccessibilityHealth.kt")
+service = read("app/src/main/java/com/azu/bookkeeper/automation/service/PaymentAccessibilityService.kt")
+log = read("app/src/main/java/com/azu/bookkeeper/core/CaptureLog.kt")
+rom = read("app/src/main/java/com/azu/bookkeeper/core/RomCompat.kt")
+guide = read("app/src/main/java/com/azu/bookkeeper/automation/permission/PermissionGuide.kt")
+settings_ui = read("app/src/main/java/com/azu/bookkeeper/ui/settings/AutomationSettingsScreen.kt")
+about = read("app/src/main/java/com/azu/bookkeeper/ui/settings/AboutScreen.kt")
 check("T-A11Y-01 无障碍健康检查文件", "object AccessibilityHealth" in a11y_health)
-check("T-A11Y-02 强制日志入口", "fun force(" in read("app/src/main/java/com/azu/bookkeeper/core/CaptureLog.kt"))
-check("T-A11Y-03 服务连接上报健康状态",
-      "AccessibilityHealth" in read("app/src/main/java/com/azu/bookkeeper/automation/service/PaymentAccessibilityService.kt"))
-check("T-A11Y-04 关于页含 v1.2.1 介绍",
-      "v1.2.1" in read("app/src/main/java/com/azu/bookkeeper/ui/settings/AboutScreen.kt"))
+check("T-A11Y-02 强制日志入口", "fun force(" in log)
+check("T-A11Y-03 服务连接上报健康状态", "AccessibilityHealth" in service)
+check("T-A11Y-04 关于页含 v1.2.2 介绍", "v1.2.2" in about)
+
+# vivo / iQOO 必须命中保活引导（真机 V2505A 原本完全看不到卡片）
+check("T-ROM-01 识别 vivo / iQOO", "fun isVivoFamily(): Boolean" in rom)
+check("T-ROM-02 保活判断覆盖 vivo",
+      "isOppoFamily() || isOrangeOs() || isVivoFamily()" in rom)
+check("T-ROM-03 设置页调用新判断", "needsKeepAliveGuidance()" in settings_ui)
+check("T-ROM-04 卡片标题按厂商显示", "fun keepAliveLabel()" in rom and "keepAliveLabel()" in settings_ui)
+
+# 诊断必须能自动判因，而不是只堆日志
+check("T-DIAG-01 自动诊断结论", "private fun diagnose(" in a11y_health)
+check("T-DIAG-02 侧载受限设置引导", "允许受限设置" in a11y_health)
+check("T-DIAG-03 vivo 后台高耗电与一键加速白名单",
+      "后台高耗电" in a11y_health and "一键加速白名单" in a11y_health)
+check("T-DIAG-04 安装来源进报告", "fun installSourceText()" in guide and "installSourceText()" in a11y_health)
+check("T-DIAG-05 累计被撤销次数", "KEY_REVOKE_COUNT" in a11y_health)
+check("T-DIAG-06 服务存活时长进报告", "本次服务存活" in a11y_health)
+
+# 日志时间线：连接也要落盘，误导性措辞必须消失
+check("T-LOG-01 INFO 级强制落盘", "fun forceInfo(" in log)
+check("T-LOG-02 连接事件强制落盘", "forceInfo(" in service and "服务已连接 #" in service)
+check("T-LOG-03 旧误导文案已移除", "被系统销毁/进程退出" not in service)
+check("T-LOG-04 记录存活时长与 pid", "KEY_LAST_LIFESPAN" in service and "Process.myPid()" in service)
+check("T-LOG-05 解绑措辞准确", "非崩溃证据" in service and "解绑后的正常销毁" in service)
 
 # ---------- 2. 迁移正确性 ----------
 migration = read("app/src/main/java/com/azu/bookkeeper/data/local/db/Migrations.kt")
@@ -110,7 +137,7 @@ for f in files:
     check(f"T-FILE-{os.path.basename(f)}", os.path.isfile(f))
 
 # ---------- 6.1 新增回归测试与 CI 步骤 ----------
-check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_1.py" in workflow)
+check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_2_2.py" in workflow)
 mapper = read("app/src/main/java/com/azu/bookkeeper/data/mapper/EntityMappers.kt")
 check("T-IMPORT-01 mapper 导入清理且必需类型可解析",
       "InstallmentPaymentStatus" not in mapper
@@ -193,4 +220,4 @@ print(f"通过 {passed} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：", failed)
     sys.exit(1)
-print("v1.2.1 静态一致性测试全部通过")
+print("v1.2.2 静态一致性测试全部通过")

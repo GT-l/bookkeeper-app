@@ -16,7 +16,7 @@
 | 项目 | 结果 |
 | --- | --- |
 | 静态一致性测试 | **111 / 111 通过**（`scripts/verify_v1_2_2.py`，含括号配平） |
-| CI `assembleDebug` / `testDebugUnitTest` | 待本轮 CI 回填 |
+| CI `assembleDebug` / `testDebugUnitTest` | **Success**：run `45931241434`（提交 `81e420a`，2m56s）；单测 `T144-F0-E0-S0`，144 例全过 |
 | 真机 TC-01~TC-09 | 需用户按 `TEST_CASES.md` 执行；本机无 Android SDK / JDK / 模拟器 |
 
 ## 三、本轮修复清单
@@ -42,7 +42,8 @@
 
 ## 五、CI 结论
 
-> 待本轮 GitHub Actions 完成后填入：run ID、结论、单测统计、artifact 名与 Release tag。
-
-- 编译与单测的最终结论以本轮 GitHub Actions 为准；拿到绿色结论前不宣称发布成功。
-- 真机 TC-01~TC-09 未执行项保持「待确认」，不记通过。
+- **run**：`45931241434`，提交 `81e420a`，2026-11-27 02:56:25Z → 02:59:21Z，`completed success`。
+- **步骤**：`Static consistency tests (v1.2.2)` / `Build debug APK` / `Run unit tests` / `Create GitHub Release with APK` 全部 Success；`Summarize build errors` 按预期 skipped（构建成功时不需要）。
+- **单测**：`T144-F0-E0-S0`（144 例，0 失败 / 0 错误 / 0 跳过）。
+- **产物**：artifact `bookkeeper-debug-apk`（55,322,814 字节，压缩后）、`unit-test-reports-T144-F0-E0-S0`；Release `v1.2.2-debug`「少花点儿 v1.2.2 (Debug APK)」已附 `bookkeeper-debug.apk`（92,461,600 字节），下载链接返回 HTTP 200。
+- 真机 TC-01~TC-09 未执行项仍为「待确认」，不记通过；本次 CI 绿色只证明编译与单测通过，**不证明用户设备上的授权撤销问题已经消失**。

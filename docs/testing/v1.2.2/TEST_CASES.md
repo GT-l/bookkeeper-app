@@ -78,4 +78,4 @@ CI 步骤 `Static consistency tests (v1.2.2)` 每次 push 执行。
 
 ## 六、CI 结论
 
-见 `TEST_REPORT.md`「CI 结论」小节（构建完成后回填）。
+run `45931241434`（提交 `81e420a`）`completed success`：静态一致性 111 项、`assembleDebug`、单测 `T144-F0-E0-S0`（144 例全过）、Release `v1.2.2-debug` 均成功。详见 `TEST_REPORT.md`「CI 结论」。

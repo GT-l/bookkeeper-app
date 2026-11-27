@@ -2,6 +2,7 @@ package com.azu.bookkeeper.automation.verify
 
 import com.azu.bookkeeper.automation.dedup.DuplicateDetector
 import com.azu.bookkeeper.core.Result
+import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
@@ -93,25 +94,45 @@ class VerificationController @Inject constructor(
     }
 
     /**
-     * 低置信度事件入队（v1.3.0 三档降级）：
-     * 自动 / 悬浮窗模式 = 优先屏幕底部悬浮卡片；无悬浮窗权限才退前台 Dialog + 通知；
-     * 通知模式 = 只发通知；仅前台弹窗模式 = 只走 Compose Dialog。
-     * verify_mode 0=自动 1=悬浮窗 2=通知 3=仅前台弹窗。
+     * 低置信度 / 疑似重复事件入队（v1.3.1 统一轻打扰）：
+     * - 默认（mode 0/1/2）：一律优先屏幕底部轻卡片（TYPE_ACCESSIBILITY_OVERLAY，无需悬浮窗权限）；
+     *   卡片失败才发一条 8 秒自动消失的横幅，**不再发常驻通知、不再弹前台 Dialog**。
+     * - mode 3（用户显式选「仅前台弹窗」）才保留 Compose Dialog。
      *
-     * 悬浮卡片显示成功时不再 emit 前台 Dialog，避免同一笔既弹窗又弹卡片。
+     * 用户明确要求：重复弹窗不要强制拉起软件界面、不要落到通知栏。
      */
-    suspend fun requestVerify(candidate: CaptureCandidate) {
+    suspend fun requestVerify(candidate: CaptureCandidate, duplicate: Boolean = false) {
         if (candidate.eventId in pendingQuickEventIds) return
         val mode = automationSettings.verifyMode.first()
-        val preferOverlay = mode == 0 || mode == 1
-        val overlayShown = preferOverlay && overlay.show(
-            candidate,
+        if (mode == 3) {
+            _requests.tryEmit(candidate)
+            return
+        }
+        val overlayShown = overlay.show(
+            candidate = candidate.copy(
+                merchant = if (duplicate) "可能是重复记账 · ${candidate.merchant}" else candidate.merchant
+            ),
             onConfirm = { submitFromOverlay(candidate) },
             onDiscard = { discardFromOverlay(candidate.eventId) }
         )
         if (!overlayShown) {
-            if (mode != 2) _requests.tryEmit(candidate)
-            if (mode != 3) notifier.showVerify(candidate)
+            notifier.showTransientVerify(candidate.amountFen, candidate.merchant, duplicate)
+        }
+    }
+
+    /** 高置信度自动入账成功：底部轻卡片「记账成功」，不询问、3 秒自动消失。 */
+    fun notifyRecorded(amountFen: Long, remark: String) {
+        runCatching { overlay.showSuccess(amountFen, remark) }
+    }
+
+    /** 确定重复已跳过：轻卡片提示，明确告诉用户「不是没识别到，是已经有同一笔」。 */
+    fun notifyDuplicated(amountFen: Long, remark: String) {
+        runCatching {
+            overlay.showInfo(
+                title = "这笔已记过，已跳过",
+                detail = "${Money.format(amountFen)} ${remark}".trim(),
+                autoDismissMs = 3_200L
+            )
         }
     }
 

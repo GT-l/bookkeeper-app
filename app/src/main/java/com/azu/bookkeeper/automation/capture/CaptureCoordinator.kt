@@ -6,12 +6,14 @@ import com.azu.bookkeeper.automation.ocr.ConfidenceCalculator
 import com.azu.bookkeeper.automation.ocr.ExtractedFields
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
 import com.azu.bookkeeper.automation.ocr.OcrEngine
+import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.receiver.SmsSummary
 import com.azu.bookkeeper.automation.receiver.TimeSource
 import com.azu.bookkeeper.automation.verify.VerificationController
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.core.getOrNull
+import com.azu.bookkeeper.core.composeRemark
 import com.azu.bookkeeper.core.normalizeRemark
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.db.dao.BillDao
@@ -49,6 +51,7 @@ class CaptureCoordinator @Inject constructor(
     private val billDao: BillDao,
     private val ocrEngine: OcrEngine,
     private val extractor: FieldExtractor,
+    private val analyzer: PaymentTextAnalyzer,
     private val confidence: ConfidenceCalculator,
     private val classifier: ClassificationRuleEngine,
     private val dedup: DuplicateDetector,
@@ -88,7 +91,7 @@ class CaptureCoordinator @Inject constructor(
         // 3) 字段抽取：短信源读结构化摘要（不再跑正则）；图像源走 OCR；其余文本源直读
         val isSms = event.captureType == CaptureType.SMS
         val timeSource = event.timeSource
-        val fields: ExtractedFields
+        var fields: ExtractedFields
         // 短信解析已按银行简称 + 卡尾精配出账户 ID，必须透传，避免多卡用户记错账户（QA F-04）。
         val smsAccountId: Long
         val ocrResult = if (isSms) {
@@ -105,6 +108,26 @@ class CaptureCoordinator @Inject constructor(
             fields = extractor.extract(event.rawText, fallbackTime = event.billTime.takeIf { it > 0L })
             smsAccountId = 0L
             null
+        }
+
+        // v1.3.1 统一两条识别链路：自动识屏过去只用 FieldExtractor，摇一摇用
+        // PaymentTextAnalyzer + FieldExtractor，同一页面两条路会抽到不同商户/备注。
+        // 现在都用同一个 analyzer 择优，并把展示备注统一写成「商户 · 购买内容」——
+        // 这也让去重键与摇一摇写出的账单备注一致，跨链路重复才会被识别出来。
+        val displayRemark: String = if (!isSms && event.rawText.isNotBlank()) {
+            val analysis = runCatching { analyzer.analyze(event.rawText) }.getOrNull()
+            if (analysis != null) {
+                val bestMerchant = analysis.merchant.takeIf { it.isNotBlank() } ?: fields.merchant
+                fields = fields.copy(
+                    amountFen = analysis.amountFen ?: fields.amountFen,
+                    merchant = bestMerchant
+                )
+                composeRemark(bestMerchant, analysis.goods)
+            } else {
+                composeRemark(fields.merchant, "")
+            }
+        } else {
+            composeRemark(fields.merchant, "")
         }
 
         // 4) 分类（账户映射复用同一份 accounts）；短信精配账户优先级高于通用 matcher 猜测
@@ -139,7 +162,7 @@ class CaptureCoordinator @Inject constructor(
             packageName = event.packageName,
             rawText = event.rawText,
             amountFen = fields.amountFen,
-            merchant = fields.merchant,
+            merchant = displayRemark,
             billTime = fields.billTime,
             categoryId = ruleHit.categoryId.takeIf { it > 0L },
             accountId = ruleHit.accountId.takeIf { it > 0L },
@@ -157,13 +180,17 @@ class CaptureCoordinator @Inject constructor(
             val recentSame = countRecentSameAmountMerchant(bookId, candidate)
             if (recentSame >= SUSPECTED_DUPLICATE_HIT_THRESHOLD) {
                 captureDao.markStatus(event.eventId, CaptureEventStatus.LOW_CONFIDENCE.code)
-                verifier.requestVerify(candidate)
+                // v1.3.1：疑似重复走底部轻卡片，不再发通知栏确认
+                verifier.requestVerify(candidate, duplicate = true)
                 Timber.d(
                     "suspected duplicate, sent to verify eventId=%d amount=%d hits=%d",
                     event.eventId, candidate.amountFen ?: 0L, recentSame
                 )
                 return@withContext
             }
+            // 确定重复：v1.3.1 不再静默丢弃——弹一张 3 秒消失的轻卡片，
+            // 明确告诉用户「已经有同一笔，已跳过」，避免误以为识屏失败。
+            verifier.notifyDuplicated(candidate.amountFen ?: 0L, displayRemark)
             captureDao.markStatus(event.eventId, CaptureEventStatus.DISCARDED.code)
             // 终态清理：去重丢弃的截图没有保留价值，删除加密文件释放存储
             deleteCaptureFile(event.imagePath, "dedup_discarded")
@@ -190,6 +217,8 @@ class CaptureCoordinator @Inject constructor(
             is Result.Success -> {
                 // 终态清理：自动入账成功后截图缓存不再需要，删除加密文件并丢弃内存候选中的路径
                 deleteCaptureFile(candidate.imagePath, "auto_bill_created")
+                // v1.3.1：高分自动入账后给一次轻打扰成功反馈（3 秒自消），不再「什么都不说」
+                verifier.notifyRecorded(candidate.amountFen ?: 0L, displayRemark)
                 Timber.d("auto bill created id=%d score=%.2f", result.data, score)
             }
             is Result.Error -> {

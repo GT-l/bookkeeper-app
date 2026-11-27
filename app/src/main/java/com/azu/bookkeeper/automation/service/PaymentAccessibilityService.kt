@@ -18,6 +18,7 @@ import com.azu.bookkeeper.automation.capture.AccessibilityCaptureParser
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
 import com.azu.bookkeeper.automation.capture.PaymentScreen
 import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
+import com.azu.bookkeeper.automation.capture.ScreenTextCollector
 import com.azu.bookkeeper.automation.classify.BusinessTag
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
 import com.azu.bookkeeper.core.Constants
@@ -180,57 +181,81 @@ class PaymentAccessibilityService : AccessibilityService() {
         val parser = runCatching { deps.parser() }.getOrNull() ?: return
         val text = readScreenText(parser, event)
         val recognition = PaymentScreenRecognizer.classify(packageName, className, text)
+        val sparse = ScreenTextCollector.isSparse(text)
 
         when (recognition.screen) {
             PaymentScreen.ENTRY -> {
-                val now = System.currentTimeMillis()
-                if (now - lastEntryAt > ENTRY_LOG_INTERVAL_MS) {
-                    lastEntryAt = now
-                    com.azu.bookkeeper.core.CaptureLog.forceInfo(
-                        applicationContext, "SCREEN",
-                        "识别到付款界面 pkg=$packageName cls=$className reason=${recognition.reason}"
-                    )
-                }
+                logScreenThrottled(
+                    "付款界面 pkg=$packageName cls=$className reason=${recognition.reason} " +
+                        "len=${text.length} sparse=$sparse preview=${ScreenTextCollector.preview(text)}"
+                )
                 return
             }
-            PaymentScreen.DETAIL -> return
+            PaymentScreen.DETAIL -> {
+                // v1.3.1：账单详情不再丢弃。它常是「同一笔付款记录」的唯一现场，
+                // 提交后 CaptureCoordinator 才会跑去重 → 底部轻卡片提醒「已记过」。
+                logScreenThrottled(
+                    "账单详情（提交去重） pkg=$packageName cls=$className reason=${recognition.reason} " +
+                        "len=${text.length} preview=${ScreenTextCollector.preview(text)}"
+                )
+            }
             PaymentScreen.UNKNOWN -> {
-                // 微信支付成功页有时只返回空根节点：类名像结果页时安排有界重读
-                if (className.isNotBlank() && PaymentScreenRecognizer.looksLikeResultClass(className)) {
+                logScreenThrottled(
+                    "未识别 pkg=$packageName cls=$className len=${text.length} sparse=$sparse " +
+                        "preview=${ScreenTextCollector.preview(text)}"
+                )
+                // 文本稀疏（v1.3.0「只剩支付两字」的现场）或类名像结果页 → 有界重读
+                if (sparse || (className.isNotBlank() && PaymentScreenRecognizer.looksLikeResultClass(className))) {
                     scheduleResultRetry(parser, packageName, className, 1)
                 }
                 return
             }
             PaymentScreen.SUCCESS -> Unit
         }
-        submitCapture(parser, packageName, className, recognition, refine(packageName, text))
+        submitCapture(
+            parser, packageName, className, recognition,
+            ScreenTextCollector.refine(packageName, text)
+        )
     }
 
-    /** 主线程读节点：事件 source + 活动窗口 + 多窗口，全部转成纯文本，绝不把节点带到 IO 线程。 */
+    /** 所有「不提交」分支也留一条节流日志，用户复制 log 时能看出到底读到了什么。 */
+    private fun logScreenThrottled(message: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastEntryAt < ENTRY_LOG_INTERVAL_MS) return
+        lastEntryAt = now
+        runCatching {
+            com.azu.bookkeeper.core.CaptureLog.forceInfo(applicationContext, "SCREEN", message)
+        }
+    }
+
+    /**
+     * 主线程读节点：整页优先，只有稀疏时才补 source / 其它窗口。
+     * 所有片段交给 [ScreenTextCollector.merge] 按行去重后再限长——
+     * v1.3.0 把多个共享同一子树的 root 直接字符串相加，重复行把 6000 字上限吃满，
+     * 真正的金额/商户行反而被截断。
+     */
     private fun readScreenText(
         parser: AccessibilityCaptureParser,
         event: AccessibilityEvent
     ): String = runCatching {
-        val sb = StringBuilder()
-        val roots = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
-        val source = runCatching { event.source }.getOrNull()
-        if (source != null) roots.add(source)
+        val parts = mutableListOf<String>()
         val activeRoot = runCatching { rootInActiveWindow }.getOrNull()
-        if (activeRoot != null) roots.add(activeRoot)
-        val windowList = runCatching { getWindows() }.getOrNull().orEmpty()
-        for (w in windowList) {
-            val node = runCatching { w.root }.getOrNull()
-            if (node != null) roots.add(node)
+        if (activeRoot != null) {
+            val text = parser.collectText(activeRoot)
+            if (text.isNotBlank()) parts.add(text)
         }
-        roots.take(4).forEach { r -> sb.append(parser.collectText(r)) }
-        sb.toString().take(MAX_SCREEN_TEXT)
+        if (parts.isEmpty() || ScreenTextCollector.isSparse(parts.first())) {
+            val source = runCatching { event.source }.getOrNull()
+            if (source != null) parts.add(parser.collectText(source))
+            val windows = runCatching { getWindows() }.getOrNull().orEmpty()
+            for (w in windows.take(2)) {
+                val node = runCatching { w.root }.getOrNull() ?: continue
+                parts.add(parser.collectText(node))
+                if (!ScreenTextCollector.isSparse(ScreenTextCollector.merge(parts))) break
+            }
+        }
+        ScreenTextCollector.merge(parts)
     }.getOrDefault("")
-
-    /** 微信结果页把金额/商户补成带标签的行，让 FieldExtractor 能命中。 */
-    private fun refine(packageName: String, text: String): String =
-        if (packageName == PaymentScreenRecognizer.WECHAT) {
-            PaymentScreenRecognizer.refineWeChatText(text)
-        } else text
 
     /** 成功页提交：内容指纹 5s 冷却；解析失败不再吞窗口。 */
     private fun submitCapture(
@@ -249,7 +274,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
         com.azu.bookkeeper.core.CaptureLog.forceInfo(
             applicationContext, "SCREEN",
-            "支付结果页 pkg=$packageName cls=$className len=${text.length} reason=${recognition.reason}"
+            "提交识别 pkg=$packageName cls=$className screen=${recognition.screen} " +
+                "len=${text.length} reason=${recognition.reason} preview=${ScreenTextCollector.preview(text)}"
         )
         scope.launch {
             runCatching {
@@ -284,7 +310,10 @@ class PaymentAccessibilityService : AccessibilityService() {
                     "结果页重读 #$attempt len=${text.length} screen=${recognition.screen} reason=${recognition.reason}"
                 )
                 if (recognition.screen == PaymentScreen.SUCCESS && text.isNotBlank()) {
-                    submitCapture(parser, packageName, className, recognition, refine(packageName, text))
+                    submitCapture(
+                        parser, packageName, className, recognition,
+                        ScreenTextCollector.refine(packageName, text)
+                    )
                 } else if (attempt < MAX_RETRY) {
                     scheduleResultRetry(parser, packageName, className, attempt + 1)
                 }
@@ -293,15 +322,15 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     private fun readActiveWindowText(parser: AccessibilityCaptureParser): String = runCatching {
-        val sb = StringBuilder()
+        val parts = mutableListOf<String>()
         val activeRoot = runCatching { rootInActiveWindow }.getOrNull()
-        if (activeRoot != null) sb.append(parser.collectText(activeRoot))
+        if (activeRoot != null) parts.add(parser.collectText(activeRoot))
         val windowList = runCatching { getWindows() }.getOrNull().orEmpty()
-        for (w in windowList) {
-            val node = runCatching { w.root }.getOrNull()
-            if (node != null) sb.append(parser.collectText(node))
+        for (w in windowList.take(2)) {
+            val node = runCatching { w.root }.getOrNull() ?: continue
+            parts.add(parser.collectText(node))
         }
-        sb.toString().take(MAX_SCREEN_TEXT)
+        ScreenTextCollector.merge(parts)
     }.getOrDefault("")
 
     /** IO 线程：文本已是纯快照，只做打标 → 构造事件 → 交协调器。 */
@@ -501,39 +530,21 @@ class PaymentAccessibilityService : AccessibilityService() {
         fun readScreenSnapshot(): ScreenTextSnapshot? = runCatching {
             val service = instance ?: return@runCatching null
             val root = service.rootInActiveWindow ?: return@runCatching null
-            val sb = StringBuilder()
-            val count = collectNodeText(root, sb, 0)
-            val text = sb.toString()
-            if (text.isBlank()) return@runCatching null
             val pkg = runCatching { root.packageName?.toString().orEmpty() }.getOrDefault("")
-            ScreenTextSnapshot(pkg, text, count)
-        }.getOrNull()
-
-        /** 深度优先收集文本节点（限制深度 50，防止极端页面栈过深）。 */
-        private fun collectNodeText(
-            node: android.view.accessibility.AccessibilityNodeInfo?,
-            out: StringBuilder,
-            depth: Int
-        ): Int {
-            if (node == null || depth > 50) return 0
-            var count = 0
-            runCatching {
-                val text = node.text?.toString()?.trim().orEmpty()
-                if (text.isNotEmpty()) {
-                    out.append(text).append('\n')
-                    count++
-                }
-                val desc = node.contentDescription?.toString()?.trim().orEmpty()
-                if (desc.isNotEmpty() && desc != text) {
-                    out.append(desc).append('\n')
-                    count++
-                }
-                for (i in 0 until node.childCount) {
-                    count += collectNodeText(node.getChild(i), out, depth + 1)
+            val parts = mutableListOf(ScreenTextCollector.collect(root))
+            if (ScreenTextCollector.isSparse(parts.first())) {
+                val windows = runCatching { service.getWindows() }.getOrNull().orEmpty()
+                for (w in windows.take(2)) {
+                    val node = runCatching { w.root }.getOrNull() ?: continue
+                    parts.add(ScreenTextCollector.collect(node))
                 }
             }
-            return count
-        }
+            // 与自动识屏共用同一采集/去重/标签补齐入口，摇一摇与自动结果不再漂移
+            val text = ScreenTextCollector.refine(pkg, ScreenTextCollector.merge(parts))
+            if (text.isBlank()) return@runCatching null
+            val count = text.lines().count { it.isNotBlank() }
+            ScreenTextSnapshot(pkg, text, count)
+        }.getOrNull()
 
         /** 是否具备无障碍截屏能力（API 30+ 且 CAPABILITY_CAN_TAKE_SCREENSHOT）。 */
         fun canCaptureScreen(): Boolean {

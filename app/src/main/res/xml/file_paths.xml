@@ -3,5 +3,7 @@
     <files-path name="captures" path="captures/" />
     <files-path name="backups" path="backups/" />
     <files-path name="imports" path="imports/" />
+    <!-- 关于页自动更新下载的 APK（FileProvider 授权给系统安装器） -->
+    <files-path name="updates" path="updates/" />
     <cache-path name="cache" path="." />
 </paths>

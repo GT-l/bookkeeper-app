@@ -126,4 +126,61 @@ class PaymentScreenRecognizerTest {
         assertEquals(PaymentScreen.UNKNOWN, r.screen)
         assertTrue(r.confidence == 0f)
     }
+
+    // ---------- v1.3.1 新增 ----------
+
+    @Test
+    fun `抖音订单页只有实付也能识别为成功页`() {
+        val r = PaymentScreenRecognizer.classify(
+            PaymentScreenRecognizer.DOUYIN,
+            "com.ss.android.ugc.aweme.order.OrderDetailUI",
+            "订单详情\n实付 ¥23.00\n商家：麦当劳\n交易完成"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertTrue(r.reason.startsWith("douyin"))
+    }
+
+    @Test
+    fun `抖音收银台有实付但不是订单上下文不判成功`() {
+        // 类名含 Cashier → 付款中间态，绝不能因为出现「实付」就自动入账
+        val r = PaymentScreenRecognizer.classify(
+            PaymentScreenRecognizer.DOUYIN,
+            "com.ss.android.ugc.aweme.pay.CashierUI",
+            "确认支付\n实付 ¥23.00\n请选择支付方式"
+        )
+        assertEquals(PaymentScreen.ENTRY, r.screen)
+    }
+
+    @Test
+    fun `抖音订单页补齐金额与商户标签`() {
+        val refined = PaymentScreenRecognizer.refineDouyinText(
+            "订单详情\n实付 ¥23.00\n商家：麦当劳\n交易完成"
+        )
+        assertTrue(refined.contains("金额：23.00"))
+        assertTrue(refined.contains("商户：麦当劳"))
+    }
+
+    @Test
+    fun `抖音收银台文本不被补标签`() {
+        val raw = "确认支付\n实付 ¥23.00\n请选择支付方式"
+        assertEquals(raw, PaymentScreenRecognizer.refineDouyinText(raw))
+    }
+
+    @Test
+    fun `账单详情含付款方式仍判 DETAIL`() {
+        // v1.3.0 的顺序会先命中「付款方式」→ ENTRY 并被丢弃，重复检测永远跑不到
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "账单详情\n2026-11-27 12:30\n付款方式：零钱\n商户：星巴克"
+        )
+        assertEquals(PaymentScreen.DETAIL, r.screen)
+    }
+
+    @Test
+    fun `微信账单详情也补齐结构化标签`() {
+        val refined = PaymentScreenRecognizer.refineWeChatText(
+            "账单详情\n2026-11-27 12:30\n¥23.00\n星巴克\n付款方式：零钱"
+        )
+        assertTrue(refined.contains("金额：23.00"))
+        assertTrue(refined.contains("商户：星巴克"))
+    }
 }

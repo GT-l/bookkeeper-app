@@ -20,10 +20,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +52,8 @@ import com.azu.bookkeeper.ui.common.SoftCard
 @Composable
 fun AboutScreen() {
     val context = LocalContext.current
+    val updateViewModel: AboutViewModel = hiltViewModel()
+    val updateState by updateViewModel.ui.collectAsState()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -61,12 +67,30 @@ fun AboutScreen() {
             item { Header() }
 
             item {
+                UpdateCard(
+                    state = updateState,
+                    onCheck = updateViewModel::checkForUpdate
+                )
+            }
+
+            item {
                 SoftCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
                             text = "更新介绍",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
+                        )
+                        ChangelogRow(
+                            version = "v1.3.1 · 静默入账、轻弹窗与自动更新",
+                            items = listOf(
+                                "高置信度识别不再逐次询问：直接入账并弹 3 秒自动消失的底部轻卡片「记账成功」；只有识别把握低时才弹轻确认",
+                                "修好「只识别到『支付』两个字的回归：节点遍历不再回收共享子树；自动识屏与摇一摇统一到同一套采集、去重和标签补齐逻辑，结果不再不一致",
+                                "打开同一笔付款记录也能触发重复提醒：账单详情页现在会提交去重，确定重复弹「已记过」轻提示、疑似重复弹底部轻卡片，不再落通知栏",
+                                "抖音订单页识别修复：支持只有「实付 ¥xx + 订单详情」没有「支付成功」的页面，并补齐金额/商户标签",
+                                "无障碍守护：静默前台通知 + 每 60 秒检查开关；ADB / Shizuku 授予 WRITE_SECURE_SETTINGS 后自动恢复被系统撤销的授权，未授予时限频弹底部轻提示",
+                                "关于页新增「检查 GitHub 更新」：发现新版本自动下载 APK 并拉起系统安装器（系统限制最后一步需点「安装」）"
+                            )
                         )
                         ChangelogRow(
                             version = "v1.3.0 · 识屏准确度与自动化",
@@ -205,6 +229,59 @@ fun AboutScreen() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+/** GitHub 更新：检查 → 下载 → 自动打开系统安装器（最后一步系统强制要求用户点「安装」）。 */
+@Composable
+private fun UpdateCard(state: AboutViewModel.UiState, onCheck: () -> Unit) {
+    SoftCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                text = "检查更新",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "从 GitHub Releases 检查新版本；发现更新会自动下载 APK 并打开系统安装器。" +
+                    "Android 不允许无声安装，最后一步需要你点系统页面的「安装」（同签名可直接覆盖，账单不丢）。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            if (state.downloading) {
+                LinearProgressIndicator(
+                    progress = { state.progress / 100f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                )
+                Text(
+                    text = "下载进度 ${state.progress}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            state.message?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            CuteOutlinedButton(
+                onClick = onCheck,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                enabled = !state.checking && !state.downloading
+            ) {
+                Text(
+                    when {
+                        state.checking -> "正在检查…"
+                        state.downloading -> "正在下载…"
+                        else -> "检查 GitHub 更新"
+                    }
                 )
             }
         }

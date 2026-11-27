@@ -9,6 +9,8 @@
 #   ./scripts/android_unlock_accessibility.sh status    # 只读，看当前状态
 #   ./scripts/android_unlock_accessibility.sh unlock    # 解除受限设置 + 追加无障碍服务
 #   ./scripts/android_unlock_accessibility.sh check     # 验证是否生效
+#   ./scripts/android_unlock_accessibility.sh grant     # 授予 WRITE_SECURE_SETTINGS（守护可自动恢复）
+#   ./scripts/android_unlock_accessibility.sh restore   # 一次性做完 unlock + grant + check
 #
 # 前提：手机开启「开发者选项 → USB 调试」（或用无线调试 adb connect），电脑装好 adb。
 # 不需要 root，不需要解锁 bootloader；这是一次性授权，之后正常使用不再依赖 adb。
@@ -114,8 +116,26 @@ case "$ACTION" in
     [ "$ok" -eq 1 ] || exit 1
     ;;
 
+  grant)
+    echo "授予 WRITE_SECURE_SETTINGS（长时间运行后系统撤销无障碍时，守护服务可自动写回）..."
+    adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS 2>&1 | tr -d '\r'
+    if adb shell dumpsys package "$PKG" | grep -q 'WRITE_SECURE_SETTINGS: granted=true'; then
+      echo "PASS 已授予：以后无障碍被关会自动恢复，不用再手动开"
+    else
+      echo "WARN 未授予：部分 ROM 拒绝该签名级权限，可用 Shizuku 给 App 授权，" || true
+      echo "      或保持手工开启；守护服务会限频弹底部轻卡片提醒。"
+    fi
+    ;;
+
+  restore)
+    echo "=== 一次性部署：解除受限设置 + 自动恢复授权 + 复核 ==="
+    "$0" unlock
+    "$0" grant
+    "$0" check
+    ;;
+
   *)
-    echo "用法: $0 {status|unlock|check}"
+    echo "用法: $0 {status|unlock|check|grant|restore}"
     exit 2
     ;;
 esac

@@ -5,40 +5,54 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.CaptureCandidate
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 屏幕底部悬浮确认卡片（SYSTEM_ALERT_WINDOW）。
+ * 屏幕底部轻卡片（v1.3.1）：**所有识屏反馈的唯一出口**。
  *
- * v1.3.0：疑似重复 / 中置信度的确认不再 `startActivity` 把用户拽进软件界面，
- * 改为贴在屏幕底部的一张卡片（咔皮记账「通知卡片」同类形态）：
- * - `FLAG_NOT_FOCUSABLE` + `FLAG_NOT_TOUCH_MODAL`：不抢焦点、不拦截卡片外的操作；
- * - 宽度 MATCH_PARENT、gravity BOTTOM，靠近拇指、符合底部弹窗直觉；
- * - 权限未授予时返回 false，由调用方降级为「点击才打开」的普通通知。
+ * 三种形态：
+ * 1. [showSuccess]  高置信度已自动入账 → 「✓ 记账成功 · ¥xx 商户」，3 秒自动消失，无按钮；
+ * 2. [showInfo]     确定重复已跳过等纯提示 → 3 秒自动消失，无按钮；
+ * 3. [showConfirm]  低置信度 / 疑似重复 → 「仍然记账 / 修改 / 忽略」，12 秒自动忽略。
  *
- * 纯 View 体系（无 ComposeView），避免 Service 里补 LifecycleOwner 的额外复杂度。
+ * 关键修复（v1.3.1）：
+ * - 优先用 `TYPE_ACCESSIBILITY_OVERLAY`：无障碍服务绑定的窗口**不需要 SYSTEM_ALERT_WINDOW 权限**，
+ *   过去没授予悬浮窗权限就返回 false → 调用方降级发通知栏，这是「重复提醒变成通知」的根因；
+ * - 所有 addView / removeView 切主线程（过去从 IO 线程直接操作 WindowManager，失败即降级）；
+ * - 自动消失，不再常驻遮挡，也不再拉起 Activity / 前台 Dialog。
  */
 @Singleton
 class OverlayVerifyView @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var currentView: View? = null
+    private var dismissRunnable: Runnable? = null
 
+    /** 有活跃的无障碍服务 → 不需要悬浮窗权限也能弹；否则要求已授予 SYSTEM_ALERT_WINDOW。 */
     fun canShow(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || android.provider.Settings.canDrawOverlays(context)
+        PaymentAccessibilityService.current() != null || canDrawOverlay()
 
-    /** 校对链原有入口：底部卡片显示候选账单，确认即入账。 */
+    private fun canDrawOverlay(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            android.provider.Settings.canDrawOverlays(context)
+
+    /** 校对链原有入口：低置信度候选的底部确认卡片。 */
     fun show(candidate: CaptureCandidate, onConfirm: () -> Unit, onDiscard: () -> Unit): Boolean =
         showConfirm(
             title = "识别到一笔支出，请确认",
@@ -49,10 +63,26 @@ class OverlayVerifyView @Inject constructor(
             onDiscard = onDiscard
         )
 
-    /**
-     * 通用底部确认卡片。
-     * [editLabel] 为 null 时不显示「修改」按钮；三个回调都在主线程触发，调用方自行切协程落库。
-     */
+    /** 自动入账成功：轻提示，不询问、不需要点击，3 秒消失。 */
+    fun showSuccess(amountFen: Long, remark: String): Boolean = showInfo(
+        title = "✓ 已自动记账 ${Money.format(amountFen)}",
+        detail = remark.ifBlank { "账单已存入账本" },
+        autoDismissMs = SUCCESS_VISIBLE_MS
+    )
+
+    /** 纯提示（已跳过重复、已忽略等）：3 秒消失。 */
+    fun showInfo(title: String, detail: String, autoDismissMs: Long = INFO_VISIBLE_MS): Boolean =
+        showConfirm(
+            title = title,
+            detail = detail,
+            confirmLabel = "",   // 空标签 → 不生成任何操作按钮
+            editLabel = null,
+            onConfirm = {},
+            onDiscard = {},
+            autoDismissMs = autoDismissMs
+        )
+
+    /** 通用底部卡片；[confirmLabel] 为空时纯展示。 */
     fun showConfirm(
         title: String,
         detail: String,
@@ -60,82 +90,121 @@ class OverlayVerifyView @Inject constructor(
         editLabel: String? = "修改",
         onConfirm: () -> Unit,
         onEdit: () -> Unit = {},
-        onDiscard: () -> Unit = {}
+        onDiscard: () -> Unit = {},
+        autoDismissMs: Long = CONFIRM_VISIBLE_MS
     ): Boolean {
         if (!canShow()) return false
-        dismiss()
+        val latch = CountDownLatch(1)
+        val result = booleanArrayOf(false)
+        runOnMain {
+            try {
+                dismissInternal()
+                val host = PaymentAccessibilityService.current() ?: context
+                val density = host.resources.displayMetrics.density
+                val pad = (16 * density).toInt()
+                val container = LinearLayout(host).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#FAFAFA"))
+                        cornerRadius = 20f * density
+                    }
+                    setPadding(pad * 2, pad, pad * 2, pad * 2)
+                    elevation = 8f * density
+                }
+                container.addView(TextView(host).apply {
+                    text = title
+                    textSize = 15f
+                    setTextColor(Color.parseColor("#222222"))
+                })
+                if (detail.isNotBlank()) {
+                    container.addView(TextView(host).apply {
+                        text = detail
+                        textSize = 18f
+                        setTextColor(Color.parseColor("#C62828"))
+                        setPadding(0, pad / 2, 0, pad / 2)
+                    })
+                }
+                if (confirmLabel.isNotBlank()) {
+                    val actions = LinearLayout(host).apply { orientation = LinearLayout.HORIZONTAL }
+                    fun action(label: String, block: () -> Unit) = Button(host).apply {
+                        text = label
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        setOnClickListener {
+                            dismiss()
+                            runCatching(block)
+                        }
+                    }
+                    actions.addView(action(confirmLabel, onConfirm))
+                    editLabel?.takeIf { it.isNotBlank() }?.let { actions.addView(action(it, onEdit)) }
+                    actions.addView(action("忽略", onDiscard))
+                    container.addView(actions)
+                }
 
-        val density = context.resources.displayMetrics.density
-        val pad = (16 * density).toInt()
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FAFAFA"))
-                cornerRadius = 20f * density
+                val service = PaymentAccessibilityService.current()
+                val type = when {
+                    service != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 ->
+                        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    else -> @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+                }
+                val wm = host.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = Gravity.BOTTOM
+                    y = (12 * density).toInt()
+                }
+                wm.addView(container, params)
+                currentView = container
+                result[0] = true
+                val runnable = Runnable { dismiss() }
+                dismissRunnable = runnable
+                mainHandler.postDelayed(runnable, autoDismissMs)
+            } catch (_: Exception) {
+                result[0] = false
+            } finally {
+                latch.countDown()
             }
-            setPadding(pad * 2, pad, pad * 2, pad * 2)
-            elevation = 8f * density
         }
-        container.addView(TextView(context).apply {
-            text = title
-            textSize = 15f
-            setTextColor(Color.parseColor("#222222"))
-        })
-        container.addView(TextView(context).apply {
-            text = detail
-            textSize = 19f
-            setTextColor(Color.parseColor("#C62828"))
-            setPadding(0, pad / 2, 0, pad / 2)
-        })
+        runCatching { latch.await(1, TimeUnit.SECONDS) }
+        return result[0]
+    }
 
-        val actions = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        fun action(label: String, block: () -> Unit) = Button(context).apply {
-            text = label
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener {
-                dismiss()
-                block()
-            }
-        }
-        actions.addView(action(confirmLabel, onConfirm))
-        editLabel?.let { actions.addView(action(it, onEdit)) }
-        actions.addView(action("忽略", onDiscard))
-        container.addView(actions)
-
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    /** 供外部在收到用户决定后立刻收起（避免自动消失前重复操作）。 */
+    fun dismiss() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            dismissInternal()
         } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.BOTTOM
-            y = (12 * density).toInt()
-        }
-        return try {
-            windowManager().addView(container, params)
-            currentView = container
-            true
-        } catch (_: Exception) {
-            false
+            mainHandler.post { dismissInternal() }
         }
     }
 
-    fun dismiss() {
+    private fun dismissInternal() {
+        dismissRunnable?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        dismissRunnable = null
         currentView?.let { view ->
-            runCatching { windowManager().removeView(view) }
+            runCatching {
+                val host = PaymentAccessibilityService.current() ?: context
+                (host.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(view)
+            }
             currentView = null
         }
     }
 
-    private fun windowManager(): WindowManager =
-        context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private fun runOnMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
+    }
+
+    private companion object {
+        const val SUCCESS_VISIBLE_MS = 3_200L
+        const val INFO_VISIBLE_MS = 3_200L
+        const val CONFIRM_VISIBLE_MS = 12_000L
+    }
 }

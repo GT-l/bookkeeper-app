@@ -51,6 +51,44 @@ object AccessibilityHealth {
         }
     }
 
+    /**
+     * v1.3.1 自动恢复：若用户已按 ADB / Shizuku 授予 WRITE_SECURE_SETTINGS，
+     * 守护服务检测到开关被撤销时可直接把本服务写回系统列表，无需用户再手动开一次。
+     * 普通安装没有这个签名级权限 → 返回 false，改由轻弹窗引导。
+     */
+    fun tryRestore(context: Context): Boolean = runCatching {
+        val app = context.applicationContext
+        val granted = app.checkCallingOrSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) return@runCatching false
+        val cr = app.contentResolver
+        val component = "${app.packageName}/com.azu.bookkeeper.automation.service.PaymentAccessibilityService"
+        val current = android.provider.Settings.Secure.getString(
+            cr, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        val services = current.split(':').filter { it.isNotBlank() }.toMutableList()
+        if (services.none {
+                it.contains(app.packageName) &&
+                    it.contains("PaymentAccessibilityService", ignoreCase = true)
+            }
+        ) {
+            services.add(component)
+            android.provider.Settings.Secure.putString(
+                cr,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                services.joinToString(":")
+            )
+        }
+        android.provider.Settings.Secure.putInt(
+            cr, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, 1
+        )
+        CaptureLog.forceInfo(
+            app, "A11Y",
+            "守护服务自动恢复无障碍授权成功（WRITE_SECURE_SETTINGS 已授予）"
+        )
+        true
+    }.getOrDefault(false)
+
     /** 检测异常；同一现场只返回一次（通过 [KEY_LAST_REPORTED] 去重）。 */
     fun detect(context: Context, guide: PermissionGuide): AccessibilityAnomaly? = runCatching {
         val app = context.applicationContext
@@ -216,6 +254,9 @@ object AccessibilityHealth {
         }
         add("【仍是侧载标记可试】用 SAI / 系统会话安装器覆盖安装同一个 APK，让安装来源不再是「手动装 APK」；" +
             "同签名覆盖安装不丢账单数据。部分 ROM 会因此不再拦截无障碍授权。")
+        add("【长时间运行后被关 → 自动恢复】执行 adb shell pm grant com.azu.bookkeeper " +
+            "android.permission.WRITE_SECURE_SETTINGS（或用 Shizuku 授权）。授予后守护服务每 60 秒检查系统开关，" +
+            "一旦被撤销会自动写回授权；一键脚本 scripts/android_unlock_accessibility.sh restore 可同时完成受限设置与授权。")
         add("【系统级锁定】以上都做完仍被自动撤销时，用 Shevery、Shizuku 等工具的「无障碍服务锁定」锁住本服务" +
             "（系统不向第三方 App 提供锁定入口，App 自己实现不了）。")
         add("系统升级或重启后打开一次「少花点儿」，确认自动化设置里「服务状态：运行中」。")
@@ -238,8 +279,12 @@ object AccessibilityHealth {
    adb shell settings get secure enabled_accessibility_services
    adb shell settings put secure enabled_accessibility_services "<上一步结果>:com.azu.bookkeeper/com.azu.bookkeeper.automation.service.PaymentAccessibilityService"
 4. 回到 设置 → 快捷与辅助 → 无障碍 → 已下载的服务，打开少花点儿，静置 5 分钟确认不再被关。
+5. 【长时间运行后开关又被关 → 自动恢复】一次性授予签名级权限：
+   adb shell pm grant com.azu.bookkeeper android.permission.WRITE_SECURE_SETTINGS
+   授予后 App 内的「无障碍守护」每 60 秒检查开关，一旦被系统撤销会自动写回，不用再手动开。
+   若 ROM 拒绝该权限，可用 Shizuku 给 App 授权；守护会退化为限频弹底部轻卡片提醒。
 
-仓库内一键脚本：scripts/android_unlock_accessibility.sh {status|unlock|check}
+仓库内一键脚本：scripts/android_unlock_accessibility.sh {status|unlock|check|grant|restore}
 """.trimIndent()
 
     fun stableRunGuideText(): String = buildString {

@@ -17,15 +17,11 @@ class AccessibilityCaptureParser @Inject constructor() {
     /**
      * 收集整页可见文字。
      *
-     * v1.3.0：微信支付结果页常用自绘 View / WebView，text 与 contentDescription 分散在不同节点，
-     * 旧实现二选一 + 深度 12 会漏掉关键行；这里两个字段都收（去重），深度放宽到 24。
+     * v1.3.1：实现统一委托 [ScreenTextCollector] —— 与摇一摇 readScreenSnapshot()
+     * 用同一套采集/去重/限长逻辑，且不再回收共享子节点（这是「只识别到『支付』」的修复点）。
      */
-    fun collectText(root: AccessibilityNodeInfo?): String {
-        if (root == null) return ""
-        val builder = StringBuilder()
-        collect(root, builder, depth = 0)
-        return builder.toString()
-    }
+    fun collectText(root: AccessibilityNodeInfo?): String =
+        ScreenTextCollector.collect(root)
 
     fun buildEvent(
         eventId: Long,
@@ -43,23 +39,4 @@ class AccessibilityCaptureParser @Inject constructor() {
         businessTag = businessTag,
         screenType = screen.name
     )
-
-    private fun collect(node: AccessibilityNodeInfo, out: StringBuilder, depth: Int) {
-        if (depth > MAX_DEPTH || out.length >= MAX_TEXT_LENGTH) return
-        val primary = runCatching { node.text?.toString()?.trim().orEmpty() }.getOrDefault("")
-        val secondary = runCatching { node.contentDescription?.toString()?.trim().orEmpty() }.getOrDefault("")
-        if (primary.isNotEmpty()) out.append(primary).append('\n')
-        if (secondary.isNotEmpty() && secondary != primary) out.append(secondary).append('\n')
-        val children = runCatching { node.childCount }.getOrDefault(0)
-        for (i in 0 until children) {
-            val child = runCatching { node.getChild(i) }.getOrNull() ?: continue
-            collect(child, out, depth + 1)
-            runCatching { child.recycle() }
-        }
-    }
-
-    private companion object {
-        const val MAX_DEPTH = 24
-        const val MAX_TEXT_LENGTH = 6000
-    }
 }

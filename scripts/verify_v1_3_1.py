@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1.3.0 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
+"""v1.3.1 静态一致性测试：迁移 SQL、实体/DAO/路由一致性、事务入口约束、无障碍诊断与固定签名。"""
 import os, sys, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,9 +25,9 @@ def check(name, condition, note=""):
 gradle = read("app/build.gradle.kts")
 workflow = read(".github/workflows/android.yml")
 constants = read("app/src/main/java/com/azu/bookkeeper/core/Constants.kt")
-check("T-VER-01 versionCode 7", "versionCode = 7" in gradle)
-check("T-VER-02 versionName 1.3.0", 'versionName = "1.3.0"' in gradle)
-check("T-VER-03 Release tag v1.3.0", "tag_name: v1.3.0-debug" in workflow)
+check("T-VER-01 versionCode 8", "versionCode = 8" in gradle)
+check("T-VER-02 versionName 1.3.1", 'versionName = "1.3.1"' in gradle)
+check("T-VER-03 Release tag v1.3.1", "tag_name: v1.3.1-debug" in workflow)
 check("T-VER-04 DATABASE_VERSION 2", "DATABASE_VERSION = 2" in constants)
 
 # ---------- 1.1 固定调试签名（解决覆盖安装签名不一致） ----------
@@ -47,7 +47,7 @@ about = read("app/src/main/java/com/azu/bookkeeper/ui/settings/AboutScreen.kt")
 check("T-A11Y-01 无障碍健康检查文件", "object AccessibilityHealth" in a11y_health)
 check("T-A11Y-02 强制日志入口", "fun force(" in log)
 check("T-A11Y-03 服务连接上报健康状态", "AccessibilityHealth" in service)
-check("T-A11Y-04 关于页含 v1.3.0 介绍", "v1.3.0" in about)
+check("T-A11Y-04 关于页含 v1.3.1 介绍", "v1.3.1" in about)
 
 # vivo / iQOO 必须命中保活引导（真机 V2505A 原本完全看不到卡片）
 check("T-ROM-01 识别 vivo / iQOO", "fun isVivoFamily(): Boolean" in rom)
@@ -114,8 +114,9 @@ check("T-REC-06 多根节点读取与主线程文本快照",
       "getWindows()" in service and "readScreenText" in service)
 check("T-REC-07 通知补读 bigText/subText",
       "android.bigText" in notif_parser and "android.subText" in notif_parser)
-check("T-REC-08 节点深度放宽且 text/desc 都收",
-      "MAX_DEPTH = 24" in a11y_parser and "contentDescription" in a11y_parser)
+check("T-REC-08 统一采集器深度 32 且 text/desc 都收",
+      "MAX_DEPTH = 32" in read("app/src/main/java/com/azu/bookkeeper/automation/capture/ScreenTextCollector.kt")
+      and "contentDescription" in read("app/src/main/java/com/azu/bookkeeper/automation/capture/ScreenTextCollector.kt"))
 check("T-REC-09 支付成功页置信度加成",
       "screenBonus" in coordinator and "PaymentScreen.SUCCESS.name" in coordinator)
 check("T-REC-10 页面识别单测存在",
@@ -130,7 +131,66 @@ check("T-OVL-02 重复确认不再拉起软件界面",
       .split("private fun autoRecord")[0])
 check("T-OVL-03 无权限时降级为点击才打开的通知",
       "showConfirmFallbackNotification" in shake and "setContentIntent" in shake)
-check("T-OVL-04 校对链优先底部卡片", "preferOverlay" in verifier)
+check("T-OVL-04 校对链优先底部卡片且无默认常驻通知",
+      "notifyRecorded" in verifier and "showTransientVerify" in verifier and "showVerify(candidate)" not in verifier)
+
+
+# ---------- 1.1 v1.3.1：静默入账 / 统一采集 / 轻弹窗 / 守护 / 自动更新 ----------
+collector = read("app/src/main/java/com/azu/bookkeeper/automation/capture/ScreenTextCollector.kt")
+watchdog = read("app/src/main/java/com/azu/bookkeeper/automation/service/A11yWatchdogService.kt")
+health = read("app/src/main/java/com/azu/bookkeeper/automation/permission/AccessibilityHealth.kt")
+adb_script = read("scripts/android_unlock_accessibility.sh")
+manifest = read("app/src/main/AndroidManifest.xml")
+file_paths = read("app/src/main/res/xml/file_paths.xml")
+updater = read("app/src/main/java/com/azu/bookkeeper/core/update/GithubUpdateChecker.kt")
+installer = read("app/src/main/java/com/azu/bookkeeper/core/update/UpdateInstaller.kt")
+about_vm = read("app/src/main/java/com/azu/bookkeeper/ui/settings/AboutViewModel.kt")
+lightweight = read("app/src/main/java/com/azu/bookkeeper/ui/quick/LightweightCapture.kt")
+
+check("T-131-01 统一文本采集器存在", "object ScreenTextCollector" in collector)
+def _code_lines(text):
+    return [line for line in text.splitlines()
+            if not line.strip().startswith(("*", "//", "/*"))]
+
+check("T-131-02 不再回收共享子节点",
+      not any("recycle(" in line for line in _code_lines(collector)) and
+      not any("recycle(" in line for line in _code_lines(a11y_parser)))
+check("T-131-03 多段文本按行去重", "LinkedHashSet<String>" in collector and "fun merge(" in collector)
+check("T-131-04 稀疏文本检测接入识屏", "fun isSparse(" in collector and "isSparse(text)" in service)
+check("T-131-05 两条链路共用 refine", "ScreenTextCollector.refine" in service)
+check("T-131-06 账单详情不再直接丢弃", "PaymentScreen.DETAIL ->" in service and "提交去重" in service)
+check("T-131-07 抖音订单页识别", "DOUYIN_RESULT_CLASS_TOKENS" in recognizer and "实付" in recognizer and "refineDouyinText" in recognizer)
+check("T-131-08 自动链路统一抽取并合成备注",
+      "PaymentTextAnalyzer" in coordinator and "composeRemark(bestMerchant, analysis.goods)" in coordinator)
+check("T-131-09 高置信度静默入账后有轻卡片成功提醒", "notifyRecorded" in coordinator and "showSuccess" in overlay)
+check("T-131-10 确定重复改为轻提示", "notifyDuplicated" in coordinator and "这笔已记过" in verifier)
+check("T-131-11 校对链不再默认发常驻通知",
+      "showVerify(candidate)" not in verifier and "showTransientVerify" in verifier)
+check("T-131-12 轻卡片用无障碍窗口类型",
+      "TYPE_ACCESSIBILITY_OVERLAY" in overlay and "PaymentAccessibilityService.current()" in overlay)
+check("T-131-13 自动入账成功不再发常驻通知",
+      "showRecorded(" not in shake and "progress.clear()" in lightweight)
+check("T-131-14 无障碍守护服务",
+      "class A11yWatchdogService" in watchdog and "CHECK_INTERVAL_MS" in watchdog and "IMPORTANCE_MIN" in watchdog)
+check("T-131-15 WRITE_SECURE_SETTINGS 自动恢复", "tryRestore" in health and "WRITE_SECURE_SETTINGS" in health)
+check("T-131-16 ADB 脚本支持 grant/restore", "grant)" in adb_script and "restore)" in adb_script)
+check("T-131-17 关于页更新检查依赖与权限",
+      "object GithubUpdateChecker" in updater and "object UpdateInstaller" in installer and
+      "class AboutViewModel" in about_vm and "android.permission.INTERNET" in manifest and
+      "android.permission.REQUEST_INSTALL_PACKAGES" in manifest)
+check("T-131-18 FileProvider 开放 updates 目录", 'name="updates"' in file_paths and "getUriForFile" in installer)
+check("T-131-19 关于页更新入口", "检查 GitHub 更新" in about and "updateViewModel" in about)
+check("T-131-20 版本号 v1.3.1 进入 Release 正文", "v1.3.1-debug" in workflow and "v1.3.1" in about)
+check("T-131-21 新增页面识别单测覆盖抖音",
+      os.path.isfile("app/src/test/java/com/azu/bookkeeper/automation/capture/PaymentScreenRecognizerTest.kt")
+      and "抖音订单页只有实付也能识别为成功页" in
+      read("app/src/test/java/com/azu/bookkeeper/automation/capture/PaymentScreenRecognizerTest.kt"))
+check("T-131-22 统一采集与更新检查单测存在",
+      os.path.isfile("app/src/test/java/com/azu/bookkeeper/automation/capture/ScreenTextCollectorTest.kt")
+      and os.path.isfile("app/src/test/java/com/azu/bookkeeper/core/update/GithubUpdateCheckerTest.kt"))
+check("T-131-23 测试文档已建",
+      os.path.isfile("docs/testing/v1.3.1/TEST_CASES.md")
+      and os.path.isfile("docs/testing/v1.3.1/TEST_REPORT.md"))
 
 # ---------- 2. 迁移正确性 ----------
 migration = read("app/src/main/java/com/azu/bookkeeper/data/local/db/Migrations.kt")
@@ -197,7 +257,7 @@ for f in files:
     check(f"T-FILE-{os.path.basename(f)}", os.path.isfile(f))
 
 # ---------- 6.1 新增回归测试与 CI 步骤 ----------
-check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_3_0.py" in workflow)
+check("T-CI-STATIC 静态测试进入 CI", "python3 scripts/verify_v1_3_1.py" in workflow)
 mapper = read("app/src/main/java/com/azu/bookkeeper/data/mapper/EntityMappers.kt")
 check("T-IMPORT-01 mapper 导入清理且必需类型可解析",
       "InstallmentPaymentStatus" not in mapper
@@ -280,4 +340,4 @@ print(f"通过 {passed} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：", failed)
     sys.exit(1)
-print("v1.3.0 静态一致性测试全部通过")
+print("v1.3.1 静态一致性测试全部通过")

@@ -64,6 +64,33 @@ class VerificationNotifier @Inject constructor(
         notifySafe(Constants.VERIFY_NOTIFICATION_ID, notification)
     }
 
+    /**
+     * 极端兜底：仅在连无障碍服务都没有、悬浮窗也不可用时发一条**会自己消失**的横幅。
+     * v1.3.1：不再发常驻「确认这笔账单？」通知——用户要求所有反馈轻打扰，
+     * 真正的确认走屏幕底部卡片（TYPE_ACCESSIBILITY_OVERLAY 不需要额外权限）。
+     */
+    fun showTransientVerify(amountFen: Long?, merchant: String, duplicate: Boolean) {
+        val amountText = amountFen?.let { Money.format(it) }.orEmpty()
+        val notification = NotificationCompat.Builder(context, Constants.CHANNEL_VERIFY)
+            .setSmallIcon(R.drawable.ic_quick_add)
+            .setContentTitle(if (duplicate) "这笔好像记过了" else "识别到一笔支出")
+            .setContentText("$amountText ${merchant}".trim())
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setTimeoutAfter(8_000L)
+            .setAutoCancel(true)
+            .setContentIntent(android.app.PendingIntent.getActivity(
+                context,
+                (System.currentTimeMillis() and 0x7fffffffL).toInt(),
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or immutableFlag()
+            ))
+            .build()
+        notifySafe(Constants.VERIFY_NOTIFICATION_ID, notification)
+    }
+
     /** 自动入账成功提示（低打扰，DEFAULT 优先级）。 */
     fun showAutoBill(amountFen: Long, merchant: String) {
         val notification = NotificationCompat.Builder(context, Constants.CHANNEL_AUTO_CAPTURE)

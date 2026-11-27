@@ -21,6 +21,13 @@
     <!-- 银行扣款短信捕获（抖音免密支付识别，T6 落地；个人自用需用户主动授权） -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- 关于页检查 GitHub 更新 → 下载 APK → 拉起系统安装器（系统限制无法静默安装） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 签名级权限：普通安装没有；用户用 ADB / Shizuku 授予后，守护服务可自动恢复被撤销的无障碍授权 -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".BookkeeperApp"
@@ -141,6 +148,16 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- 无障碍存活守护：静默前台通知 + 定时检查系统开关；有 WRITE_SECURE_SETTINGS 时自动恢复 -->
+        <service
+            android:name=".automation.service.A11yWatchdogService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="a11y_watchdog" />
         </service>
 
         <!-- OCR 独立进程：ML Kit 是 native 库，异常图像/机型兼容问题会 native 崩溃，

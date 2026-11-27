@@ -196,7 +196,11 @@ class PaymentTextAnalyzer @Inject constructor() {
         private val AMOUNT_STRONG_LABELS = listOf("实付", "付款金额", "支付金额", "扣款金额", "交易金额")
         private val AMOUNT_SOFT_LABELS = listOf("订单金额", "合计", "金额", "支付成功", "付款成功", "交易成功", "扣款成功")
 
-        private val PAID_OK_KEYWORDS = listOf("支付成功", "付款成功", "扣款成功", "交易成功", "已支付", "支付完成")
+        private val PAID_OK_KEYWORDS = listOf(
+            "支付成功", "付款成功", "扣款成功", "交易成功", "已支付", "支付完成",
+            // v1.3.1 抖音订单页常写「交易完成 / 订单完成 / 下单成功」而非通用成功词
+            "交易完成", "订单完成", "下单成功", "订单支付成功"
+        )
         private val PAID_BAD_KEYWORDS = listOf("待支付", "支付失败", "付款失败", "已退款", "已取消")
 
         // 注意：字符类里**绝不能用 \s** ——「\s + 全角标点」这种混排，在 Android 17 的 ICU 上

@@ -247,7 +247,12 @@ class ShakeQuickAddService : Service() {
                 showDuplicateConfirm(capture, outcome, amount, duplicate)
                 return@launch
             }
-            if (outcome.confidence >= AUTO_RECORD_CONFIDENCE) {
+            // v1.3.1：识别把握够（金额 + 有效商户）就不再问，直接记账并弹「记账成功」轻卡片；
+            // 商户没抽到 / 只抽到「支付」这类噪声词时才弹轻确认。
+            val usableMerchant = outcome.merchant.trim().let {
+                it.length >= 2 && it !in setOf("支付", "付款", "账单", "已完成", "微信支付", "支付宝")
+            }
+            if (outcome.confidence >= AUTO_RECORD_CONFIDENCE || usableMerchant) {
                 autoRecord(outcome, capture, amount)
             } else {
                 showQuickConfirm(capture, amount, outcome)
@@ -308,11 +313,9 @@ class ShakeQuickAddService : Service() {
                 }.getOrNull()?.getOrNull()
             }
             if (billId != null) {
-                val detail = if (outcome.remark.isNotBlank()) " · ${outcome.remark}" else ""
-                runCatching { capture.toast("记账成功 · ${Money.format(amount)}$detail") }
-                runCatching {
-                    entryPoint.captureProgress().showRecorded(amount, outcome.remark, null)
-                }
+                // v1.3.1：成功反馈统一走屏幕底部轻卡片（3 秒自消），
+                // 不再 Toast + 常驻通知栏两段打扰。
+                runCatching { entryPoint.overlayVerify().showSuccess(amount, outcome.remark) }
                 com.azu.bookkeeper.core.CaptureLog.i(
                     applicationContext, "CAPTURE",
                     "自动记账成功 billId=$billId amount=$amount conf=${outcome.confidence}"
@@ -377,6 +380,8 @@ class ShakeQuickAddService : Service() {
                 .setContentText("${Money.format(amount)} ${outcome.merchant}".trim())
                 .setContentIntent(pi)
                 .setAutoCancel(true)
+                // v1.3.1：极端兜底也必须轻打扰——8 秒后自己消失，不在通知栏常驻
+                .setTimeoutAfter(8_000L)
                 .build()
             NotifyGuard.safeNotify(this, CONFIRM_NOTIFICATION_ID, notification)
         }

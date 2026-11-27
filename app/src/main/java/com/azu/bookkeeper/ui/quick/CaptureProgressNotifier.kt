@@ -57,6 +57,14 @@ class CaptureProgressNotifier @Inject constructor(
         )
     }
 
+    /** v1.3.1：结果反馈改走屏幕底部轻卡片，识屏结束时撤掉进度通知，不在通知栏留常驻项。 */
+    fun clear() {
+        runCatching {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)
+                ?.cancel(NOTIFICATION_ID)
+        }
+    }
+
     /** 成功：展示识别到的金额与商户，点击直达表单确认。 */
     fun showResult(amountFen: Long?, merchant: String, contentIntent: PendingIntent) {
         val amountText = amountFen?.let { Money.format(it) } ?: "未识别到金额"

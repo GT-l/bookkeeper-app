@@ -132,9 +132,9 @@ class LightweightCapture @Inject constructor(
                         " goods=${goods.ifBlank { "-" }} conf=$confidence"
                 )
                 record(null, rawText)
-                runCatching {
-                    progress.showResult(amountFen, remark, resultIntent(amountFen, remark))
-                }
+                // v1.3.1：不再用「识屏完成 · 点击确认记账」常驻通知收尾，
+                // 结果统一由底部轻卡片呈现（自动入账成功 / 低置信度轻确认）
+                runCatching { progress.clear() }
                 withContext(mainDispatcher) {
                     onResult(
                         CaptureOutcome(

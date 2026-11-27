@@ -1,26 +1,26 @@
 # 少花点儿 · Android 记账 App
 
-**纯本地、不联网的个人记账应用。** 手动记 / 自动识别 / 一键补记三条路都能进账，数据用 SQLCipher 加密后只存在这台手机上。
+**纯本地记账应用。** 手动记 / 自动识别 / 一键补记三条路都能进账，数据用 SQLCipher 加密后只存在这台手机上；只有你在关于页主动点「检查更新」时才会联网读取 GitHub Releases。
 
-当前版本 **v1.3.0**（versionCode 7，Debug APK，Android 8.0+）
+当前版本 **v1.3.1**（versionCode 8，Debug APK，Android 8.0+）
 
 ---
 
-## 这一版（v1.3.0）改了什么
+## 这一版（v1.3.1）改了什么
 
-聚焦「识屏准确度 + 自动化」。参考咔皮记账的识别场景分层、花有谱 / 慧铭的微信支付成功页适配、BillRecord 的多层文本提取与悬浮确认卡片，重做识屏主链路。
+本轮全部来自真机反馈，重点是「少打扰 + 结果一致 + 能自愈」。
 
-- **新增支付页面识别**：`PaymentScreenRecognizer`（纯 Kotlin、13 项单测）用 Activity 类名 + 分平台文案区分「付款界面 / 收银台 / 支付成功页 / 账单详情」，打开付款界面就能识别，不再只有支付完成才响应。
-- **修好微信全部识别失败**：旧 1.5 秒去抖在解析前占位，第一个中间态事件吃掉窗口、真正的结果页事件被丢弃；改为「成功页内容指纹 5 秒冷却」，失败不占窗口。节点改为活动窗口 + 多窗口一起读，且在主线程转成纯文本，不再跨线程遍历。
-- **微信空根节点有界重读**：部分微信成功页只返回空根节点，用 className 强信号做 3 次重读（150/350/650ms）。
-- **微信文案与结构化**：扩展「已完成 / 微信支付 / 已存入对方零钱」等词表；把结果页金额、商户补成 `金额：` / `商户：` 标签行让抽取器命中；`com.tencent.mm:tools` 等子进程包名归一化后也能命中白名单。
-- **通知路补字段**：除 title / text 外追加 bigText / subText / infoText / ticker，微信把金额放在 bigText 时不再漏掉。
-- **重复弹窗改底部卡片**：疑似重复、中低置信度确认不再拉起软件界面，改为屏幕底部悬浮卡片（仍然记账 / 修改 / 忽略）；无悬浮窗权限时降级为点击才打开的普通通知。校对链同样优先底部卡片。
-- **自动化提升**：明确支付成功页给置信度 +0.05（不绕过分类 / 账户硬约束），字段齐全的结果更容易自动入账。
+- **高置信度静默入账**：金额 + 有效商户都识别到就直接记账，弹一张 3 秒自消的底部轻卡片「✓ 记账成功」；只有把握低时才弹轻确认。所有反馈都不拉起软件界面、不落常驻通知栏。
+- **修好「只识别到『支付』两个字的回归」**：v1.3.0 遍历后 `child.recycle()`，而多个根节点共享同一子树，第一次回收后后面的遍历只剩根节点标题。现在统一走 `ScreenTextCollector`：整页优先、按行去重、不回收共享节点；日志新增 `len=` / `preview=` 便于定位。
+- **两条链路结果一致**：摇一摇与自动识屏现在共用同一采集/去重/标签补齐入口；自动链路也用 `PaymentTextAnalyzer` 抽商户与购买内容，备注统一写成「商户 · 购买内容」，去重键随之统一，跨链路重复也能识别。
+- **打开同一笔付款记录也能提示重复**：账单详情页不再被直接丢弃，会提交去重；确定重复弹「已记过」轻提示，疑似重复弹底部轻卡片。
+- **抖音订单页修复**：支持只有「实付 ¥xx + 订单详情」、没有通用成功词的页面，并补齐金额/商户标签。
+- **无障碍守护**：IMPORTANCE_MIN 静默前台通知 + 每 60 秒检查系统开关；已授予 `WRITE_SECURE_SETTINGS` 时自动写回恢复，未授予时限频弹底部轻提示。ADB 脚本新增 `grant` / `restore`。
+- **关于页自动更新**：检查 GitHub Releases → 自动下载 APK → 拉起系统安装器（系统不允许无声安装，最后一步需点「安装」；同签名覆盖不丢账单）。
 
 ### 上一版（v1.2.3 / v1.2.2）已有
 
-侧载受限设置判因、ADB 一键解锁、无障碍最小权限声明；诊断自动判因与完整日志时间线、vivo / OriginOS 引导可见性。
+支付页面识别、微信空节点有界重读与文案扩展、通知多字段补齐、底部轻确认卡片；侧载受限设置判因、ADB 一键解锁、无障碍最小权限声明；诊断自动判因与完整日志时间线、vivo / OriginOS 引导可见性。
 
 ### 更早（v1.2.0 / v1.1.0）仍在
 
@@ -51,7 +51,7 @@ adb install -r bookkeeper-debug.apk
 
 每次 push 到 `main`，GitHub Actions 会自动构建、跑单元测试，并把 APK 更新到对应的 Release。
 
-> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.3.0）可直接覆盖安装。
+> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.3.1）可直接覆盖安装。
 
 ## 技术栈
 
@@ -59,7 +59,7 @@ Kotlin + Jetpack Compose（Material3 / Navigation）、MVVM + UseCase + Reposito
 
 构建环境：JDK 17、Android SDK Platform 35、Gradle 8.9。
 
-v1.3.0 的测试记录见 [`docs/testing/v1.3.0/`](docs/testing/v1.3.0/)；静态一致性测试可执行 `python3 scripts/verify_v1_3_0.py`。ADB 一键解除受限设置见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)。历史记录见 [`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)、[`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
+v1.3.1 的测试记录见 [`docs/testing/v1.3.1/`](docs/testing/v1.3.1/)；静态一致性测试可执行 `python3 scripts/verify_v1_3_1.py`。ADB 一键解除受限设置 / 自动恢复见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)（`unlock` / `grant` / `restore`）。历史记录见 [`docs/testing/v1.3.0/`](docs/testing/v1.3.0/)、[`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)、[`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
 
 ```bash
 ./gradlew assembleDebug        # 构建

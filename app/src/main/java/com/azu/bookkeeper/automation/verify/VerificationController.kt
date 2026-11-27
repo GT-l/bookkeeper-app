@@ -93,22 +93,25 @@ class VerificationController @Inject constructor(
     }
 
     /**
-     * 低置信度事件入队（三档降级，PRD 22.4d）：
-     * 前台 = SharedFlow 由 Compose Dialog 收集；后台 + 悬浮窗授权 = 悬浮窗；否则 = 高优先级通知。
+     * 低置信度事件入队（v1.3.0 三档降级）：
+     * 自动 / 悬浮窗模式 = 优先屏幕底部悬浮卡片；无悬浮窗权限才退前台 Dialog + 通知；
+     * 通知模式 = 只发通知；仅前台弹窗模式 = 只走 Compose Dialog。
      * verify_mode 0=自动 1=悬浮窗 2=通知 3=仅前台弹窗。
+     *
+     * 悬浮卡片显示成功时不再 emit 前台 Dialog，避免同一笔既弹窗又弹卡片。
      */
     suspend fun requestVerify(candidate: CaptureCandidate) {
         if (candidate.eventId in pendingQuickEventIds) return
-        _requests.tryEmit(candidate)
         val mode = automationSettings.verifyMode.first()
-        val overlayShown = mode == 1 && overlay.show(
+        val preferOverlay = mode == 0 || mode == 1
+        val overlayShown = preferOverlay && overlay.show(
             candidate,
             onConfirm = { submitFromOverlay(candidate) },
             onDiscard = { discardFromOverlay(candidate.eventId) }
         )
-        // 未走悬浮窗（含 mode=2 通知 / 悬浮窗授权失败）时以通知兜底，锁屏可见
-        if (!overlayShown && mode != 3) {
-            notifier.showVerify(candidate)
+        if (!overlayShown) {
+            if (mode != 2) _requests.tryEmit(candidate)
+            if (mode != 3) notifier.showVerify(candidate)
         }
     }
 

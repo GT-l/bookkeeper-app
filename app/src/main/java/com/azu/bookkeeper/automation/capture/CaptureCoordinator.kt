@@ -118,15 +118,19 @@ class CaptureCoordinator @Inject constructor(
         val ruleHit = if (smsAccountId > 0L) baseRuleHit.copy(accountId = smsAccountId) else baseRuleHit
 
         // 5) 六因子置信度：文本源（读屏/通知/短信）OCR 因子取 1.0
+        // v1.3.0：页面识别明确为「支付成功页」时给 0.05 加成——读屏链路已用 className /
+        // 完成态文案确认了页面类型，比只看 OCR 六因子更可靠。加成不绕过 QA F-02 的
+        // 分类/账户硬约束，只让字段齐全的支付结果更容易自动入账。
         val textSource = isSms || event.imagePath.isBlank()
-        val score = confidence.calculate(
+        val screenBonus = if (event.screenType == PaymentScreen.SUCCESS.name) 0.05f else 0f
+        val score = (confidence.calculate(
             result = ocrResult,
             fields = fields,
             ruleHit = ruleHit,
             textSource = textSource,
             timeSource = timeSource,
             businessTag = event.businessTag
-        )
+        ) + screenBonus).coerceIn(0f, 1f)
 
         val candidate = CaptureCandidate(
             eventId = event.eventId,

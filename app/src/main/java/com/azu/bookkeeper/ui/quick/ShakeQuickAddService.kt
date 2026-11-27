@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.azu.bookkeeper.MainActivity
 import com.azu.bookkeeper.R
+import com.azu.bookkeeper.automation.verify.OverlayVerifyView
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.CaptureFailReason
@@ -254,7 +255,11 @@ class ShakeQuickAddService : Service() {
         }
     }
 
-    /** 疑似重复：把「已有那一笔」的时间与金额摆给用户看，点「仍然记账」才落库。 */
+    /**
+     * 疑似重复：v1.3.0 起改为**屏幕底部悬浮卡片**，不再 startActivity 把用户拽进软件界面。
+     * 「仍然记账」直接在后台落库，「修改」才打开表单（这是用户主动选择）。
+     * 没有悬浮窗权限时只发一条点击才打开的普通通知。
+     */
     private fun showDuplicateConfirm(
         capture: LightweightCapture,
         outcome: CaptureOutcome,
@@ -266,21 +271,22 @@ class ShakeQuickAddService : Service() {
         )
         val detail = "已有一笔：$whenText · ${Money.format(duplicate.amountFen)}" +
             if (duplicate.remark.isNotBlank()) " · ${duplicate.remark}" else ""
-        val launched = runCatching {
-            startActivity(
-                QuickConfirmActivity.intent(
-                    this,
-                    amount,
-                    outcome.merchant,
-                    outcome.confidence,
-                    goods = outcome.goods,
-                    duplicate = detail
-                )
+        val shown = runCatching {
+            entryPoint.overlayVerify().showConfirm(
+                title = "这笔好像记过了",
+                detail = "$detail\n本次：${Money.format(amount)} ${outcome.merchant}".trim(),
+                confirmLabel = "仍然记账",
+                editLabel = "修改",
+                onConfirm = { autoRecord(outcome, capture, amount) },
+                onEdit = { openCaptureForm(capture, amount, outcome.remark, "修改这笔账单") },
+                onDiscard = {
+                    com.azu.bookkeeper.core.CaptureLog.i(
+                        applicationContext, "CAPTURE", "用户忽略疑似重复 amount=$amount"
+                    )
+                }
             )
-        }.isSuccess
-        if (!launched) {
-            openCaptureForm(capture, amount, outcome.remark, "这笔可能记过了，请确认后再保存")
-        }
+        }.getOrDefault(false)
+        if (!shown) showConfirmFallbackNotification(amount, outcome, detail)
     }
 
     /** 高置信度直接落库；失败则退到小弹窗，绝不静默丢掉这笔。 */
@@ -320,17 +326,59 @@ class ShakeQuickAddService : Service() {
         }
     }
 
-    /** 轻确认弹窗：一枚小卡片，确认即记账，不用进表单。 */
+    /** 轻确认：v1.3.0 起同样走底部悬浮卡片，确认即记账，不进软件界面。 */
     private fun showQuickConfirm(capture: LightweightCapture, amount: Long, outcome: CaptureOutcome) {
-        val launched = runCatching {
-            startActivity(
-                QuickConfirmActivity.intent(
-                    this, amount, outcome.merchant, outcome.confidence, goods = outcome.goods
-                )
+        val shown = runCatching {
+            entryPoint.overlayVerify().showConfirm(
+                title = "识别到一笔支出",
+                detail = "${Money.format(amount)} ${outcome.merchant}".trim(),
+                confirmLabel = "记账",
+                editLabel = "修改",
+                onConfirm = { autoRecord(outcome, capture, amount) },
+                onEdit = { openCaptureForm(capture, amount, outcome.remark, "请确认金额") },
+                onDiscard = {
+                    com.azu.bookkeeper.core.CaptureLog.i(
+                        applicationContext, "CAPTURE", "用户忽略识屏结果 amount=$amount"
+                    )
+                }
             )
-        }.isSuccess
-        if (!launched) {
-            openCaptureForm(capture, amount, outcome.remark, "请确认金额")
+        }.getOrDefault(false)
+        if (!shown) showConfirmFallbackNotification(amount, outcome, "")
+    }
+
+    /** 无悬浮窗权限的兜底：只发普通通知，**点击才**打开确认页，绝不自动把 App 拉到前台。 */
+    private fun showConfirmFallbackNotification(
+        amount: Long,
+        outcome: CaptureOutcome,
+        duplicate: String
+    ) {
+        runCatching {
+            val intent = QuickConfirmActivity.intent(
+                this, amount, outcome.merchant, outcome.confidence,
+                goods = outcome.goods, duplicate = duplicate
+            )
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+            val pi = PendingIntent.getActivity(this, CONFIRM_NOTIFICATION_ID, intent, flags)
+            val channelId = Constants.CHANNEL_AUTO_CAPTURE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val manager = getSystemService(NotificationManager::class.java)
+                if (manager?.getNotificationChannel(channelId) == null) {
+                    manager?.createNotificationChannel(
+                        NotificationChannel(channelId, "自动记账", NotificationManager.IMPORTANCE_HIGH)
+                    )
+                }
+            }
+            val notification = NotificationCompat.Builder(this, channelId)
+                .setSmallIcon(R.drawable.ic_quick_add)
+                .setContentTitle(
+                    if (duplicate.isBlank()) "识别到一笔支出，点此确认" else "这笔可能记过了，点此确认"
+                )
+                .setContentText("${Money.format(amount)} ${outcome.merchant}".trim())
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .build()
+            NotifyGuard.safeNotify(this, CONFIRM_NOTIFICATION_ID, notification)
         }
     }
 
@@ -521,6 +569,8 @@ class ShakeQuickAddService : Service() {
         /** 金额+商户同时命中（confidence≥0.8）就认为可靠，不再打扰用户。 */
         private const val AUTO_RECORD_CONFIDENCE = 0.8f
         private const val NOTIFICATION_ID = 1020
+        /** 底部悬浮卡片不可用时的「点击才打开」兜底通知。 */
+        private const val CONFIRM_NOTIFICATION_ID = 1021
         private const val ONGOING_CHANNEL_ID = "shake_ongoing"
         private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
         /** 识屏链路的解锁兜底时间：识屏正常 25s 内必回调。 */
@@ -580,4 +630,5 @@ interface ShakeActionEntryPoint {
     fun lightweightCapture(): LightweightCapture
     fun captureProgress(): CaptureProgressNotifier
     fun autoRecord(): com.azu.bookkeeper.domain.usecase.bill.AutoRecordUseCase
+    fun overlayVerify(): OverlayVerifyView
 }

@@ -16,6 +16,8 @@ import androidx.core.app.NotificationCompat
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.capture.AccessibilityCaptureParser
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
+import com.azu.bookkeeper.automation.capture.PaymentScreen
+import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
 import com.azu.bookkeeper.automation.classify.BusinessTag
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
 import com.azu.bookkeeper.core.Constants
@@ -75,8 +77,11 @@ class PaymentAccessibilityService : AccessibilityService() {
         )
     }
 
-    private var lastEventAt = 0L
-    private var lastPackage = ""
+    // v1.3.0：旧的两个去抖状态会「先占位」吞掉结果页事件，已移除。
+    // 改为「成功页内容指纹 5s 冷却」+「付款界面识别日志 5s 节流」。
+    private var lastEntryAt = 0L
+    private var lastSuccessFingerprint = 0L
+    private var lastSuccessAt = 0L
 
     // ---- 手势相关状态 ----
     private var fingerprintController: FingerprintGestureController? = null
@@ -154,50 +159,160 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 主线程只做轻量过滤（包名 / 去抖 / 取根节点），节点树深度遍历全部放到 IO。
+     * v1.3.0 识屏主链路重写。
      *
-     * 为什么必须这样：onAccessibilityEvent 跑在主线程，支付页/账单页节点树很大，
-     * collectText 递归遍历可能耗时数百毫秒；连续事件叠加会让主线程卡住，
-     * 系统判定 ANR 后直接杀掉服务，OrangeOS/ColorOS 就表现为「开完无障碍没一会儿自动关掉」。
+     * 修掉的三个真凶：
+     * 1. 旧 1.5s 去抖「解析前先占位」，第一个中间态事件吃掉窗口，真正的结果页事件被直接丢弃
+     *    ——微信支付流程事件密集，这是「微信所有付款界面都识别失败」的主因；
+     * 2. `event.source` 常只是发生变化的局部子树，不是整页；节点还被带到 IO 线程遍历，可能已失效；
+     * 3. 完全不看 className / 页面类型，认不出「用户打开了付款界面」。
+     *
+     * 现在：主线程读多根节点 → 纯文本快照 → 页面识别 → 付款界面只记录、成功页才提交；
+     * 失败不再占用去抖窗口；微信空根节点做 3 次有界重读。
      */
     private fun dispatchEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        val packageName = runCatching { event.packageName?.toString().orEmpty() }.getOrDefault("")
-        if (packageName !in Constants.PAYMENT_PACKAGES) return
+        val rawPackage = runCatching { event.packageName?.toString().orEmpty() }.getOrDefault("")
+        if (!PaymentScreenRecognizer.isPaymentPackage(rawPackage)) return
+        val packageName = PaymentScreenRecognizer.normalizePackage(rawPackage)
+        val className = runCatching { event.className?.toString().orEmpty() }.getOrDefault("")
 
-        val now = System.currentTimeMillis()
-        if (packageName == lastPackage && now - lastEventAt < Constants.CAPTURE_DEBOUNCE_MS) return
-
-        val root = runCatching { event.source ?: rootInActiveWindow }.getOrNull() ?: return
         val parser = runCatching { deps.parser() }.getOrNull() ?: return
-        val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
+        val text = readScreenText(parser, event)
+        val recognition = PaymentScreenRecognizer.classify(packageName, className, text)
 
-        // 先占位去抖，避免连续事件把任务队列塞满
-        lastEventAt = now
-        lastPackage = packageName
-
-        scope.launch {
-            runCatching { withContext(dispatcher) { parseAndCapture(packageName, now, root, parser, dispatcher) } }
-                .onFailure { t ->
-                    timber.log.Timber.w(t, "accessibility parse failed (service kept alive)")
-                    runCatching {
-                        com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "读屏解析失败", t)
-                    }
+        when (recognition.screen) {
+            PaymentScreen.ENTRY -> {
+                val now = System.currentTimeMillis()
+                if (now - lastEntryAt > ENTRY_LOG_INTERVAL_MS) {
+                    lastEntryAt = now
+                    com.azu.bookkeeper.core.CaptureLog.forceInfo(
+                        applicationContext, "SCREEN",
+                        "识别到付款界面 pkg=$packageName cls=$className reason=${recognition.reason}"
+                    )
                 }
+                return
+            }
+            PaymentScreen.DETAIL -> return
+            PaymentScreen.UNKNOWN -> {
+                // 微信支付成功页有时只返回空根节点：类名像结果页时安排有界重读
+                if (className.isNotBlank() && PaymentScreenRecognizer.looksLikeResultClass(className)) {
+                    scheduleResultRetry(parser, packageName, className, 1)
+                }
+                return
+            }
+            PaymentScreen.SUCCESS -> Unit
+        }
+        submitCapture(parser, packageName, className, recognition, refine(packageName, text))
+    }
+
+    /** 主线程读节点：事件 source + 活动窗口 + 多窗口，全部转成纯文本，绝不把节点带到 IO 线程。 */
+    private fun readScreenText(
+        parser: AccessibilityCaptureParser,
+        event: AccessibilityEvent
+    ): String = runCatching {
+        val sb = StringBuilder()
+        val roots = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+        val source = runCatching { event.source }.getOrNull()
+        if (source != null) roots.add(source)
+        val activeRoot = runCatching { rootInActiveWindow }.getOrNull()
+        if (activeRoot != null) roots.add(activeRoot)
+        val windowList = runCatching { getWindows() }.getOrNull().orEmpty()
+        for (w in windowList) {
+            val node = runCatching { w.root }.getOrNull()
+            if (node != null) roots.add(node)
+        }
+        roots.take(4).forEach { r -> sb.append(parser.collectText(r)) }
+        sb.toString().take(MAX_SCREEN_TEXT)
+    }.getOrDefault("")
+
+    /** 微信结果页把金额/商户补成带标签的行，让 FieldExtractor 能命中。 */
+    private fun refine(packageName: String, text: String): String =
+        if (packageName == PaymentScreenRecognizer.WECHAT) {
+            PaymentScreenRecognizer.refineWeChatText(text)
+        } else text
+
+    /** 成功页提交：内容指纹 5s 冷却；解析失败不再吞窗口。 */
+    private fun submitCapture(
+        parser: AccessibilityCaptureParser,
+        packageName: String,
+        className: String,
+        recognition: PaymentScreenRecognizer.Recognition,
+        text: String
+    ) {
+        if (text.isBlank()) return
+        val now = System.currentTimeMillis()
+        val fingerprint = (packageName + text).hashCode().toLong()
+        if (fingerprint == lastSuccessFingerprint && now - lastSuccessAt < SUCCESS_DEDUP_MS) return
+        lastSuccessFingerprint = fingerprint
+        lastSuccessAt = now
+        val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
+        com.azu.bookkeeper.core.CaptureLog.forceInfo(
+            applicationContext, "SCREEN",
+            "支付结果页 pkg=$packageName cls=$className len=${text.length} reason=${recognition.reason}"
+        )
+        scope.launch {
+            runCatching {
+                withContext(dispatcher) {
+                    parseAndCapture(packageName, recognition, text, now, parser, dispatcher)
+                }
+            }.onFailure { t ->
+                timber.log.Timber.w(t, "accessibility parse failed (service kept alive)")
+                runCatching {
+                    com.azu.bookkeeper.core.CaptureLog.w(applicationContext, "A11Y", "读屏解析失败", t)
+                }
+            }
         }
     }
 
-    /** IO 线程执行：文本采集 → 完成态判断 → 打标 → 交协调器落库。 */
+    /** 微信空根节点有界重读：150 / 350 / 650ms，最多 3 次，用主线程 Handler 不阻塞回调。 */
+    private fun scheduleResultRetry(
+        parser: AccessibilityCaptureParser,
+        packageName: String,
+        className: String,
+        attempt: Int
+    ) {
+        if (attempt > MAX_RETRY) return
+        val delayMs = when (attempt) { 1 -> 150L; 2 -> 350L; else -> 650L }
+        mainHandler.postDelayed({
+            if (instance !== this) return@postDelayed
+            runCatching {
+                val text = readActiveWindowText(parser)
+                val recognition = PaymentScreenRecognizer.classify(packageName, className, text)
+                com.azu.bookkeeper.core.CaptureLog.forceInfo(
+                    applicationContext, "SCREEN",
+                    "结果页重读 #$attempt len=${text.length} screen=${recognition.screen} reason=${recognition.reason}"
+                )
+                if (recognition.screen == PaymentScreen.SUCCESS && text.isNotBlank()) {
+                    submitCapture(parser, packageName, className, recognition, refine(packageName, text))
+                } else if (attempt < MAX_RETRY) {
+                    scheduleResultRetry(parser, packageName, className, attempt + 1)
+                }
+            }
+        }, delayMs)
+    }
+
+    private fun readActiveWindowText(parser: AccessibilityCaptureParser): String = runCatching {
+        val sb = StringBuilder()
+        val activeRoot = runCatching { rootInActiveWindow }.getOrNull()
+        if (activeRoot != null) sb.append(parser.collectText(activeRoot))
+        val windowList = runCatching { getWindows() }.getOrNull().orEmpty()
+        for (w in windowList) {
+            val node = runCatching { w.root }.getOrNull()
+            if (node != null) sb.append(parser.collectText(node))
+        }
+        sb.toString().take(MAX_SCREEN_TEXT)
+    }.getOrDefault("")
+
+    /** IO 线程：文本已是纯快照，只做打标 → 构造事件 → 交协调器。 */
     private suspend fun parseAndCapture(
         packageName: String,
+        recognition: PaymentScreenRecognizer.Recognition,
+        text: String,
         eventTime: Long,
-        root: android.view.accessibility.AccessibilityNodeInfo,
         parser: AccessibilityCaptureParser,
         dispatcher: kotlinx.coroutines.CoroutineDispatcher
     ) {
-        val text = parser.collectText(root)
-        if (text.isBlank() || !parser.isPaymentComplete(text)) return
-
         val eventId = generateEventId(packageName, text)
         val tagger = runCatching { deps.tagger() }.getOrNull()
         val businessTag: BusinessTag = tagger?.let { runCatching { it.tag(packageName, text) }.getOrNull() }
@@ -207,7 +322,8 @@ class PaymentAccessibilityService : AccessibilityService() {
             packageName = packageName,
             text = text,
             eventTime = eventTime,
-            businessTag = businessTag
+            businessTag = businessTag,
+            screen = recognition.screen
         )
         val coordinator = runCatching { deps.coordinator() }.getOrNull() ?: return
         withContext(dispatcher) { coordinator.onCapture(captureEvent) }
@@ -335,6 +451,11 @@ class PaymentAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "BookkeeperA11y"
         private const val GESTURE_COOLDOWN_MS = 2_500L
+        /** v1.3.0 识屏：成功页内容指纹冷却、付款界面日志节流、空节点重读次数、文本上限。 */
+        private const val SUCCESS_DEDUP_MS = 5_000L
+        private const val ENTRY_LOG_INTERVAL_MS = 5_000L
+        private const val MAX_RETRY = 3
+        private const val MAX_SCREEN_TEXT = 6000
         const val PREFS = "accessibility_service_status"
         const val KEY_LAST_CONNECTED = "last_connected_at"
         const val KEY_LAST_DISCONNECTED = "last_disconnected_at"

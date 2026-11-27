@@ -2,28 +2,25 @@
 
 **纯本地、不联网的个人记账应用。** 手动记 / 自动识别 / 一键补记三条路都能进账，数据用 SQLCipher 加密后只存在这台手机上。
 
-当前版本 **v1.2.3**（versionCode 6，Debug APK，Android 8.0+）
+当前版本 **v1.3.0**（versionCode 7，Debug APK，Android 8.0+）
 
 ---
 
-## 这一版（v1.2.3）改了什么
+## 这一版（v1.3.0）改了什么
 
-第二轮真机日志（vivo V2505A / Android 17 API 37）给了决定性证据：**连接 6 次、被撤销 4 次，但 pid 始终 23522、进程已运行 3.4 分钟**——进程根本没被杀。安装来源 `com.android.packageinstaller` 是手动装 APK 的侧载。
+聚焦「识屏准确度 + 自动化」。参考咔皮记账的识别场景分层、花有谱 / 慧铭的微信支付成功页适配、BillRecord 的多层文本提取与悬浮确认卡片，重做识屏主链路。
 
-- **纠正排查方向**：v1.2.2 把后台保活 / 电池白名单放在第一位是错的。进程没死时这些设置无效；现在诊断直接写明「pid 稳定，不要再往保活方向排查」。
-- **修好侧载识别**：`com.android.packageinstaller` 过去被当成正常安装来源，结论因此漏了「允许受限设置」。现在把 Android 13+ 受限设置与 Android 17 高级保护模式列为首要嫌疑。
-- **给确定性解法**：新增 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)（`status` / `unlock` / `check`），用 adb 一次性解除受限设置，无需 root；完整命令也写进 App 内「复制稳定运行说明」，手机上就能复制。
-- **服务声明最小权限化**：移除 `packageNames`（原样列出微信 / 支付宝 / 银行包名，最易触发支付风控；事件过滤本来就在代码里做）与 `canTakeScreenshot`（默认关闭的实验通道，兜底还有媒体投影 / OCR）。读节点主链路与指纹手势不受影响，`canCaptureScreen()` 返回 false 属预期。
-- **诊断与自检**：报告新增「进程 pid 是否稳定」「安装来源（侧载）」；自检页不再把无截屏能力误报成故障。
+- **新增支付页面识别**：`PaymentScreenRecognizer`（纯 Kotlin、13 项单测）用 Activity 类名 + 分平台文案区分「付款界面 / 收银台 / 支付成功页 / 账单详情」，打开付款界面就能识别，不再只有支付完成才响应。
+- **修好微信全部识别失败**：旧 1.5 秒去抖在解析前占位，第一个中间态事件吃掉窗口、真正的结果页事件被丢弃；改为「成功页内容指纹 5 秒冷却」，失败不占窗口。节点改为活动窗口 + 多窗口一起读，且在主线程转成纯文本，不再跨线程遍历。
+- **微信空根节点有界重读**：部分微信成功页只返回空根节点，用 className 强信号做 3 次重读（150/350/650ms）。
+- **微信文案与结构化**：扩展「已完成 / 微信支付 / 已存入对方零钱」等词表；把结果页金额、商户补成 `金额：` / `商户：` 标签行让抽取器命中；`com.tencent.mm:tools` 等子进程包名归一化后也能命中白名单。
+- **通知路补字段**：除 title / text 外追加 bigText / subText / infoText / ticker，微信把金额放在 bigText 时不再漏掉。
+- **重复弹窗改底部卡片**：疑似重复、中低置信度确认不再拉起软件界面，改为屏幕底部悬浮卡片（仍然记账 / 修改 / 忽略）；无悬浮窗权限时降级为点击才打开的普通通知。校对链同样优先底部卡片。
+- **自动化提升**：明确支付成功页给置信度 +0.05（不绕过分类 / 账户硬约束），字段齐全的结果更容易自动入账。
 
-### 装上后先做两步
+### 上一版（v1.2.3 / v1.2.2）已有
 
-1. 设置 → 安全 → 高级保护模式：确认关闭。
-2. 设置 → 应用管理 → 少花点儿 → 右上角 ⋮ → 允许受限设置；找不到菜单就执行上面的 ADB 命令。
-
-### 上一版（v1.2.2 / v1.2.1）已有
-
-诊断自动判因与完整日志时间线、vivo / OriginOS 保活引导可见性、无障碍健康检查弹窗与一键复制 log、固定调试签名（覆盖安装）。
+侧载受限设置判因、ADB 一键解锁、无障碍最小权限声明；诊断自动判因与完整日志时间线、vivo / OriginOS 引导可见性。
 
 ### 更早（v1.2.0 / v1.1.0）仍在
 
@@ -54,7 +51,7 @@ adb install -r bookkeeper-debug.apk
 
 每次 push 到 `main`，GitHub Actions 会自动构建、跑单元测试，并把 APK 更新到对应的 Release。
 
-> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.2.3）可直接覆盖安装。
+> 签名说明：v1.2.1 起 CI 使用仓库内固定 debug 密钥（`keystore/bookkeeper-debug.p12`，仅用于调试，不能上架）。若你还停在更早的版本（每次 CI 重新生成 debug 签名），升级时系统仍会报签名不一致，**需要先卸载旧包一次**；从 v1.2.1 起的所有后续版本（含 v1.3.0）可直接覆盖安装。
 
 ## 技术栈
 
@@ -62,7 +59,7 @@ Kotlin + Jetpack Compose（Material3 / Navigation）、MVVM + UseCase + Reposito
 
 构建环境：JDK 17、Android SDK Platform 35、Gradle 8.9。
 
-v1.2.3 的测试记录见 [`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)；静态一致性测试可执行 `python3 scripts/verify_v1_2_3.py`。ADB 一键解除受限设置见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)。历史记录见 [`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
+v1.3.0 的测试记录见 [`docs/testing/v1.3.0/`](docs/testing/v1.3.0/)；静态一致性测试可执行 `python3 scripts/verify_v1_3_0.py`。ADB 一键解除受限设置见 [`scripts/android_unlock_accessibility.sh`](scripts/android_unlock_accessibility.sh)。历史记录见 [`docs/testing/v1.2.3/`](docs/testing/v1.2.3/)、[`docs/testing/v1.2.2/`](docs/testing/v1.2.2/)、[`docs/testing/v1.2.1/`](docs/testing/v1.2.1/)、[`docs/testing/v1.2.0/`](docs/testing/v1.2.0/) 与 [`docs/testing/v1.1.0/`](docs/testing/v1.1.0/)。
 
 ```bash
 ./gradlew assembleDebug        # 构建

@@ -66,4 +66,4 @@
 
 ## 六、CI 结论
 
-见 `TEST_REPORT.md`「CI 结论」小节（构建完成后回填）。
+run `45949901851`（提交 `52c341f`）`completed success`：静态一致性 133 项、`assembleDebug`、单测 `T157-F0-E0-S0`（157 例全过，含新增 13 项页面识别单测）、Release `v1.3.0-debug` 均成功。详见 `TEST_REPORT.md`「CI 结论」。

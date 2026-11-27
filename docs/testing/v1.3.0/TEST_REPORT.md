@@ -19,7 +19,7 @@
 | --- | --- |
 | 静态一致性测试 | **133 / 133 通过**（`scripts/verify_v1_3_0.py`，14 项本轮新增断言 + 括号配平） |
 | 新增 JVM 单测 | `PaymentScreenRecognizerTest` 13 项（纯 Kotlin，不依赖 Android） |
-| CI `assembleDebug` / `testDebugUnitTest` | 待本轮 CI 回填 |
+| CI `assembleDebug` / `testDebugUnitTest` | **Success**：run `45949901851`（提交 `52c341f`，3m50s）；单测 `T157-F0-E0-S0`，157 例全过（含本轮新增 13 项） |
 | 真机 TC-01~TC-12 | 需用户按 `TEST_CASES.md` 执行；本机无 Android SDK / JDK / 模拟器 |
 
 ## 三、改动清单
@@ -48,7 +48,8 @@
 
 ## 五、CI 结论
 
-> 待本轮 GitHub Actions 完成后填入：run ID、结论、单测统计、artifact 名与 Release tag。
-
-- 编译与单测以本轮 GitHub Actions 为准；拿到绿色结论前不宣称发布成功。
-- 真机 TC-01~TC-12 未执行项保持「待确认」，不记通过。
+- **run**：`45949901851`，提交 `52c341f`，2026-11-27 06:07:59Z → 06:11:49Z，`completed success`。
+- **步骤**：`Static consistency tests (v1.3.0)` / `Build debug APK` / `Run unit tests` / `Create GitHub Release with APK` 全部 Success；`Summarize build errors` 按预期 skipped（构建成功，无需错误摘要）。
+- **单测**：`T157-F0-E0-S0`（157 例，0 失败 / 0 错误 / 0 跳过）；本轮新增 13 项 `PaymentScreenRecognizerTest` 全部通过。
+- **产物**：artifact `bookkeeper-debug-apk`（55,340,196 字节，压缩后）、`unit-test-reports-T157-F0-E0-S0`；Release `v1.3.0-debug`「少花点儿 v1.3.0 (Debug APK)」已附 `bookkeeper-debug.apk`（92,477,868 字节），下载链接返回 HTTP 200。
+- 真机 TC-01~TC-12 未执行项仍为「待确认」，不记通过；CI 绿色只证明编译与单测通过，**不证明微信各付款场景已被真实覆盖**。

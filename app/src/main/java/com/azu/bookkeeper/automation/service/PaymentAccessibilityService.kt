@@ -84,6 +84,14 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var lastSuccessFingerprint = 0L
     private var lastSuccessAt = 0L
 
+    // v1.3.4：同一轮支付只提交一次。
+    // 成功页文字是逐步加载的（先「支付成功」，再金额、商户），
+    // 而 scheduleResultRetry 的多条重试链并行，每次读到的文本完整度不同 →
+    // 内容指纹每次都不一样，旧 5s 指纹冷却完全拦不住 → 同一笔支付被提交 2~4 次 →
+    // 后几次命中去重，弹「这笔已记过」，看起来就是「识屏快速触发误判重复」。
+    // 现在：成功页提交后按包名进入静默期；再次进入付款界面（ENTRY）视为新一轮支付，解除静默。
+    private val settledPackages = mutableMapOf<String, Long>()
+
     // ---- 手势相关状态 ----
     private var fingerprintController: FingerprintGestureController? = null
     private var fingerprintCallback: FingerprintGestureController.FingerprintGestureCallback? = null
@@ -185,6 +193,8 @@ class PaymentAccessibilityService : AccessibilityService() {
 
         when (recognition.screen) {
             PaymentScreen.ENTRY -> {
+                // 重新进入收银台 = 新一轮支付，解除上一轮成功页的静默锁
+                settledPackages.remove(packageName)
                 logScreenThrottled(
                     "付款界面 pkg=$packageName cls=$className reason=${recognition.reason} " +
                         "len=${text.length} sparse=$sparse preview=${ScreenTextCollector.preview(text)}"
@@ -269,8 +279,17 @@ class PaymentAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         val fingerprint = (packageName + text).hashCode().toLong()
         if (fingerprint == lastSuccessFingerprint && now - lastSuccessAt < SUCCESS_DEDUP_MS) return
+        // v1.3.4 核心：同一轮支付成功后，本包名进入静默期。期间成功页/详情页的
+        // 所有重试链、事件潮一律不再提交，从源头消灭「同一笔被提交多次 → 命中去重弹重复」。
+        // 用户再次进入付款界面（ENTRY）会解除静默，下一笔照常识别。
+        val settledAt = settledPackages[packageName] ?: 0L
+        if (settledAt > 0L && now - settledAt < SETTLED_QUIET_MS) {
+            logScreenThrottled("支付静默期跳过 pkg=$packageName 距上次提交=${now - settledAt}ms")
+            return
+        }
         lastSuccessFingerprint = fingerprint
         lastSuccessAt = now
+        settledPackages[packageName] = now
         val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
         com.azu.bookkeeper.core.CaptureLog.forceInfo(
             applicationContext, "SCREEN",
@@ -482,6 +501,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         private const val GESTURE_COOLDOWN_MS = 2_500L
         /** v1.3.0 识屏：成功页内容指纹冷却、付款界面日志节流、空节点重读次数、文本上限。 */
         private const val SUCCESS_DEDUP_MS = 5_000L
+        /** v1.3.4：同一轮支付成功后同包名的静默时长；再次进入收银台（ENTRY）会提前解除。 */
+        private const val SETTLED_QUIET_MS = 12_000L
         private const val ENTRY_LOG_INTERVAL_MS = 5_000L
         private const val MAX_RETRY = 3
         private const val MAX_SCREEN_TEXT = 6000

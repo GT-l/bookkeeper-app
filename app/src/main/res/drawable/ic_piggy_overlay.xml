@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  与 App 主题图标同款的小猪存钱罐（奶油风 / 草莓粉 / 深棕描边）。
+  用于识屏轻卡片：记账成功、重复跳过、待确认时给一个统一的 IP 形象。
+  纯 vector，无位图依赖，任意密度清晰。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+
+    <!-- 身体 -->
+    <path
+        android:fillColor="#FFF0F4"
+        android:strokeColor="#6E514C"
+        android:strokeWidth="2.6"
+        android:pathData="M9,42 a23,16 0 1,1 46,0 a23,16 0 1,1 -46,0 z" />
+    <!-- 耳朵 -->
+    <path
+        android:fillColor="#FFF0F4"
+        android:strokeColor="#6E514C"
+        android:strokeWidth="2.6"
+        android:strokeLineJoin="round"
+        android:pathData="M16,29 l1,-9 l8,4 z" />
+    <!-- 投币口 -->
+    <path
+        android:fillColor="#6E514C"
+        android:pathData="M28,29 h8 a1.4,1.4 0 0,1 0,2.8 h-8 a1.4,1.4 0 0,1 0,-2.8 z" />
+    <!-- 眼睛 -->
+    <path
+        android:fillColor="#6E514C"
+        android:pathData="M22,39 a1.9,1.9 0 1,1 0,3.8 a1.9,1.9 0 1,1 0,-3.8 z" />
+    <path
+        android:fillColor="#6E514C"
+        android:pathData="M42,39 a1.9,1.9 0 1,1 0,3.8 a1.9,1.9 0 1,1 0,-3.8 z" />
+    <!-- 鼻子 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#6E514C"
+        android:strokeWidth="2.4"
+        android:pathData="M30,43 a4.5,3.4 0 1,1 9,0 a4.5,3.4 0 1,1 -9,0 z" />
+    <path
+        android:fillColor="#C74372"
+        android:pathData="M31.5,43 a1,0.9 0 1,1 0,1.8 a1,0.9 0 1,1 0,-1.8 z" />
+    <path
+        android:fillColor="#C74372"
+        android:pathData="M37,43 a1,0.9 0 1,1 0,1.8 a1,0.9 0 1,1 0,-1.8 z" />
+    <!-- 腮红 -->
+    <path
+        android:fillColor="#FFC2D2"
+        android:pathData="M16,44 a2.4,2.4 0 1,1 0,4.8 a2.4,2.4 0 1,1 0,-4.8 z" />
+    <path
+        android:fillColor="#FFC2D2"
+        android:pathData="M48,44 a2.4,2.4 0 1,1 0,4.8 a2.4,2.4 0 1,1 0,-4.8 z" />
+    <!-- 金币 -->
+    <path
+        android:fillColor="#F6C36A"
+        android:strokeColor="#6E514C"
+        android:strokeWidth="2.4"
+        android:pathData="M32,6 a7,7 0 1,1 0,14 a7,7 0 1,1 0,-14 z" />
+    <path
+        android:fillColor="#6E514C"
+        android:pathData="M29,13 h6 v1.8 h-6 z" />
+</vector>

@@ -90,6 +90,14 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
+                            version = "v1.3.4 · 识屏静默与奶油风弹窗",
+                            items = listOf(
+                                "修复：同一轮支付快速触发只提交一次，不再误弹「已记过」重复提醒",
+                                "更新：识屏弹窗改为奶油风，配小猪存钱罐IP与暖心短句",
+                                "沿用：v1.3.3 下载失败可见具体原因，可浏览器下载或选本地APK"
+                            )
+                        )
+                        ChangelogRow(
                             version = "v1.3.3 · 更新下载排障",
                             items = listOf(
                                 "修复：下载失败不再只提示「请检查网络」，会显示具体 HTTP 码与卡住的域名",

@@ -3,6 +3,7 @@ package com.azu.bookkeeper.automation.verify
 import com.azu.bookkeeper.automation.dedup.DuplicateDetector
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.Money
+import com.azu.bookkeeper.core.normalizeRemark
 import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.data.local.db.dao.CaptureDao
 import com.azu.bookkeeper.data.local.file.EncryptedFileDataSource
@@ -67,6 +68,9 @@ class VerificationController @Inject constructor(
     /** 已发出补记请求但尚未写库的事件：期间跳过重复提醒，避免用户填表时再被弹窗打断。 */
     private val pendingQuickEventIds = ConcurrentHashMap.newKeySet<Long>()
 
+    /** v1.3.4：同一笔（金额+备注）重复提醒的节流时间戳，防止事件潮连续弹多张卡片。 */
+    private val lastDuplicateNoticeAt = ConcurrentHashMap<String, Long>()
+
     /**
      * 低置信度弹窗「一键补记」：带已知预填字段与来源事件 ID 发出统一契约。
      * 事件终态仍由 QuickCaptureUseCase 在保存时的单一事务内置 USER_CORRECTED。
@@ -125,12 +129,21 @@ class VerificationController @Inject constructor(
         runCatching { overlay.showSuccess(amountFen, remark) }
     }
 
-    /** 确定重复已跳过：轻卡片提示，明确告诉用户「不是没识别到，是已经有同一笔」。 */
+    /** 确定重复已跳过：轻卡片提示；同一笔 8 秒内只提醒一次，避免事件潮连续弹。 */
     fun notifyDuplicated(amountFen: Long, remark: String) {
+        val key = "$amountFen|${remark.normalizeRemark()}"
+        val now = System.currentTimeMillis()
+        val last = lastDuplicateNoticeAt[key] ?: 0L
+        if (now - last < DUPLICATE_NOTICE_COOLDOWN_MS) return
+        lastDuplicateNoticeAt[key] = now
+        if (lastDuplicateNoticeAt.size > 200) {
+            lastDuplicateNoticeAt.entries.removeIf { now - it.value > DUPLICATE_NOTICE_COOLDOWN_MS }
+        }
         runCatching {
             overlay.showInfo(
-                title = "这笔已记过，已跳过",
+                title = "这笔已记过，先跳过啦",
                 detail = "${Money.format(amountFen)} ${remark}".trim(),
+                note = "避免重复记账，放心～",
                 autoDismissMs = 3_200L
             )
         }
@@ -295,5 +308,6 @@ class VerificationController @Inject constructor(
 
     private companion object {
         const val MAX_RAW_TEXT_LENGTH = 2000
+        const val DUPLICATE_NOTICE_COOLDOWN_MS = 8_000L
     }
 }

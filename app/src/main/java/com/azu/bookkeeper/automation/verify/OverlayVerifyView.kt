@@ -3,6 +3,7 @@ package com.azu.bookkeeper.automation.verify
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
@@ -10,20 +11,19 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import androidx.compose.ui.graphics.toArgb
+import com.azu.bookkeeper.R
+import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import com.azu.bookkeeper.core.Money
 import com.azu.bookkeeper.domain.model.CaptureCandidate
 import com.azu.bookkeeper.ui.theme.DarkOnSurface
 import com.azu.bookkeeper.ui.theme.DarkOutline
-import com.azu.bookkeeper.ui.theme.DarkPrimaryContainer
 import com.azu.bookkeeper.ui.theme.DarkSurface
 import com.azu.bookkeeper.ui.theme.LightOnSurface
 import com.azu.bookkeeper.ui.theme.LightOutline
-import com.azu.bookkeeper.ui.theme.LightSurface
-import com.azu.bookkeeper.ui.theme.PinkContainer
 import com.azu.bookkeeper.ui.theme.Primary
 import com.azu.bookkeeper.ui.theme.PrimaryDark
 import com.azu.bookkeeper.ui.theme.PrimaryLight
@@ -34,17 +34,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 屏幕底部轻卡片（v1.3.1）：**所有识屏反馈的唯一出口**。
+ * 屏幕底部轻卡片（v1.3.4 奶油风重做）：**所有识屏反馈的唯一出口**。
  *
  * 三种形态：
- * 1. [showSuccess]  高置信度已自动入账 → 「✓ 记账成功 · ¥xx 商户」，3 秒自动消失，无按钮；
+ * 1. [showSuccess]  高置信度已自动入账 → 「记下啦 · ¥xx」+ 暖心短句，3 秒自动消失；
  * 2. [showInfo]     确定重复已跳过等纯提示 → 3 秒自动消失，无按钮；
- * 3. [showConfirm]  低置信度 / 疑似重复 → 「仍然记账 / 修改 / 忽略」，12 秒自动忽略。
+ * 3. [showConfirm]  低置信度 / 疑似重复 → 「要记下这一笔吗？」+ 记一笔 / 忽略，12 秒自动忽略。
  *
- * 关键修复（v1.3.1）：
- * - 优先用 `TYPE_ACCESSIBILITY_OVERLAY`：无障碍服务绑定的窗口**不需要 SYSTEM_ALERT_WINDOW 权限**，
- *   过去没授予悬浮窗权限就返回 false → 调用方降级发通知栏，这是「重复提醒变成通知」的根因；
- * - 所有 addView / removeView 切主线程（过去从 IO 线程直接操作 WindowManager，失败即降级）；
+ * v1.3.4 视觉：仿咔皮记账的治愈奶油风——奶油白底、大圆角、同款小猪存钱罐 IP 形象、
+ * 草莓粉金额、胶囊按钮。关键约束不变：
+ * - 优先 `TYPE_ACCESSIBILITY_OVERLAY`：无障碍服务绑定的窗口**不需要悬浮窗权限**；
+ * - 所有 addView / removeView 切主线程；
  * - 自动消失，不再常驻遮挡，也不再拉起 Activity / 前台 Dialog。
  */
 @Singleton
@@ -72,32 +72,39 @@ class OverlayVerifyView @Inject constructor(
     /** 校对链原有入口：低置信度候选的底部确认卡片。 */
     fun show(candidate: CaptureCandidate, onConfirm: () -> Unit, onDiscard: () -> Unit): Boolean =
         showConfirm(
-            title = "识别到一笔支出，请确认",
+            title = "要记下这一笔吗？",
             detail = "${candidate.amountFen?.let { Money.format(it) }.orEmpty()} ${candidate.merchant}".trim(),
             confirmLabel = "记一笔",
             editLabel = null,
             onConfirm = onConfirm,
-            onDiscard = onDiscard
+            onDiscard = onDiscard,
+            note = "点一下就记好啦"
         )
 
     /** 自动入账成功：轻提示，不询问、不需要点击，3 秒消失。 */
     fun showSuccess(amountFen: Long, remark: String): Boolean = showInfo(
-        title = "✓ 已自动记账 ${Money.format(amountFen)}",
+        title = "记下啦 ${Money.format(amountFen)}",
         detail = remark.ifBlank { "账单已存入账本" },
+        note = "今天也有认真记账哦～",
         autoDismissMs = SUCCESS_VISIBLE_MS
     )
 
     /** 纯提示（已跳过重复、已忽略等）：3 秒消失。 */
-    fun showInfo(title: String, detail: String, autoDismissMs: Long = INFO_VISIBLE_MS): Boolean =
-        showConfirm(
-            title = title,
-            detail = detail,
-            confirmLabel = "",   // 空标签 → 不生成任何操作按钮
-            editLabel = null,
-            onConfirm = {},
-            onDiscard = {},
-            autoDismissMs = autoDismissMs
-        )
+    fun showInfo(
+        title: String,
+        detail: String,
+        note: String = "稍等就好啦",
+        autoDismissMs: Long = INFO_VISIBLE_MS
+    ): Boolean = showConfirm(
+        title = title,
+        detail = detail,
+        note = note,
+        confirmLabel = "",   // 空标签 → 不生成任何操作按钮
+        editLabel = null,
+        onConfirm = {},
+        onDiscard = {},
+        autoDismissMs = autoDismissMs
+    )
 
     /** 通用底部卡片；[confirmLabel] 为空时纯展示。 */
     fun showConfirm(
@@ -108,6 +115,7 @@ class OverlayVerifyView @Inject constructor(
         onConfirm: () -> Unit,
         onEdit: () -> Unit = {},
         onDiscard: () -> Unit = {},
+        note: String = "",
         autoDismissMs: Long = CONFIRM_VISIBLE_MS
     ): Boolean {
         if (!canShow()) return false
@@ -120,13 +128,15 @@ class OverlayVerifyView @Inject constructor(
                 val density = host.resources.displayMetrics.density
                 val dp = { value: Int -> (value * density).toInt() }
                 val dark = isDark(host)
-                val cardBg = (if (dark) DarkSurface else LightSurface).toArgb()
+                // 奶油风：浅色用接近奶白的 #FFF9F5，深色保留深紫灰，确保对比度
+                val cardBg = if (dark) DarkSurface.toArgb() else Color.rgb(0xFF, 0xF9, 0xF5)
                 val textColor = (if (dark) DarkOnSurface else LightOnSurface).toArgb()
                 val accent = (if (dark) PrimaryLight else Primary).toArgb()
-                val chipBg = (if (dark) DarkPrimaryContainer else PinkContainer).toArgb()
+                val amountColor = (if (dark) PrimaryLight else PrimaryDark).toArgb()
                 val border = (if (dark) DarkOutline else LightOutline).toArgb()
+                val noteColor = if (dark) Color.rgb(0xB8, 0xAE, 0xC4) else Color.rgb(0x9A, 0x86, 0x90)
 
-                // 外层只负责左右留白，真正卡片是里面的圆角容器 —— 与 App 内的 SoftCard 一致
+                // 外层只负责左右留白，真正卡片是里面的大圆角奶油容器
                 val container = LinearLayout(host).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(12), 0, dp(12), dp(8))
@@ -137,57 +147,68 @@ class OverlayVerifyView @Inject constructor(
                     orientation = LinearLayout.VERTICAL
                     background = GradientDrawable().apply {
                         setColor(cardBg)
-                        cornerRadius = dp(24).toFloat()
+                        cornerRadius = dp(28).toFloat()
                         setStroke(dp(1), border)
                     }
-                    elevation = dp(12).toFloat()
-                    setPadding(dp(18), dp(16), dp(18), dp(16))
+                    elevation = dp(14).toFloat()
+                    setPadding(dp(18), dp(18), dp(18), dp(18))
                 }
-                // 顶部：圆形粉色徽标 + 标题，和「我的」页卡片头风格一致
+
+                // 头部：同款小猪存钱罐 IP + 标题/暖心短句
                 val header = LinearLayout(host).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                 }
-                header.addView(TextView(host).apply {
-                    text = if (confirmLabel.isBlank()) "✓" else "✦"
-                    textSize = 16f
-                    setTextColor(accent)
-                    gravity = Gravity.CENTER
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(chipBg)
-                    }
-                    layoutParams = LinearLayout.LayoutParams(dp(34), dp(34))
+                header.addView(ImageView(host).apply {
+                    setImageResource(R.drawable.ic_piggy_overlay)
+                    layoutParams = LinearLayout.LayoutParams(dp(52), dp(52))
+                    contentDescription = "小猪存钱罐"
                 })
-                header.addView(TextView(host).apply {
+                val textColumn = LinearLayout(host).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { leftMargin = dp(12) }
+                }
+                textColumn.addView(TextView(host).apply {
                     text = title
-                    textSize = 15f
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    textSize = 16f
+                    typeface = Typeface.DEFAULT_BOLD
                     setTextColor(textColor)
                     maxLines = 2
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { leftMargin = dp(10) }
                 })
+                if (note.isNotBlank()) {
+                    textColumn.addView(TextView(host).apply {
+                        text = note
+                        textSize = 12f
+                        setTextColor(noteColor)
+                        setPadding(0, dp(3), 0, 0)
+                        maxLines = 1
+                    })
+                }
+                header.addView(textColumn)
                 card.addView(header)
+
                 if (detail.isNotBlank()) {
                     card.addView(TextView(host).apply {
                         text = detail
-                        textSize = 16f
-                        setTextColor(if (dark) 0xFFFFD9E5.toInt() else PrimaryDark.toArgb())
-                        setPadding(0, dp(10), 0, 0)
+                        textSize = 18f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(amountColor)
+                        setPadding(dp(4), dp(14), dp(4), dp(2))
                     })
                 }
                 if (confirmLabel.isNotBlank()) {
                     val actions = LinearLayout(host).apply {
                         orientation = LinearLayout.HORIZONTAL
-                        setPadding(0, dp(14), 0, 0)
+                        setPadding(0, dp(16), 0, 0)
                     }
                     fun pill(label: String, primary: Boolean, block: () -> Unit) =
                         TextView(host).apply {
                             text = label
                             textSize = 14f
+                            typeface = Typeface.DEFAULT_BOLD
                             gravity = Gravity.CENTER
-                            setPadding(dp(10), dp(9), dp(10), dp(9))
+                            setPadding(dp(12), dp(10), dp(12), dp(10))
                             setTextColor(if (primary) Color.WHITE else accent)
                             background = GradientDrawable().apply {
                                 cornerRadius = dp(999).toFloat()

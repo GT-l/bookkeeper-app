@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.3)
+      - name: Static consistency tests (v1.3.4)
         shell: bash
-        run: python3 scripts/verify_v1_3_3.py
+        run: python3 scripts/verify_v1_3_4.py
 
       - name: Build debug APK
         shell: bash
@@ -141,25 +141,21 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.3-debug
-          name: 少花点儿 v1.3.3 (Debug APK)
+          tag_name: v1.3.4-debug
+          name: 少花点儿 v1.3.4 (Debug APK)
           body: |
-            # 少花点儿 v1.3.3
+            # 少花点儿 v1.3.4
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
             ## 更新
-            - 检查更新现在会显示具体失败原因（HTTP 码 + 卡住的域名），不再只提示「请检查网络」。
-            - 下载改走 GitHub 双通道自动降级，并校验 APK 文件头，挡掉代理返回的拦截页。
-            - 下载失败时可用「用浏览器下载」或「选本地 APK 安装」两条兜底路径。
+            - 识屏轻卡片改为奶油风：同款小猪存钱罐 IP 形象 + 暖心短句 + 草莓粉金额。
+            - 下载失败提示更具体（HTTP 码 + 域名），支持浏览器下载 / 本地 APK 安装兜底（v1.3.3）。
 
             ## 修复
-            - 修复 Clash / 代理环境下检查更新成功但 APK 下载失败的问题：CDN 域名未放行时给出明确提示。
-            - 修复下载半截文件残留：失败会清理临时文件，不再留下无法安装的 APK。
-
-            ## 代理用户提示
-            若使用 Clash，请放行 `githubusercontent.com`，并优先使用 TUN / 全局模式；
-            HTTP 代理模式不会自动被 App 采用，此时建议用浏览器下载后从本地安装。
+            - 修复识屏快速触发导致同一笔支付被提交多次、误弹「已记过」重复提醒：
+              成功页提交后进入静默期，再次进入收银台才解锁；重复提醒另加 8 秒节流。
+            - 修复 Clash / 代理环境下检查更新成功但下载失败的问题（v1.3.3）。
 
             ## 隐私
             账单数据只存本机，不上传。检查更新只读取公开 Releases。

@@ -23,6 +23,7 @@ import com.azu.bookkeeper.automation.capture.PaymentScene
 import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
 import com.azu.bookkeeper.automation.capture.PendingPaymentCache
 import com.azu.bookkeeper.automation.capture.ScreenTextCollector
+import com.azu.bookkeeper.automation.capture.WechatPayFinalPageResolver
 import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import kotlin.math.roundToLong
 import com.azu.bookkeeper.automation.classify.BusinessTag
@@ -223,18 +224,44 @@ class PaymentAccessibilityService : AccessibilityService() {
         val text = readScreenText(parser, event)
         val recognition = PaymentScreenRecognizer.classify(packageName, className, text)
         val sparse = ScreenTextCollector.isSparse(text)
+        // v1.3.23 · 受 [问题一-全场景触发] 约束：结构性判定提到分支之前。
+        // 有些微信成功页带「支付金额」标签，会被旧词表判成 ENTRY 后直接 return；
+        // 有些只有「支付成功 + ¥xx」没有单号，会落到 UNKNOWN 后什么都不做。
+        // 两种情况都在这里统一识别为最终页，并补上场景 / 收支方向。
+        val wechatFinal = packageName == PaymentScreenRecognizer.WECHAT &&
+            WechatPayFinalPageResolver.isFinalPayPage(text)
+        val effectiveRecognition = if (wechatFinal &&
+            (recognition.screen == PaymentScreen.ENTRY || recognition.screen == PaymentScreen.UNKNOWN)
+        ) {
+            recognition.copy(
+                screen = PaymentScreen.SUCCESS,
+                reason = "wechatFinalPage",
+                confidence = 0.86f,
+                scene = WechatPayFinalPageResolver.scene(text),
+                direction = WechatPayFinalPageResolver.direction(text)
+            )
+        } else recognition
 
         when (recognition.screen) {
             PaymentScreen.ENTRY -> {
-                // 重新进入收银台 = 新一轮支付，解除上一轮成功页的静默锁
-                settledPackages.remove(packageName)
-                // v1.3.6：收银台阶段金额/商户最清晰，先缓存；成功页字段缺失时补齐
-                rememberPendingPayment(packageName, text)
-                logScreenThrottled(
-                    "付款界面 pkg=$packageName cls=$className reason=${recognition.reason} " +
-                        "len=${text.length} sparse=$sparse preview=${ScreenTextCollector.preview(text)}"
-                )
-                return
+                if (wechatFinal) {
+                    // v1.3.23：词表误判成付款界面，但实际已完成支付（页面带「支付金额」标签）。
+                    // 不解除静默、不当成新一轮，直接落到下面的最终页提交。
+                    logScreenThrottled(
+                        "付款界面实为最终页 pkg=$packageName cls=$className " +
+                            "len=${text.length} preview=${ScreenTextCollector.preview(text)}"
+                    )
+                } else {
+                    // 重新进入收银台 = 新一轮支付，解除上一轮成功页的静默锁
+                    settledPackages.remove(packageName)
+                    // v1.3.6：收银台阶段金额/商户最清晰，先缓存；成功页字段缺失时补齐
+                    rememberPendingPayment(packageName, text)
+                    logScreenThrottled(
+                        "付款界面 pkg=$packageName cls=$className reason=${recognition.reason} " +
+                            "len=${text.length} sparse=$sparse preview=${ScreenTextCollector.preview(text)}"
+                    )
+                    return
+                }
             }
             PaymentScreen.DETAIL -> {
                 // v1.3.1：账单详情不再丢弃。它常是「同一笔付款记录」的唯一现场，
@@ -250,16 +277,16 @@ class PaymentAccessibilityService : AccessibilityService() {
                 val looksReceipt = PaymentScreenRecognizer.looksLikeReceipt(text)
                 logScreenThrottled(
                     "未识别【待完善场景】pkg=$packageName cls=$className len=${text.length} " +
-                        "sparse=$sparse hasReceipt=$looksReceipt " +
+                        "sparse=$sparse hasReceipt=$looksReceipt wechatFinal=$wechatFinal " +
                         "preview=${ScreenTextCollector.preview(text)}"
                 )
-                // v1.3.5：打开「消费记录 / 账单」时页面既没有成功词也没有「账单详情」标题，
-                // 但有金额 + 交易单号/商户等凭据字段 → 兜底提交，让协调器决定自动入账或轻卡片确认。
-                // 这是「自动识别概率失败、必须用手势」的主要修复点之一。
-                if (looksReceipt) {
-                    logScreenThrottled("凭证页兜底提交 pkg=$packageName len=${text.length}")
+                if (looksReceipt || wechatFinal) {
+                    logScreenThrottled(
+                        "最终页兜底提交 pkg=$packageName reason=${effectiveRecognition.reason} " +
+                            "scene=${effectiveRecognition.scene} dir=${effectiveRecognition.direction}"
+                    )
                     submitCapture(
-                        parser, packageName, className, recognition,
+                        parser, packageName, className, effectiveRecognition,
                         ScreenTextCollector.refine(packageName, text)
                     )
                     return
@@ -286,7 +313,7 @@ class PaymentAccessibilityService : AccessibilityService() {
             PaymentScreen.SUCCESS -> Unit
         }
         submitCapture(
-            parser, packageName, className, recognition,
+            parser, packageName, className, effectiveRecognition,
             ScreenTextCollector.refine(packageName, text)
         )
     }

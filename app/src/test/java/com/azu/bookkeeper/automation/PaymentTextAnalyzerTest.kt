@@ -349,4 +349,18 @@ class PaymentTextAnalyzerTest {
         assertTrue(r.trace.contains("商户候选="))
         assertTrue(r.trace.contains("最终 金额=2160"))
     }
+
+    // ---------- v1.3.23 问题四：金额上方定位真实收款方 ----------
+
+    @Test
+    fun `付款方式不被当成商户名`() {
+        val text = """
+            支付成功
+            喜茶点单小程序
+            ¥21.60
+            付款方式：招商银行储蓄卡(1234)
+            交易单号：4200001234
+        """.trimIndent()
+        assertEquals("喜茶点单小程序", analyzer.analyze(text).merchant)
+    }
 }

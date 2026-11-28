@@ -33,8 +33,12 @@ class PaymentTextAnalyzer @Inject constructor() {
         val paymentRejected = lines.any { line -> PAID_BAD_KEYWORDS.any { it in line } }
 
         val amountFen = extractBestAmount(lines, paidConfirmed)
-        var merchant = extractBestMerchant(lines)
-        // 受 [规则一] 约束：常规抽取没拿到商户，且文本里有独占一行的「财付通」时，
+        // v1.3.23 · 受 [问题四-位置规则] 约束：微信支付成功页里真正的收款方只在金额上方，
+        // 金额下方是付款方式 / 单号 / 时间。**优先按位置定位**，避免「招商银行储蓄卡」
+        // 因为含「银行」二字被旧兜底规则当成商户名。
+        var merchant = PaymentMerchantLocator.locateAboveAmount(lines).orEmpty()
+        if (merchant.isBlank()) merchant = extractBestMerchant(lines)
+        // 受 [规则一] 约束：上面两条都没拿到商户，且文本里有独占一行的「财付通」时，
         // 向上回溯最近 3 行找真实商户（小程序名 / 店铺品牌 / 含 SKU 的商品行）。
         // 放在最后一步：只在其它路径都失败时兜底，绝不覆盖已有的有效商户。
         if (merchant.isBlank()) {
@@ -379,7 +383,10 @@ class PaymentTextAnalyzer @Inject constructor() {
             // v1.3.22 问题四方案 A：工单点名的收单机构 / 支付通道，一律不得当商户名。
             // 这些是「钱走哪条通道」，不是「钱付给了谁」。
             "财付通", "网联", "银联", "快钱", "易宝", "拉卡拉",
-            "微信支付", "支付宝", "支付科技", "支付有限", "清算中心", "银联商务"
+            "微信支付", "支付宝", "支付科技", "支付有限", "清算中心", "银联商务",
+            // v1.3.23 · 受 [问题四-位置规则] 约束：付款方式是「钱从哪来」，不是「钱付给谁」。
+            // 兜底后缀路径的「银行」曾把「招商银行储蓄卡」当成商户，这里一并按付款方式排除。
+            "储蓄卡", "信用卡", "尾号", "卡号", "零钱通", "数字人民币", "银行"
         )
         private val MERCHANT_SUFFIXES = listOf(
             "店", "公司", "超市", "便利店", "餐饮", "银行", "科技", "商贸", "贸易", "旗舰店", "专营店", "咖啡", "茶"

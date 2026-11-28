@@ -269,7 +269,13 @@ class PaymentAccessibilityService : AccessibilityService() {
                 // v1.3.12：节点完全读不到（微信账单详情这类自绘 / WebView 页面）时，
                 // 重读多少次都是空。退到截图 OCR —— 这是 realme 用户
                 // 「自动识别不到订单场景」的唯一可行兜底。
-                if (sparse || text.isBlank()) {
+                // v1.3.18：再加上「有文本但没有交易证据」的情况。微信付款记录页外层
+                // 常能读到标题和按钮，金额却只画在 WebView 里：文本不稀疏 → 旧逻辑既不
+                // 重读也不 OCR，表现为「打开了付款记录却什么都不发生」。
+                val hasSignal = PaymentScreenRecognizer.hasTransactionSignal(text)
+                val looksLikePaymentPage = PAGE_HINTS.any { text.contains(it) } ||
+                    (className.isNotBlank() && PaymentScreenRecognizer.looksLikeResultClass(className))
+                if (sparse || text.isBlank() || (!hasSignal && looksLikePaymentPage)) {
                     scheduleScreenshotFallback(parser, packageName, className)
                 }
                 return
@@ -308,14 +314,18 @@ class PaymentAccessibilityService : AccessibilityService() {
             val text = parser.collectText(activeRoot)
             if (text.isNotBlank()) parts.add(text)
         }
-        if (parts.isEmpty() || ScreenTextCollector.isSparse(parts.first())) {
+        // v1.3.18：不再用「是否稀疏」当停止条件。
+        // 微信这类自绘页面，根节点常返回几行无关文本（返回 / 支付 / 完成），
+        // 既不稀疏也没有金额 —— 旧逻辑就此收手，金额在别的窗口里永远读不到。
+        // 现在以「有没有交易证据（金额 / 单号 / 商户 / 订单）」为准，没有就继续读。
+        if (!PaymentScreenRecognizer.hasTransactionSignal(ScreenTextCollector.merge(parts))) {
             val source = runCatching { event.source }.getOrNull()
             if (source != null) parts.add(parser.collectText(source))
             val windows = runCatching { getWindows() }.getOrNull().orEmpty()
-            for (w in windows.take(2)) {
+            for (w in windows.take(3)) {
                 val node = runCatching { w.root }.getOrNull() ?: continue
                 parts.add(parser.collectText(node))
-                if (!ScreenTextCollector.isSparse(ScreenTextCollector.merge(parts))) break
+                if (PaymentScreenRecognizer.hasTransactionSignal(ScreenTextCollector.merge(parts))) break
             }
         }
         ScreenTextCollector.merge(parts)
@@ -747,6 +757,15 @@ class PaymentAccessibilityService : AccessibilityService() {
         private const val ENTRY_LOG_INTERVAL_MS = 5_000L
         private const val MAX_RETRY = 3
         private const val MAX_SCREEN_TEXT = 6000
+
+        /**
+         * v1.3.18：页面文案里出现这些词，说明「像交易页面」。
+         * 只用来决定「要不要为它多做一次截图 OCR」，不参与记账判定，
+         * 所以宁宽勿严：误判只是多截一张图（15 秒节流），漏判则回到「什么都不发生」。
+         */
+        private val PAGE_HINTS = listOf(
+            "支付", "付款", "收款", "转账", "账单", "订单", "红包", "交易", "明细", "记录"
+        )
         const val PREFS = "accessibility_service_status"
         const val KEY_LAST_CONNECTED = "last_connected_at"
         const val KEY_LAST_DISCONNECTED = "last_disconnected_at"
@@ -794,11 +813,14 @@ class PaymentAccessibilityService : AccessibilityService() {
             val root = service.rootInActiveWindow ?: return@runCatching null
             val pkg = runCatching { root.packageName?.toString().orEmpty() }.getOrDefault("")
             val parts = mutableListOf(ScreenTextCollector.collect(root))
-            if (ScreenTextCollector.isSparse(parts.first())) {
+            // v1.3.18：与自动识屏统一——按「有没有交易证据」决定要不要继续读其它窗口，
+            // 不再只看稀疏。摇一摇与自动识屏的采集口径必须一致，否则同一页面两种结果。
+            if (!PaymentScreenRecognizer.hasTransactionSignal(parts.first())) {
                 val windows = runCatching { service.getWindows() }.getOrNull().orEmpty()
-                for (w in windows.take(2)) {
+                for (w in windows.take(3)) {
                     val node = runCatching { w.root }.getOrNull() ?: continue
                     parts.add(ScreenTextCollector.collect(node))
+                    if (PaymentScreenRecognizer.hasTransactionSignal(ScreenTextCollector.merge(parts))) break
                 }
             }
             // 与自动识屏共用同一采集/去重/标签补齐入口，摇一摇与自动结果不再漂移

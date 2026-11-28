@@ -81,9 +81,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.17)
+      - name: Static consistency tests (v1.3.18)
         shell: bash
-        run: python3 scripts/verify_v1_3_17.py
+        run: python3 scripts/verify_v1_3_18.py
 
       - name: Build debug APK
         shell: bash
@@ -147,33 +147,35 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.17-debug
-          name: 少花点儿 v1.3.17 (Debug APK)
+          tag_name: v1.3.18-debug
+          name: 少花点儿 v1.3.18 (Debug APK)
           body: |
-            # 少花点儿 v1.3.17
+            # 少花点儿 v1.3.18
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
-            ## 识屏 OCR 修复（本版重点）
-            上版加的「OCR 异常可见」立刻抓到了真凶：
-            `IllegalStateException: MlKitContext has not been initialized`。
+            ## 识屏采集（本版重点）
+            微信这类自绘页面最坑的不是「读不到」，而是「读到一点点」：
+            根节点返回「返回 / 支付 / 完成」几行文字，既不稀疏、也没有金额。
+            旧逻辑据此判定「文本已经够用」——于是不再读其它窗口，也不退截图 OCR，
+            表现就是「打开了付款记录，什么都不发生」。
 
-            也就是说：ML Kit 自带的自动初始化（`MlKitInitProvider`）在 `:ocr` 独立进程里**没有生效**，
-            `TextRecognition.getClient()` 一调就抛异常。以前的代码把异常吞成「0 字」，
-            所以表现一直是「截图成功但没找到金额」——这台机器上的截图 OCR 从第一天起就没成功过。
+            - 采集停止条件从「文本是否稀疏」改成「有没有交易证据（金额 / 交易单号 / 商户 / 订单）」，
+              没有就继续读事件来源与最多 3 个窗口，读到证据立即停。
+            - 自动识屏与摇一摇（readScreenSnapshot）共用同一套判据，两条链路结果不再漂移。
+            - 截图 OCR 兜底的触发条件补上「有文本但没有交易证据，且页面像是交易页」
+              （支付/付款/收款/转账/账单/订单/红包/交易/明细/记录），仍受 15 秒节流保护。
 
-            - `OcrEngine` 在取识别器之前显式调用 `MlKit.initialize(context)`（幂等，主进程重复调用也安全），
-              初始化失败会写进识屏日志。
-            - 跨进程识别再遇到「未初始化」时，自动退回主进程直接识别，并把该通道标记为不可用，
-              后续不再每轮白等一次 IPC（省 1 秒以上）。
-            - 依赖层面补了 `com.google.mlkit:common`（初始化 API 所在），版本与 text-recognition 传递来的一致。
+            ## 对静态检查报告的取舍
+            - 采纳：多窗口采集策略、截图兜底触发条件、摇一摇与自动识屏口径统一。
+            - 暂不改：把节点读取搬到主线程（节点是 Binder 快照，后台线程读更安全，
+              搬主线程反而会卡 UI/增加 ANR 风险）；大幅扩充识别关键词（上一轮盲改词表的教训）；
+              增加 typeViewTextChanged/typeViewScrolled（会显著放大事件量，且不解决自绘页面问题）。
 
-            ## 顺带保留（v1.3.16）
-            - 帧体检：亮暗跨度 < 12 判为单色帧，空白帧不再丢给 OCR，改走录屏通道并引导授权。
-            - OCR 引擎异常与「页面没有文字」分开报，日志能直接看出是哪一类。
-
-            ## 下载（v1.3.15）
-            - 断点续传：代理抖动不再从 0 重下 88MB；进度显示字节 / 速率 / 剩余时间；直链优先。
+            ## 沿用
+            - v1.3.17：ML Kit 显式初始化 + 主进程兜底（截图 OCR 首次真正可用）。
+            - v1.3.16：帧体检，空白帧不再冒充「没找到金额」。
+            - v1.3.15：下载断点续传、实时速率与剩余时间、直链优先。
 
             ## 说明
             - 体积仍是 88MB：未做 ABI 裁剪，四个架构全打包。

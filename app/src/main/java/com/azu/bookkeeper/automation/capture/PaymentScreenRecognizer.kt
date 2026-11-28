@@ -309,6 +309,21 @@ object PaymentScreenRecognizer {
         return RECEIPT_CONTEXT.any { text.contains(it) }
     }
 
+    /**
+     * v1.3.18：这段文本里有没有「交易证据」——金额，或交易单号/商户/订单等凭据上下文。
+     *
+     * 用途：决定「节点采集够不够」「要不要退截图 OCR」。
+     * 以前这两个判断只看 `ScreenTextCollector.isSparse`（行数 < 3 或长度 < 8）：
+     * 微信这类自绘页面常返回「返回 / 支付 / 完成」几句无关文本——既不稀疏、也没有金额，
+     * 于是既不会继续读其它窗口，也不会触发截图 OCR，正好卡在中间什么都不做。
+     */
+    fun hasTransactionSignal(text: String): Boolean {
+        if (text.isBlank()) return false
+        if (text.contains('¥') || text.contains('￥')) return true
+        if (text.lines().any { looksLikeAmount(it.trim()) }) return true
+        return RECEIPT_CONTEXT.any { text.contains(it) }
+    }
+
     /** 单笔详情页里的金额行数量：列表页会有很多行，借此避免把账单列表当成一笔。 */
     private fun amountLineCount(text: String): Int =
         text.lines().count { looksLikeAmount(it.trim()) }

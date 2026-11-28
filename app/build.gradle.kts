@@ -15,8 +15,8 @@ android {
         applicationId = "com.azu.bookkeeper"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.3.17"
+        versionCode = 25
+        versionName = "1.3.18"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

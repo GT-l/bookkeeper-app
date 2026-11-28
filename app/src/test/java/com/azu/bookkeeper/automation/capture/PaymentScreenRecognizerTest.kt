@@ -442,4 +442,26 @@ class PaymentScreenRecognizerTest {
         """.trimIndent()
         assertEquals("", PaymentScreenRecognizer.transactionTimeKey(text))
     }
+
+    // ---------- v1.3.18：采集是否够用的判据（交易证据） ----------
+
+    @Test
+    fun `只有无关文本时没有交易证据`() {
+        // 微信自绘页面根节点的真实形态：几行标题/按钮，既不稀疏也没有金额
+        val text = "返回\n支付\n完成\n更多"
+        assertFalse(PaymentScreenRecognizer.hasTransactionSignal(text))
+        assertFalse(PaymentScreenRecognizer.hasTransactionSignal(""))
+    }
+
+    @Test
+    fun `有金额就有交易证据`() {
+        assertTrue(PaymentScreenRecognizer.hasTransactionSignal("¥23.00"))
+        assertTrue(PaymentScreenRecognizer.hasTransactionSignal("实付\n39.90"))
+    }
+
+    @Test
+    fun `有凭据字段也算交易证据`() {
+        assertTrue(PaymentScreenRecognizer.hasTransactionSignal("交易单号\n4200001234"))
+        assertTrue(PaymentScreenRecognizer.hasTransactionSignal("账单详情\n商品说明"))
+    }
 }

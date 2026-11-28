@@ -90,11 +90,11 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
-                            version = "v1.3.17 · 最新",
+                            version = "v1.3.18 · 最新",
                             items = listOf(
-                                "识屏 OCR 修复：ML Kit 在独立进程未自动初始化，改为显式初始化 + 主进程兜底",
-                                "截到空白帧不再当成「没找到金额」，会报出真实原因并改用录屏通道",
-                                "下载：断点续传 + 实时速率与剩余时间 + 直链优先（v1.3.15）"
+                                "节点采集不再因「文本不稀疏」提前收手，读不到金额就继续读其它窗口",
+                                "有文本但没交易证据的页面（微信付款记录）也会退截图 OCR 补一次",
+                                "沿用 v1.3.17：ML Kit 显式初始化 + 主进程兜底，截图 OCR 首次真正可用"
                             )
                         )
                         ChangelogRow(

@@ -4,10 +4,10 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 静态一致性 `scripts/verify_v1_3_10.py` | 待回填 |
-| JVM 单元测试 | 待回填 |
-| CI 构建 | 待回填 |
-| Release | 待回填 |
+| 静态一致性 `scripts/verify_v1_3_10.py` | **240/240 通过** |
+| JVM 单元测试 | **T201 F0 E0 S0** |
+| CI 构建 | run `46115891232`（`ad823ba`）success |
+| Release | `v1.3.10-debug`，APK 92,562,243 字节 |
 
 ## 二、变更文件
 

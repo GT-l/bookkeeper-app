@@ -937,10 +937,12 @@ check("T-WX-01 位置定位器存在", "object PaymentMerchantLocator" in locato
 check("T-WX-02 从金额行向上搜索", "amountIndex - 1 downTo from" in locator)
 check("T-WX-03 付款方式排除", all(x in locator for x in ["储蓄卡", "信用卡", "零钱", "尾号"]))
 check("T-WX-04 通道名排除", all(x in locator for x in ["财付通", "网联", "银联"]))
-check("T-WX-05 接入分析器最高优先级",
+check("T-WX-05 接入分析器：标签优先、定位兜底",
       "PaymentMerchantLocator.locateAboveAmount(lines).orEmpty()" in analyzer_kt
+      and analyzer_kt.index("var merchant = extractBestMerchant(lines)") <
+          analyzer_kt.index("PaymentMerchantLocator.locateAboveAmount")
       and analyzer_kt.index("PaymentMerchantLocator.locateAboveAmount") <
-          analyzer_kt.index("extractBestMerchant(lines)"))
+          analyzer_kt.index("ChannelMerchantResolver.backtrack"))
 check("T-WX-06 兜底后缀排除付款方式", all(x in analyzer_kt for x in ["储蓄卡", "信用卡", "尾号", "数字人民币"]))
 check("T-WX-07 单测样本金额上方收款方", "金额上方真实收款方优先于下方付款方式" in locator_test)
 check("T-WX-08 集成单测不把储蓄卡当商户", "付款方式不被当成商户名" in

@@ -17,10 +17,14 @@ enum class BillDirection { EXPENSE, INCOME, NEUTRAL }
 enum class PaymentScene {
     WECHAT_TRANSFER_OUT, WECHAT_TRANSFER_IN,
     WECHAT_RED_PACKET_OUT, WECHAT_RED_PACKET_IN,
-    WECHAT_MERCHANT_PAY, WECHAT_BILL_DETAIL,
+    WECHAT_MERCHANT_PAY, WECHAT_BILL_DETAIL, WECHAT_WITHDRAW,
     ALIPAY_TRANSFER_OUT, ALIPAY_TRANSFER_IN,
-    ALIPAY_MERCHANT_PAY, ALIPAY_BILL_DETAIL,
-    DOUYIN_ORDER, BANK_TRANSFER, UNKNOWN
+    ALIPAY_RED_PACKET_OUT, ALIPAY_RED_PACKET_IN,
+    ALIPAY_MERCHANT_PAY, ALIPAY_BILL_DETAIL, ALIPAY_WITHDRAW,
+    UNIONPAY_PAY, DOUYIN_ORDER, BANK_TRANSFER,
+    /** v1.3.8：提现 / 充值 / 零钱通·余额宝划转——钱只在自有账户之间搬家，不计收支。 */
+    INTERNAL_TRANSFER,
+    UNKNOWN
 }
 
 /**
@@ -44,6 +48,9 @@ object PaymentScreenRecognizer {
     const val ALIPAY = "com.eg.android.AlipayGphone"
     const val DOUYIN = "com.ss.android.ugc.aweme"
 
+    /** v1.3.8：云闪付（一木/钱迹都把它当主要场景，白名单里一直没有）。 */
+    const val UNIONPAY = "com.unionpay"
+
     data class Recognition(
         val screen: PaymentScreen,
         val reason: String,
@@ -52,18 +59,46 @@ object PaymentScreenRecognizer {
         val direction: BillDirection = BillDirection.EXPENSE
     )
 
-    /** 结果页 Activity 特征。微信的 WalletPayResultUI、支付宝的 PayResultActivity 都命中这一组。 */
+    /**
+     * 结果页 Activity 特征。微信的 WalletPayResultUI、支付宝的 PayResultActivity 都命中这一组。
+     *
+     * v1.3.8：只收「结果 / 详情」这类明确的类名。
+     * 裸的 `Remittance` / `LuckyMoney` 会连「转账输入页」「红包编辑页」一起命中，
+     * 等于用户刚点开转账就记了一笔，比漏识别更糟。
+     */
     private val SUCCESS_CLASS_TOKENS = listOf(
         "WalletPayResult", "PayResult", "PaySuccess", "PayComplete", "PayDone", "PayFinish",
         // v1.3.6：微信/支付宝的转账、收款结果页（用户反馈「转账成功界面识别不了」）
         "TransferResult", "TransferMoneyResult", "RemitResult", "ReceiptResult",
-        "TransferDetail", "WalletTransfer", "RedPacket", "Receipt"
+        "TransferDetail", "WalletTransfer", "Receipt",
+        // v1.3.8：微信转账走 remittance 模块、红包走 luckymoney 模块，只认结果/详情页
+        "RemittanceResult", "RemittanceDetail", "LuckyMoneyDetail",
+        "RedPacketDetail", "RedPacketResult"
     )
 
     /** 付款界面 Activity 特征：收银台、付款码、输密码、选支付方式。 */
     private val ENTRY_CLASS_TOKENS = listOf(
         "WalletPayUI", "Cashier", "PayPassword", "PayInput", "SelectPay",
-        "PayActivity", "PaymentActivity", "QRPay", "FacePay"
+        "PayActivity", "PaymentActivity", "QRPay", "FacePay",
+        // v1.3.8：转账输入页 / 红包编辑页是中间态，绝不能因为类名相似被当成结果页
+        "RemittanceUI", "TransferInput", "TransferEdit",
+        "LuckyMoneyPrepare", "LuckyMoneyEdit", "RedPacketPrepare"
+    )
+
+    /**
+     * v1.3.8：聊天页 / 微信主界面。
+     *
+     * 这两个页面里必然出现「微信支付」（服务号名称）和转账消息气泡
+     * （「转账」「已收款」「对方已收款」）。旧词表会把它判成「支付成功」直接记账，
+     * 是最隐蔽的脏账来源。整页跳过。
+     */
+    private val CHAT_CLASS_TOKENS = listOf(
+        "ChattingUI", "Chatting", "LauncherUI", "ConversationUI", "ContactInfoUI"
+    )
+
+    /** 红包类名（只用于标注场景，不单独作为「成功」依据）。 */
+    private val RED_PACKET_CLASS_TOKENS = listOf(
+        "LuckyMoney", "RedPacket", "RedEnvelope", "Hongbao"
     )
 
     /** 通用完成态：保留原有 6 个，补齐常见变体。 */
@@ -72,33 +107,76 @@ object PaymentScreenRecognizer {
         "扣款成功", "支付已完成", "付款完成", "已付款", "支付完毕", "成功支付"
     )
 
-    /** 微信专属：结果页常常只写「已完成」，或把金额放在「微信支付」下面。 */
+    /**
+     * 微信专属完成态。
+     *
+     * v1.3.8：去掉裸的「已领取」——微信卡包 / 优惠券 / 小程序也写「已领取」，
+     * 脱离上下文命中会把领券记成支付成功。红包改为「红包上下文 + 领取信号」双条件。
+     */
     private val WECHAT_SUCCESS = listOf(
         "微信支付", "已完成", "已存入对方零钱", "转账已发出", "红包已发送",
         "支付成功通知", "已收款", "付款成功", "支付成功",
         // v1.3.6：微信收款成功实际写的是「已收钱」（不是「已收款」），
         // 转账页顶部还会写「转账成功 / 已到账」，旧词表全部漏掉。
-        "已收钱", "收款成功", "已到账", "转账成功", "对方已收款", "已领取"
+        "已收钱", "收款成功", "已到账", "转账成功", "对方已收款",
+        // v1.3.8：红包收 / 发与零钱到账
+        "红包已领取", "红包已发出", "已存入零钱", "已存入你的零钱", "已发送红包"
     )
 
     /** 付款界面文案。命中即认为「用户打开了付款界面」，不触发记账。 */
     private val ENTRY_TEXT = listOf(
         "付款码", "向商家付款", "收付款", "确认支付", "请输入支付密码", "立即支付",
         "待支付", "收银台", "选择付款方式", "支付金额", "付款方式", "请付款", "确认付款",
-        "使用密码", "指纹支付", "向商家付款",
+        "使用密码", "指纹支付",
         // v1.3.6：转账中间态——收款方还没点确认，钱没真正到账，不能记账
-        "待确认收款", "确认收款", "等待对方确认收款", "立即退还"
+        "待确认收款", "确认收款", "等待对方确认收款", "立即退还", "待对方确认"
     )
 
-    /** 收款方向词（钱进账）：命中即记收入，优先级高于通用成功词。 */
-    private val TRANSFER_IN_HINTS = listOf(
-        "已收钱", "已收款", "收款成功", "收到转账", "对方已收款", "已存入零钱",
-        "红包已领取", "红包已收", "已领取红包", "已到账"
+    /** 红包上下文：红包页即使不写「红包」二字，也会出现这些（拆红包页的祝福语等）。 */
+    private val RED_PACKET_CONTEXT = listOf(
+        "红包", "压岁钱", "拼手气", "手气最佳", "恭喜发财", "大吉大利", "红包封面"
     )
 
-    /** 转出方向词（钱出账）：防止把「转账成功」误判成收入。 */
+    /** 发红包（支出）：微信「红包已发送」，支付宝「红包已发出」。 */
+    private val RED_PACKET_OUT_HINTS = listOf(
+        "红包已发送", "红包已发出", "已发送红包", "发出的红包", "发了一个红包", "红包已存入对方"
+    )
+
+    /** 收红包（收入）：拆开后写「已存入零钱」，红包详情写「已领取」。 */
+    private val RED_PACKET_IN_HINTS = listOf(
+        "红包已领取", "已领取红包", "领取了", "已拆开", "红包已收", "红包已收下",
+        "已存入零钱", "已存入你的零钱", "已存入余额"
+    )
+
+    /**
+     * 转账转出（支出）。
+     * 「对方已收款」是**转出方**看到的提示（我把钱转给他、他收了），属于支出；
+     * v1.3.6 把它错放进收入表，导致转出去的账被记成收入，这里纠正。
+     */
     private val TRANSFER_OUT_HINTS = listOf(
-        "已存入对方零钱", "转账已发出", "转账成功", "已转账", "红包已发送", "转账给"
+        "已存入对方零钱", "转账已发出", "转账成功", "已转账", "转账给", "已发出转账",
+        "对方已收款", "对方已领取", "已转入对方"
+    )
+
+    /** 转账收款（收入）：微信写「已收钱」，支付宝写「收款成功」。 */
+    private val TRANSFER_IN_HINTS = listOf(
+        "已收钱", "已收款", "收款成功", "收到转账", "转账已接收", "已接收转账", "转账已收",
+        "已存入零钱", "收款到账", "已存入余额"
+    )
+
+    /**
+     * 提现 / 充值 / 零钱通、余额宝划转（v1.3.8，对齐一木记账的「提现」场景）。
+     * 钱只是在自有账户之间搬家，记成支出会把总支出撑大一倍 → 判 NEUTRAL 不入账。
+     */
+    private val WITHDRAW_HINTS = listOf(
+        "提现成功", "零钱提现", "提现到账", "提现已到账", "已到账银行卡", "提现受理",
+        "充值成功", "零钱充值", "转入零钱通", "转出零钱通",
+        "余额宝转入", "余额宝转出", "转出到余额", "转入余额宝"
+    )
+
+    /** 转账中间态：收款方还没点「确认收款」，钱没真正到账。 */
+    private val PENDING_TRANSFER = listOf(
+        "待确认收款", "确认收款", "等待对方确认收款", "立即退还", "待对方确认"
     )
 
     private val NEGATIVE = listOf(
@@ -158,10 +236,15 @@ object PaymentScreenRecognizer {
     fun isPaymentPackage(raw: String): Boolean =
         normalizePackage(raw) in Constants.PAYMENT_PACKAGES
 
-    /** 供通知/短信等非读屏链路复用的纯文本完成态判定。 */
+    /**
+     * 供通知 / 短信等非读屏链路复用的纯文本完成态判定。
+     * v1.3.8：中间态（待确认收款）和否定态（支付失败）一律不算完成。
+     */
     fun isSuccessText(text: String): Boolean {
         if (text.isBlank()) return false
         val compact = text.trim().replace("\n", "").replace(" ", "")
+        if (PENDING_TRANSFER.any { compact.contains(it) }) return false
+        if (NEGATIVE.any { compact.contains(it) }) return false
         return (COMMON_SUCCESS + WECHAT_SUCCESS).any { compact.contains(it) }
     }
 
@@ -200,9 +283,13 @@ object PaymentScreenRecognizer {
         val compact = t.replace("\n", "").replace("\r", "")
             .replace(" ", "").replace("\u00A0", "").replace("\u3000", "")
 
-        // 0) 转账中间态：收款方还没点「确认收款」，钱没真正到账，绝不能记账
-        val pendingHit = listOf("待确认收款", "确认收款", "等待对方确认收款", "立即退还")
-            .firstOrNull { compact.contains(it) }
+        // 0) 聊天页 / 微信主界面：必然出现「微信支付」服务号名与转账消息气泡，成功词不可信
+        if (cls.isNotBlank() && CHAT_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }) {
+            return Recognition(PaymentScreen.UNKNOWN, "chatPage:$cls", 0f)
+        }
+
+        // 0b) 转账中间态：收款方还没点「确认收款」，钱没真正到账，绝不能记账
+        val pendingHit = PENDING_TRANSFER.firstOrNull { compact.contains(it) }
         if (pendingHit != null &&
             TRANSFER_IN_HINTS.none { compact.contains(it) } &&
             TRANSFER_OUT_HINTS.none { compact.contains(it) }
@@ -213,23 +300,33 @@ object PaymentScreenRecognizer {
             )
         }
 
-        // 1) 收款方向优先：微信收款成功写的是「已收钱」，不先判方向会落到
-        //    「转账成功 → 支出」，用户反馈「接收转账成功界面识别不了」主要卡在这。
-        val incomeHit = TRANSFER_IN_HINTS.firstOrNull { compact.contains(it) }
-        if (incomeHit != null && NEGATIVE.none { compact.contains(it) }) {
+        // 1) 红包（发 / 收）：必须「红包上下文 + 收/发信号」同时命中。
+        //    只认「已领取」会把微信卡包领券记成支付成功；只认「已存入零钱」会把收红包误当转账。
+        redPacketHit(pkg, compact)?.let { return it }
+
+        // 2) 提现 / 充值 / 零钱通·余额宝划转：钱只是换了个账户，记支出会把总支出翻倍
+        val withdrawHit = WITHDRAW_HINTS.firstOrNull { compact.contains(it) }
+        if (withdrawHit != null && NEGATIVE.none { compact.contains(it) }) {
             return Recognition(
-                PaymentScreen.SUCCESS, "income:$incomeHit", 0.90f,
-                sceneFor(pkg, BillDirection.INCOME, compact), BillDirection.INCOME
+                PaymentScreen.SUCCESS, "internalTransfer:$withdrawHit", 0.86f,
+                internalScene(pkg), BillDirection.NEUTRAL
             )
         }
 
-        // 2) 类名强信号优先：微信结果页常返回空根节点，此时文本判断完全失效
+        // 3) 转账转出 / 收款：转出优先（「转账成功 + 已存入对方零钱」是支出）
+        transferHit(pkg, compact)?.let { return it }
+
+        // 4) 类名强信号：微信结果页常返回空根节点，此时文本判断完全失效
         if (cls.isNotBlank() && looksLikeResultClass(cls)) {
             val dir = directionOf(compact)
-            return Recognition(
-                PaymentScreen.SUCCESS, "className:$cls", 0.92f,
-                sceneFor(pkg, dir, compact), dir
-            )
+            val scene = when {
+                RED_PACKET_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) } ->
+                    redPacketScene(pkg, dir)
+                cls.contains("Transfer", ignoreCase = true) ||
+                    cls.contains("Remittance", ignoreCase = true) -> transferScene(pkg, dir)
+                else -> sceneFor(pkg, dir, compact)
+            }
+            return Recognition(PaymentScreen.SUCCESS, "className:$cls", 0.92f, scene, dir)
         }
         if (cls.isNotBlank() && ENTRY_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }) {
             return Recognition(
@@ -238,7 +335,7 @@ object PaymentScreenRecognizer {
             )
         }
 
-        // 3) 完成态文案：微信有专属词表；统一用紧凑文本匹配跨行拆分
+        // 5) 完成态文案：微信有专属词表；统一用紧凑文本匹配跨行拆分
         val successWords = if (pkg == WECHAT) WECHAT_SUCCESS + COMMON_SUCCESS else COMMON_SUCCESS
         val hit = successWords.firstOrNull { compact.contains(it) }
         if (hit != null) {
@@ -303,15 +400,80 @@ object PaymentScreenRecognizer {
         return Recognition(PaymentScreen.UNKNOWN, "none", 0f)
     }
 
-    /** 收款词优先，其次转出词，都没有则按支出（绝大多数支付场景是支出）。 */
+    /** 转出优先：只有「转账成功 + 已存入对方零钱」这种组合，绝不能落到收入。 */
     private fun directionOf(compact: String): BillDirection {
-        if (TRANSFER_IN_HINTS.any { compact.contains(it) }) return BillDirection.INCOME
         if (TRANSFER_OUT_HINTS.any { compact.contains(it) }) return BillDirection.EXPENSE
+        if (TRANSFER_IN_HINTS.any { compact.contains(it) }) return BillDirection.INCOME
         return BillDirection.EXPENSE
     }
 
+    /**
+     * 红包判定（v1.3.8）：红包上下文 + 收/发信号**双条件**。
+     * 返回 null 表示「不像红包」，交回转账 / 通用逻辑继续判断。
+     */
+    private fun redPacketHit(pkg: String, compact: String): Recognition? {
+        if (RED_PACKET_CONTEXT.none { compact.contains(it) }) return null
+        val out = RED_PACKET_OUT_HINTS.firstOrNull { compact.contains(it) }
+        if (out != null) {
+            return Recognition(
+                PaymentScreen.SUCCESS, "redPacketOut:$out", 0.93f,
+                redPacketScene(pkg, BillDirection.EXPENSE), BillDirection.EXPENSE
+            )
+        }
+        val income = RED_PACKET_IN_HINTS.firstOrNull { compact.contains(it) }
+        if (income != null) {
+            return Recognition(
+                PaymentScreen.SUCCESS, "redPacketIn:$income", 0.93f,
+                redPacketScene(pkg, BillDirection.INCOME), BillDirection.INCOME
+            )
+        }
+        return null
+    }
+
+    /** 转账判定（v1.3.8）：先转出后收款，两个方向都落到明确场景。 */
+    private fun transferHit(pkg: String, compact: String): Recognition? {
+        val out = TRANSFER_OUT_HINTS.firstOrNull { compact.contains(it) }
+        if (out != null) {
+            return Recognition(
+                PaymentScreen.SUCCESS, "transferOut:$out", 0.92f,
+                transferScene(pkg, BillDirection.EXPENSE), BillDirection.EXPENSE
+            )
+        }
+        val income = TRANSFER_IN_HINTS.firstOrNull { compact.contains(it) }
+        if (income != null) {
+            return Recognition(
+                PaymentScreen.SUCCESS, "transferIn:$income", 0.92f,
+                transferScene(pkg, BillDirection.INCOME), BillDirection.INCOME
+            )
+        }
+        return null
+    }
+
+    private fun redPacketScene(pkg: String, direction: BillDirection): PaymentScene = when (pkg) {
+        WECHAT -> if (direction == BillDirection.INCOME) PaymentScene.WECHAT_RED_PACKET_IN
+        else PaymentScene.WECHAT_RED_PACKET_OUT
+        ALIPAY -> if (direction == BillDirection.INCOME) PaymentScene.ALIPAY_RED_PACKET_IN
+        else PaymentScene.ALIPAY_RED_PACKET_OUT
+        else -> PaymentScene.UNKNOWN
+    }
+
+    private fun transferScene(pkg: String, direction: BillDirection): PaymentScene = when (pkg) {
+        WECHAT -> if (direction == BillDirection.INCOME) PaymentScene.WECHAT_TRANSFER_IN
+        else PaymentScene.WECHAT_TRANSFER_OUT
+        ALIPAY -> if (direction == BillDirection.INCOME) PaymentScene.ALIPAY_TRANSFER_IN
+        else PaymentScene.ALIPAY_TRANSFER_OUT
+        UNIONPAY -> PaymentScene.UNIONPAY_PAY
+        else -> PaymentScene.BANK_TRANSFER
+    }
+
+    private fun internalScene(pkg: String): PaymentScene = when (pkg) {
+        WECHAT -> PaymentScene.WECHAT_WITHDRAW
+        ALIPAY -> PaymentScene.ALIPAY_WITHDRAW
+        else -> PaymentScene.INTERNAL_TRANSFER
+    }
+
     private fun sceneFor(pkg: String, direction: BillDirection, compact: String): PaymentScene = when {
-        pkg == WECHAT && compact.contains("红包") ->
+        pkg == WECHAT && RED_PACKET_CONTEXT.any { compact.contains(it) } ->
             if (direction == BillDirection.INCOME) PaymentScene.WECHAT_RED_PACKET_IN
             else PaymentScene.WECHAT_RED_PACKET_OUT
         pkg == WECHAT && direction == BillDirection.INCOME -> PaymentScene.WECHAT_TRANSFER_IN
@@ -321,9 +483,29 @@ object PaymentScreenRecognizer {
         pkg == ALIPAY && direction == BillDirection.INCOME -> PaymentScene.ALIPAY_TRANSFER_IN
         pkg == ALIPAY && compact.contains("转账") -> PaymentScene.ALIPAY_TRANSFER_OUT
         pkg == ALIPAY -> PaymentScene.ALIPAY_MERCHANT_PAY
+        pkg == UNIONPAY -> PaymentScene.UNIONPAY_PAY
         pkg == DOUYIN -> PaymentScene.DOUYIN_ORDER
         pkg.isBlank() -> PaymentScene.UNKNOWN
         else -> PaymentScene.BANK_TRANSFER
+    }
+
+    /**
+     * 场景 → 备注前缀（v1.3.8）。
+     *
+     * 红包页抽到的「商户」往往是「恭喜发财，大吉大利」这种祝福语，
+     * 直接当备注会得到一笔看不懂的账。用「微信红包 · 张三」这种前缀，
+     * 既说清钱从哪来，又保留对方昵称。
+     */
+    fun remarkPrefix(scene: PaymentScene): String = when (scene) {
+        PaymentScene.WECHAT_TRANSFER_OUT -> "微信转账"
+        PaymentScene.WECHAT_TRANSFER_IN -> "微信收款"
+        PaymentScene.WECHAT_RED_PACKET_OUT -> "微信红包"
+        PaymentScene.WECHAT_RED_PACKET_IN -> "微信红包"
+        PaymentScene.ALIPAY_TRANSFER_OUT -> "支付宝转账"
+        PaymentScene.ALIPAY_TRANSFER_IN -> "支付宝收款"
+        PaymentScene.ALIPAY_RED_PACKET_OUT -> "支付宝红包"
+        PaymentScene.ALIPAY_RED_PACKET_IN -> "支付宝红包"
+        else -> ""
     }
 
     private fun billDetailScene(pkg: String): PaymentScene = when (pkg) {

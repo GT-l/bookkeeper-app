@@ -89,6 +89,18 @@ class CaptureCoordinator @Inject constructor(
         val bookId = settings.defaultBookId.first().takeIf { it > 0L }
             ?: bookRepository.findDefault().getOrNull()?.bookId
             ?: return@withContext
+
+        // v1.3.8：提现 / 充值 / 零钱通·余额宝划转 —— 钱只在自有账户之间搬家，
+        // 记成支出会把总支出翻倍。这里不入账，只给一张轻提示说明「已跳过」，
+        // 避免用户以为识屏又失效了。
+        if (event.direction == BillDirection.NEUTRAL.name &&
+            event.captureType == CaptureType.ACCESSIBILITY_TEXT
+        ) {
+            captureDao.markStatus(event.eventId, CaptureEventStatus.DISCARDED.code)
+            runCatching { verifier.notifyInternalTransfer(event.sceneType) }
+            Timber.d("internal transfer skipped eventId=%d scene=%s", event.eventId, event.sceneType)
+            return@withContext
+        }
         val accounts = accountRepository.observeAll(bookId).first()
         val threshold = automationSettings.ocrThreshold.first()
 
@@ -132,21 +144,27 @@ class CaptureCoordinator @Inject constructor(
         // PaymentTextAnalyzer + FieldExtractor，同一页面两条路会抽到不同商户/备注。
         // 现在都用同一个 analyzer 择优，并把展示备注统一写成「商户 · 购买内容」——
         // 这也让去重键与摇一摇写出的账单备注一致，跨链路重复才会被识别出来。
-        val displayRemark: String = if (!isSms && event.rawText.isNotBlank()) {
-            val analysis = runCatching { analyzer.analyze(event.rawText) }.getOrNull()
-            if (analysis != null) {
-                val bestMerchant = analysis.merchant.takeIf { it.isNotBlank() } ?: fields.merchant
-                fields = fields.copy(
-                    amountFen = analysis.amountFen ?: fields.amountFen,
-                    merchant = bestMerchant
-                )
-                composeRemark(bestMerchant, analysis.goods)
+        // v1.3.8：转账 / 红包统一加场景前缀。红包页抽到的「商户」常是
+        // 「恭喜发财，大吉大利」这类祝福语，直接当备注会得到一笔看不懂的账；
+        // 加前缀后是「微信红包 · 张三」，既说清来源又保留对方昵称。
+        val displayRemark: String = withScenePrefix(
+            if (!isSms && event.rawText.isNotBlank()) {
+                val analysis = runCatching { analyzer.analyze(event.rawText) }.getOrNull()
+                if (analysis != null) {
+                    val bestMerchant = analysis.merchant.takeIf { it.isNotBlank() } ?: fields.merchant
+                    fields = fields.copy(
+                        amountFen = analysis.amountFen ?: fields.amountFen,
+                        merchant = bestMerchant
+                    )
+                    composeRemark(bestMerchant, analysis.goods)
+                } else {
+                    composeRemark(fields.merchant, "")
+                }
             } else {
                 composeRemark(fields.merchant, "")
-            }
-        } else {
-            composeRemark(fields.merchant, "")
-        }
+            },
+            event.sceneType
+        )
 
         // 4) 分类（账户映射复用同一份 accounts）；短信精配账户优先级高于通用 matcher 猜测
         val baseRuleHit = classifier.classify(
@@ -283,6 +301,19 @@ class CaptureCoordinator @Inject constructor(
         )
         fields to (summary.acct.takeIf { it > 0L } ?: 0L)
     }.getOrDefault(ExtractedFields() to 0L)
+
+    /**
+     * 场景前缀（v1.3.8）：只给转账 / 红包加，商户付款保持商户名不动。
+     * 备注本身已含前缀时不重复叠加。
+     */
+    private fun withScenePrefix(remark: String, sceneType: String): String {
+        val scene = runCatching { PaymentScene.valueOf(sceneType) }.getOrNull() ?: return remark
+        val prefix = PaymentScreenRecognizer.remarkPrefix(scene)
+        if (prefix.isBlank()) return remark
+        if (remark.isBlank()) return prefix
+        if (remark.contains(prefix)) return remark
+        return composeRemark(prefix, remark)
+    }
 
     /**
      * v1.3.2：规则没命中分类时也必须给候选一个可用分类。

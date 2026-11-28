@@ -31,6 +31,7 @@ class AccessibilityCaptureParser @Inject constructor() {
         businessTag: BusinessTag,
         screen: PaymentScreen = PaymentScreen.UNKNOWN,
         direction: BillDirection = BillDirection.EXPENSE,
+        scene: PaymentScene = PaymentScene.UNKNOWN,
         pendingAmountFen: Long = 0L,
         pendingMerchant: String = ""
     ): CaptureEvent = CaptureEvent(
@@ -42,6 +43,7 @@ class AccessibilityCaptureParser @Inject constructor() {
         businessTag = businessTag,
         screenType = screen.name,
         direction = direction.name,
+        sceneType = scene.name,
         pendingAmountFen = pendingAmountFen,
         pendingMerchant = pendingMerchant
     )

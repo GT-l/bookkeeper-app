@@ -241,4 +241,117 @@ class PaymentScreenRecognizerTest {
         )
         assertEquals(PaymentScreen.SUCCESS, r.screen)
     }
+
+    // ---------- v1.3.8：红包四场景 / 聊天页排除 / 提现 ----------
+
+    @Test
+    fun `收到红包记收入且场景为红包`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "微信红包\n¥10.00\n已存入零钱\n恭喜发财，大吉大利"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.INCOME, r.direction)
+        assertEquals(PaymentScene.WECHAT_RED_PACKET_IN, r.scene)
+    }
+
+    @Test
+    fun `发出红包记支出且场景为红包`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "红包已发送\n¥100.00\n已存入对方零钱"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.EXPENSE, r.direction)
+        assertEquals(PaymentScene.WECHAT_RED_PACKET_OUT, r.scene)
+    }
+
+    @Test
+    fun `红包详情页类名加已领取也能识别`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "com.tencent.mm.plugin.luckymoney.ui.LuckyMoneyDetailUI", "红包已领取\n¥5.20"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.INCOME, r.direction)
+    }
+
+    @Test
+    fun `领券页的已领取不会被当成支付成功`() {
+        // v1.3.6 词表里有裸的「已领取」，微信卡包 / 优惠券页会被记成支付成功
+        val r = PaymentScreenRecognizer.classify(wechat, "", "卡券\n已领取\n星巴克买一送一")
+        assertFalse(r.screen == PaymentScreen.SUCCESS)
+    }
+
+    @Test
+    fun `对方已收款是转出方看到的提示应记支出`() {
+        // v1.3.6 把「对方已收款」放进收入表 → 转出去的钱被记成收入
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "转账成功\n¥100.00\n对方已收款"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.EXPENSE, r.direction)
+        assertEquals(PaymentScene.WECHAT_TRANSFER_OUT, r.scene)
+    }
+
+    @Test
+    fun `聊天页不会被记账`() {
+        // 聊天页必有「微信支付」服务号名和转账气泡（已收款），旧逻辑必然误记
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "com.tencent.mm.ui.chatting.ChattingUI",
+            "微信支付\n转账\n¥100.00\n已收款"
+        )
+        assertEquals(PaymentScreen.UNKNOWN, r.screen)
+        assertEquals(0f, r.confidence, 0.0001f)
+    }
+
+    @Test
+    fun `微信主界面不会被记账`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "com.tencent.mm.ui.LauncherUI", "微信支付\n文件传输助手\n已收款"
+        )
+        assertEquals(PaymentScreen.UNKNOWN, r.screen)
+    }
+
+    @Test
+    fun `红包编辑页是中间态不记成功`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "com.tencent.mm.plugin.luckymoney.ui.LuckyMoneyPrepareUI", "¥100.00\n塞钱进红包"
+        )
+        assertEquals(PaymentScreen.ENTRY, r.screen)
+    }
+
+    @Test
+    fun `零钱提现属于账户内部划转不计收支`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "零钱提现\n¥500.00\n提现成功\n已到账 招商银行(1234)"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.NEUTRAL, r.direction)
+        assertEquals(PaymentScene.WECHAT_WITHDRAW, r.scene)
+    }
+
+    @Test
+    fun `支付宝收红包记收入`() {
+        val r = PaymentScreenRecognizer.classify(
+            alipay, "", "红包详情\n¥8.88\n已领取红包"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.INCOME, r.direction)
+        assertEquals(PaymentScene.ALIPAY_RED_PACKET_IN, r.scene)
+    }
+
+    @Test
+    fun `云闪付付款成功记支出`() {
+        val r = PaymentScreenRecognizer.classify(
+            PaymentScreenRecognizer.UNIONPAY, "", "支付成功\n¥36.00\n收款方：便利蜂"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.EXPENSE, r.direction)
+    }
+
+    @Test
+    fun `转账与红包有中文备注前缀`() {
+        assertEquals("微信转账", PaymentScreenRecognizer.remarkPrefix(PaymentScene.WECHAT_TRANSFER_OUT))
+        assertEquals("微信收款", PaymentScreenRecognizer.remarkPrefix(PaymentScene.WECHAT_TRANSFER_IN))
+        assertEquals("微信红包", PaymentScreenRecognizer.remarkPrefix(PaymentScene.WECHAT_RED_PACKET_IN))
+        assertEquals("", PaymentScreenRecognizer.remarkPrefix(PaymentScene.WECHAT_MERCHANT_PAY))
+    }
 }

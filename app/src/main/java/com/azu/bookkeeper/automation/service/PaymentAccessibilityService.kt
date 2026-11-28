@@ -126,6 +126,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         Log.w(TAG, "无障碍服务已连接: canTakeScreenshot=$canShot sdk=${Build.VERSION.SDK_INT}")
         com.azu.bookkeeper.core.CaptureLog.i(applicationContext, "A11Y", "服务已连接 canTakeScreenshot=$canShot")
         runCatching { logScreenshotCapability() }
+        // v1.3.8：识屏已恢复，立即撤掉「识屏没在工作」通知，不等守护下一轮
+        runCatching { CaptureHealthNotifier.clear(applicationContext) }
         // 心跳 + 进程现场：pid / 进程已运行时长 / 第几次连接。
         // v1.2.2：连接事件也强制落盘，否则用户复制回来的 log 只有一堆断开 ERROR，
         // 还原不出「连上 → 1 秒后被撤销」的完整时间线。
@@ -471,6 +473,7 @@ class PaymentAccessibilityService : AccessibilityService() {
             businessTag = businessTag,
             screen = recognition.screen,
             direction = recognition.direction,
+            scene = recognition.scene,
             pendingAmountFen = pending?.amountFen ?: 0L,
             pendingMerchant = pending?.merchant.orEmpty()
         )

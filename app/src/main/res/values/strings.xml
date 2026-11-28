@@ -9,6 +9,10 @@
     <string name="notification_channel_auto_capture">少花点儿 · 自动记账服务</string>
     <string name="notification_channel_verify">账单校对提醒</string>
     <string name="notification_channel_reminder">记账提醒</string>
+    <!-- v1.3.8：识屏不可用提醒（非常驻） -->
+    <string name="capture_health_channel">识屏状态提醒</string>
+    <string name="capture_health_title">识屏没在工作</string>
+    <string name="capture_health_action_enable">去开启</string>
     <!-- 桌面小组件 / 静态快捷方式（T7 消费） -->
     <string name="appwidget_label">少花点儿 · 快速记账</string>
     <string name="appwidget_description">一键打开记一笔表单</string>

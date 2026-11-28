@@ -44,8 +44,18 @@ class A11yWatchdogService : android.app.Service() {
                 EntryPointAccessors.fromApplication(app, WatchdogEntryPoint::class.java)
             }.getOrNull() ?: return
             val guide = runCatching { entry.permissionGuide() }.getOrNull() ?: return
-            if (guide.isAccessibilityEnabled()) return
-            if (!guide.accessibilityServiceEverConnected()) return
+            if (guide.isAccessibilityEnabled()) {
+                // v1.3.8：识屏恢复 → 撤掉「识屏没在工作」提醒，不留残影
+                CaptureHealthNotifier.clear(app)
+                return
+            }
+            if (!guide.accessibilityServiceEverConnected()) {
+                // 自动化开着但从没连上过：不是「被系统关掉」，而是根本没授权
+                CaptureHealthNotifier.notifyUnavailable(
+                    app, "无障碍识屏还没开启，付款后不会自动记账"
+                )
+                return
+            }
 
             val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val now = System.currentTimeMillis()
@@ -75,10 +85,21 @@ class A11yWatchdogService : android.app.Service() {
                                 "确认「允许受限设置」已开；仍不行需要用 Shizuku / Shevery 锁定本服务。"
                         )
                     }
+                    // v1.3.8：写回失败同样要落到通知栏——用户不进 App 也能看到识屏坏了
+                    CaptureHealthNotifier.notifyUnavailable(
+                        app,
+                        "无障碍识屏被系统反复关闭（已尝试自动恢复 $next 次），付款后不会自动记账"
+                    )
                 }
                 return
             }
 
+            // v1.3.8：识屏确实不可用 → 先保证通知栏有一条（内部 30 分钟节流），
+            // 再考虑轻卡片的 10 分钟节流。轻卡片只在 App 前台可见，而「识屏坏了」
+            // 往往是用户在其他 App 里付完款才发现的。
+            CaptureHealthNotifier.notifyUnavailable(
+                app, "无障碍识屏被系统关闭了，付款后不会自动记账"
+            )
             if (now - lastPrompt < PROMPT_INTERVAL_MS) return
             prefs.edit().putLong(KEY_LAST_PROMPT, now).apply()
             showPrompt(

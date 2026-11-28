@@ -18,6 +18,8 @@ data class CaptureEvent(
     val screenType: String = "UNKNOWN",
     /** v1.3.6：记账方向（EXPENSE / INCOME / NEUTRAL），收款类转账记收入。 */
     val direction: String = "EXPENSE",
+    /** v1.3.8：识别出的支付场景（PaymentScene.name），用于备注前缀与内部划转过滤。 */
+    val sceneType: String = "UNKNOWN",
     /** v1.3.6：收银台阶段缓存下来的金额（分），成功页字段缺失时补齐。 */
     val pendingAmountFen: Long = 0L,
     /** v1.3.6：收银台阶段缓存下来的商户。 */

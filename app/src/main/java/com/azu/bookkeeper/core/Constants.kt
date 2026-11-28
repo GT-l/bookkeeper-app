@@ -38,6 +38,8 @@ object Constants {
     val PAYMENT_PACKAGES = listOf(
         "com.tencent.mm",
         "com.eg.android.AlipayGphone",
+        // v1.3.8：云闪付——市面记账 App 的三大主力场景之一，之前完全不在白名单
+        "com.unionpay",
         "com.chinapay.pay",
         "com.icbc",
         "com.ccb",
@@ -77,6 +79,8 @@ object Constants {
     const val CHANNEL_AUTO_CAPTURE = "channel_auto_capture"
     const val CHANNEL_VERIFY = "channel_verify"
     const val CHANNEL_REMINDER = "channel_reminder"
+    /** v1.3.8：识屏不可用提醒（非常驻，恢复后自动撤掉）。 */
+    const val CHANNEL_CAPTURE_HEALTH = "channel_capture_health"
 
     /** 静态快捷方式 / 小组件跳转时携带的 intent extra，用于打开表单预填。 */
     const val EXTRA_QUICK_ADD = "com.azu.bookkeeper.extra.QUICK_ADD"
@@ -88,4 +92,6 @@ object Constants {
     const val FOREGROUND_SERVICE_ID = 1001
     const val VERIFY_NOTIFICATION_ID = 1002
     const val AUTO_BILL_NOTIFICATION_ID = 1003
+    /** v1.3.8：识屏不可用提醒（与 1004「自动化已关闭」区分开，便于用户单独关掉）。 */
+    const val CAPTURE_HEALTH_NOTIFICATION_ID = 1005
 }

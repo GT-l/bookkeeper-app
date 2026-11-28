@@ -1,5 +1,6 @@
 package com.azu.bookkeeper.automation.verify
 
+import com.azu.bookkeeper.automation.capture.PaymentScene
 import com.azu.bookkeeper.automation.dedup.DuplicateDetector
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.Money
@@ -144,6 +145,28 @@ class VerificationController @Inject constructor(
                 title = "这笔已记过，先跳过啦",
                 detail = "${Money.format(amountFen)} ${remark}".trim(),
                 note = "避免重复记账，放心～",
+                autoDismissMs = 3_200L
+            )
+        }
+    }
+
+    /**
+     * v1.3.8：识别到提现 / 充值 / 零钱通·余额宝划转。
+     * 这类不是收支（钱只是换了账户），协调器已跳过不记账；
+     * 这里给一张 3 秒轻提示，避免用户误以为识屏又失效了。
+     */
+    fun notifyInternalTransfer(sceneType: String) {
+        val scene = runCatching { PaymentScene.valueOf(sceneType) }.getOrNull()
+        val label = when (scene) {
+            PaymentScene.WECHAT_WITHDRAW -> "微信零钱"
+            PaymentScene.ALIPAY_WITHDRAW -> "支付宝余额"
+            else -> "账户"
+        }
+        runCatching {
+            overlay.showInfo(
+                title = "这笔是账户内部划转",
+                detail = "${label}提现 / 充值不计入收支，已跳过",
+                note = "没有漏记，放心～",
                 autoDismissMs = 3_200L
             )
         }

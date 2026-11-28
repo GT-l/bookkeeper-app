@@ -3,6 +3,8 @@ package com.azu.bookkeeper.core.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -27,7 +29,35 @@ object UpdateInstaller {
         }
         context.startActivity(intent)
         true
-    }.getOrDefault(false)
+    }.getOrDefault(false).also { ok ->
+        // v1.3.5：安装器已经拿到 FileProvider URI，稍后把安装包删掉，别在私有目录里留 90MB 垃圾。
+        // 延迟 2 分钟是给系统 PackageInstaller 复制文件的余量；进程若被杀，下次检查更新也会清理。
+        if (ok) scheduleCleanup(apk)
+    }
+
+    /** 延迟删除已交给安装器的 APK。 */
+    fun scheduleCleanup(apk: File, delayMs: Long = 120_000L) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            runCatching { if (apk.exists()) apk.delete() }
+        }, delayMs)
+    }
+
+    /**
+     * 清理上次更新遗留的安装包（App 被杀 / 用户没点安装）。
+     * 只动 `filesDir/updates` 下超过 30 分钟的 APK，不会误删正在下载的文件。
+     */
+    fun cleanupOldApks(context: Context, keep: File? = null) {
+        runCatching {
+            val dir = File(context.filesDir, "updates")
+            val cutoff = System.currentTimeMillis() - 30L * 60L * 1000L
+            dir.listFiles()?.forEach { file ->
+                if (keep != null && file.absolutePath == keep.absolutePath) return@forEach
+                if (file.isFile && file.name.endsWith(".apk") && file.lastModified() < cutoff) {
+                    file.delete()
+                }
+            }
+        }
+    }
 
     /**
      * 从用户选择的本地 APK（例如电脑上用代理下载后传到手机）安装。

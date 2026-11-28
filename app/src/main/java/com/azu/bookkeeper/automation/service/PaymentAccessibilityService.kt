@@ -90,7 +90,14 @@ class PaymentAccessibilityService : AccessibilityService() {
     // 内容指纹每次都不一样，旧 5s 指纹冷却完全拦不住 → 同一笔支付被提交 2~4 次 →
     // 后几次命中去重，弹「这笔已记过」，看起来就是「识屏快速触发误判重复」。
     // 现在：成功页提交后按包名进入静默期；再次进入付款界面（ENTRY）视为新一轮支付，解除静默。
-    private val settledPackages = mutableMapOf<String, Long>()
+    // v1.3.5：静默期带上「金额指纹」——同一包名但金额不同，说明是另一笔，必须放行，
+    // 否则用户 12 秒内连看两笔消费记录时，第二笔会被静默吞掉（表现为「概率识别失败」）。
+    private data class SettledMark(val at: Long, val money: String)
+
+    private val settledPackages = mutableMapOf<String, SettledMark>()
+
+    /** 重试链代号：新的读屏事件让旧链失效，避免多条链并行各提交一次。 */
+    private var retryGeneration = 0
 
     // ---- 手势相关状态 ----
     private var fingerprintController: FingerprintGestureController? = null
@@ -214,9 +221,21 @@ class PaymentAccessibilityService : AccessibilityService() {
                     "未识别 pkg=$packageName cls=$className len=${text.length} sparse=$sparse " +
                         "preview=${ScreenTextCollector.preview(text)}"
                 )
+                // v1.3.5：打开「消费记录 / 账单」时页面既没有成功词也没有「账单详情」标题，
+                // 但有金额 + 交易单号/商户等凭据字段 → 兜底提交，让协调器决定自动入账或轻卡片确认。
+                // 这是「自动识别概率失败、必须用手势」的主要修复点之一。
+                if (PaymentScreenRecognizer.looksLikeReceipt(text)) {
+                    logScreenThrottled("凭证页兜底提交 pkg=$packageName len=${text.length}")
+                    submitCapture(
+                        parser, packageName, className, recognition,
+                        ScreenTextCollector.refine(packageName, text)
+                    )
+                    return
+                }
                 // 文本稀疏（v1.3.0「只剩支付两字」的现场）或类名像结果页 → 有界重读
                 if (sparse || (className.isNotBlank() && PaymentScreenRecognizer.looksLikeResultClass(className))) {
-                    scheduleResultRetry(parser, packageName, className, 1)
+                    retryGeneration++
+                    scheduleResultRetry(parser, packageName, className, 1, retryGeneration)
                 }
                 return
             }
@@ -281,15 +300,19 @@ class PaymentAccessibilityService : AccessibilityService() {
         if (fingerprint == lastSuccessFingerprint && now - lastSuccessAt < SUCCESS_DEDUP_MS) return
         // v1.3.4 核心：同一轮支付成功后，本包名进入静默期。期间成功页/详情页的
         // 所有重试链、事件潮一律不再提交，从源头消灭「同一笔被提交多次 → 命中去重弹重复」。
-        // 用户再次进入付款界面（ENTRY）会解除静默，下一笔照常识别。
-        val settledAt = settledPackages[packageName] ?: 0L
-        if (settledAt > 0L && now - settledAt < SETTLED_QUIET_MS) {
-            logScreenThrottled("支付静默期跳过 pkg=$packageName 距上次提交=${now - settledAt}ms")
+        // v1.3.5：静默期带金额指纹——金额不同说明是另一笔（用户连续查看消费记录），必须放行。
+        // 用户再次进入付款界面（ENTRY）也会解除静默，下一笔照常识别。
+        val mark = settledPackages[packageName]
+        val money = firstMoneyKey(text)
+        if (mark != null && now - mark.at < SETTLED_QUIET_MS &&
+            (money.isBlank() || mark.money.isBlank() || money == mark.money)
+        ) {
+            logScreenThrottled("支付静默期跳过 pkg=$packageName 距上次提交=${now - mark.at}ms money=$money")
             return
         }
         lastSuccessFingerprint = fingerprint
         lastSuccessAt = now
-        settledPackages[packageName] = now
+        settledPackages[packageName] = SettledMark(now, money)
         val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
         com.azu.bookkeeper.core.CaptureLog.forceInfo(
             applicationContext, "SCREEN",
@@ -310,17 +333,52 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * 粗提页面里的第一个金额数字，仅用于判断「是不是同一笔」。
+     * 纯字符扫描，不用正则（Android 17 的 ICU 对字符类 \s 会抛异常）。
+     */
+    private fun firstMoneyKey(text: String): String {
+        if (text.isBlank()) return ""
+        for (i in text.indices) {
+            if (text[i] == '¥' || text[i] == '￥') {
+                var end = i + 1
+                while (end < text.length &&
+                    (text[end].isDigit() || text[end] == '.' || text[end] == ',')
+                ) end++
+                val s = text.substring(i + 1, end).replace(",", "")
+                if (s.any { it.isDigit() }) return s
+            }
+        }
+        // 没有货币符号时，退化为「含小数点的数字串」（如 23.00）
+        var i = 0
+        while (i < text.length) {
+            if (text[i].isDigit()) {
+                var j = i
+                while (j < text.length && (text[j].isDigit() || text[j] == '.')) j++
+                val s = text.substring(i, j)
+                if (s.contains('.') && s.length >= 3) return s
+                i = j
+            } else {
+                i++
+            }
+        }
+        return ""
+    }
+
     /** 微信空根节点有界重读：150 / 350 / 650ms，最多 3 次，用主线程 Handler 不阻塞回调。 */
     private fun scheduleResultRetry(
         parser: AccessibilityCaptureParser,
         packageName: String,
         className: String,
-        attempt: Int
+        attempt: Int,
+        generation: Int = retryGeneration
     ) {
         if (attempt > MAX_RETRY) return
         val delayMs = when (attempt) { 1 -> 150L; 2 -> 350L; else -> 650L }
         mainHandler.postDelayed({
             if (instance !== this) return@postDelayed
+            // 期间来了新事件 → 旧链作废，避免多条链并行各提交一次
+            if (generation != retryGeneration) return@postDelayed
             runCatching {
                 val text = readActiveWindowText(parser)
                 val recognition = PaymentScreenRecognizer.classify(packageName, className, text)
@@ -328,13 +386,18 @@ class PaymentAccessibilityService : AccessibilityService() {
                     applicationContext, "SCREEN",
                     "结果页重读 #$attempt len=${text.length} screen=${recognition.screen} reason=${recognition.reason}"
                 )
-                if (recognition.screen == PaymentScreen.SUCCESS && text.isNotBlank()) {
+                if ((recognition.screen == PaymentScreen.SUCCESS ||
+                        recognition.screen == PaymentScreen.DETAIL ||
+                        (recognition.screen == PaymentScreen.UNKNOWN &&
+                            PaymentScreenRecognizer.looksLikeReceipt(text))) &&
+                    text.isNotBlank()
+                ) {
                     submitCapture(
                         parser, packageName, className, recognition,
                         ScreenTextCollector.refine(packageName, text)
                     )
                 } else if (attempt < MAX_RETRY) {
-                    scheduleResultRetry(parser, packageName, className, attempt + 1)
+                    scheduleResultRetry(parser, packageName, className, attempt + 1, generation)
                 }
             }
         }, delayMs)

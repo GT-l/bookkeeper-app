@@ -24,6 +24,16 @@ import timber.log.Timber
  */
 class ScreenCaptureAuthActivity : ComponentActivity() {
 
+    private val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var finished = false
+
+    /**
+     * v1.3.5：透明页必须有自毁兜底。
+     * 部分 ROM 在用户取消系统授权对话框时不给 onActivityResult，页面会一直透明停留，
+     * 用户看到的就是「黑屏，怎么点都没反应」。15 秒没结果就自己关掉。
+     */
+    private val timeout = Runnable { finishOnce() }
+
     private val screenCapture: ScreenCaptureManager by lazy {
         EntryPointAccessors.fromApplication(
             applicationContext,
@@ -47,7 +57,16 @@ class ScreenCaptureAuthActivity : ComponentActivity() {
         } else {
             Toast.makeText(this, "已取消截屏授权，可在自动化设置里重新授权", Toast.LENGTH_SHORT).show()
         }
+        finishOnce()
+    }
+
+    private fun finishOnce() {
+        if (finished) return
+        finished = true
+        runCatching { timeoutHandler.removeCallbacks(timeout) }
         finish()
+        // 透明页没有退场动画时，部分 ROM 会留一帧黑底，显式淡出更稳
+        runCatching { overridePendingTransition(0, android.R.anim.fade_out) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +76,7 @@ class ScreenCaptureAuthActivity : ComponentActivity() {
             finish()
             return
         }
+        timeoutHandler.postDelayed(timeout, AUTH_TIMEOUT_MS)
         // Compose 需要 setContent，否则部分 ROM 上透明 Activity 会被判为异常窗口
         setContent { }
         // 提前拉起 mediaProjection 类型的前台服务：Android 14+ 要求
@@ -65,15 +85,24 @@ class ScreenCaptureAuthActivity : ComponentActivity() {
         val consentIntent = screenCapture.createCaptureIntent()
         if (consentIntent == null) {
             Toast.makeText(this, "当前设备不支持截屏授权", Toast.LENGTH_LONG).show()
-            finish()
+            finishOnce()
             return
         }
         runCatching { launcher.launch(consentIntent) }
             .onFailure {
                 Timber.w(it, "launch capture consent failed")
                 Toast.makeText(this, "无法打开截屏授权：${it.javaClass.simpleName}", Toast.LENGTH_LONG).show()
-                finish()
+                finishOnce()
             }
+    }
+
+    override fun onDestroy() {
+        runCatching { timeoutHandler.removeCallbacks(timeout) }
+        super.onDestroy()
+    }
+
+    private companion object {
+        const val AUTH_TIMEOUT_MS = 15_000L
     }
 }
 

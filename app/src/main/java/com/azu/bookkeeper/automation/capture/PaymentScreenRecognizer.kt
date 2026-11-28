@@ -68,7 +68,25 @@ object PaymentScreenRecognizer {
         "支付失败", "付款失败", "已取消", "已退款", "支付超时", "订单关闭", "交易关闭"
     )
 
-    private val DETAIL_TEXT = listOf("账单详情", "交易详情", "订单详情")
+    /**
+     * v1.3.5：用户从「消费记录 / 账单」点进某笔交易时，页面往往不写「账单详情」，
+     * 只留一组字段（交易单号、商户单号、支付时间、商品说明）。
+     * 旧词表认不出 → 判 UNKNOWN → 直接丢弃，表现为「打开消费记录自动识别失败，必须用手势」。
+     */
+    private val DETAIL_STRONG = listOf(
+        "账单详情", "交易详情", "订单详情", "转账详情",
+        "交易单号", "商户单号", "支付时间", "商品说明", "转账单号", "订单编号"
+    )
+
+    /** 较弱的记录类词：列表页也会出现，必须配合「金额行数为个位数」才当单笔详情。 */
+    private val DETAIL_WEAK = listOf(
+        "消费记录", "交易记录", "收支明细", "账单记录", "转账记录", "扣款记录", "支付记录"
+    )
+
+    private val RECEIPT_CONTEXT = listOf(
+        "交易单号", "商户单号", "账单详情", "交易详情", "订单详情", "收款方",
+        "支付时间", "商品说明", "订单编号", "转账单号"
+    )
 
     /**
      * 抖音订单页专属（v1.3.1）：抖音电商完成页常只写「实付 ¥xx」+「订单详情」，
@@ -111,7 +129,26 @@ object PaymentScreenRecognizer {
     }
 
     /** 是否账单详情页文案：详情页也要提交捕获，才能触发「同一笔已记过」的轻提醒。 */
-    fun isDetailText(text: String): Boolean = DETAIL_TEXT.any { text.contains(it) }
+    fun isDetailText(text: String): Boolean =
+        DETAIL_STRONG.any { text.contains(it) } || DETAIL_WEAK.any { text.contains(it) }
+
+    /**
+     * 是否像一张「单笔消费凭据」：有金额 + 有交易单号/商户/订单等强上下文。
+     * 用于成功词、详情词都没命中的兜底——打开消费记录时至少还能进低置信度确认，
+     * 而不是静默丢掉。微信聊天页里出现「¥100」不会同时带「交易单号」，不会误触发。
+     */
+    fun looksLikeReceipt(text: String): Boolean {
+        if (text.isBlank()) return false
+        val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val hasMoney = lines.any { looksLikeAmount(it) } ||
+            text.contains('¥') || text.contains('￥')
+        if (!hasMoney) return false
+        return RECEIPT_CONTEXT.any { text.contains(it) }
+    }
+
+    /** 单笔详情页里的金额行数量：列表页会有很多行，借此避免把账单列表当成一笔。 */
+    private fun amountLineCount(text: String): Int =
+        text.lines().count { looksLikeAmount(it.trim()) }
 
     /** 类名是否像支付结果页：文本为空时用它触发有界重读。 */
     fun looksLikeResultClass(className: String): Boolean =
@@ -155,11 +192,19 @@ object PaymentScreenRecognizer {
             }
         }
 
-        // 3) 账单详情页：v1.3.1 起**提交捕获**（由 CaptureCoordinator 走去重 → 轻提醒），
-        //    不再在 dispatchEvent 里直接 return。必须排在 ENTRY 前，否则「付款方式」会抢先命中。
-        val detailHit = DETAIL_TEXT.firstOrNull { t.contains(it) }
-        if (detailHit != null) {
-            return Recognition(PaymentScreen.DETAIL, "keyword:$detailHit", 0.60f)
+        // 3) 账单 / 消费记录详情：v1.3.1 起**提交捕获**（由 CaptureCoordinator 走去重 → 轻提醒），
+        //    必须排在 ENTRY 前，否则「付款方式」会抢先命中。
+        //    v1.3.5：强字段（交易单号等）直接认；弱词（消费记录等）要求金额行少，避免把列表页当一笔。
+        val strongHit = DETAIL_STRONG.firstOrNull { t.contains(it) }
+        if (strongHit != null) {
+            return Recognition(PaymentScreen.DETAIL, "keyword:$strongHit", 0.66f)
+        }
+        val weakHit = DETAIL_WEAK.firstOrNull { t.contains(it) }
+        if (weakHit != null) {
+            val moneyLines = amountLineCount(t)
+            if (moneyLines in 1..3) {
+                return Recognition(PaymentScreen.DETAIL, "keyword:$weakHit+金额行$moneyLines", 0.55f)
+            }
         }
 
         // 4) 付款界面（中间态）：明确识别，但绝不触发记账

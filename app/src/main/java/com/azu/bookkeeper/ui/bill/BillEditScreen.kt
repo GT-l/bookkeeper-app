@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.azu.bookkeeper.ui.navigation.Screen
 import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.domain.model.BillType
 import com.azu.bookkeeper.domain.model.CycleType
@@ -73,11 +74,29 @@ fun BillEditScreen(
         onDispose { viewModel.onCancel() }
     }
 
+    /**
+     * v1.3.5 修复「取消不了 / 返回黑屏」：
+     * 识屏失败时表单可能被当作冷启动起始页（栈里只有它），此时 popBackStack() 返回 false，
+     * 点取消毫无反应；再按系统返回就直接结束 Activity，用户看到桌面/黑屏。
+     * 没有上一页时显式回首页并清空表单，保证「取消」永远有去处。
+     */
+    val exitForm: () -> Unit = {
+        val popped = runCatching { navController.popBackStack() }.getOrDefault(false)
+        if (!popped) {
+            runCatching {
+                navController.navigate(Screen.Home.route) {
+                    popUpTo(Screen.BillEdit.route) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
     // 幂等短路：来源事件已终态时不写库，直接提示并返回。
     LaunchedEffect(state.duplicateHandled) {
         if (state.duplicateHandled) {
             Toast.makeText(context, "该笔已补记，无需重复添加", Toast.LENGTH_SHORT).show()
-            navController.popBackStack()
+            exitForm()
         }
     }
 
@@ -322,7 +341,7 @@ fun BillEditScreen(
 
             Row(modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
                 CuteOutlinedButton(
-                    onClick = { navController.popBackStack() },
+                    onClick = exitForm,
                     enabled = !state.isSaving,
                     modifier = Modifier.weight(1f)
                 ) { Text("取消") }
@@ -332,7 +351,7 @@ fun BillEditScreen(
                         viewModel.save { _ ->
                             Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
                             scope.launch { runCatching { QuickCaptureWidget.refresh(context) } }
-                            navController.popBackStack()
+                            exitForm()
                         }
                     },
                     enabled = !state.isSaving,

@@ -41,6 +41,8 @@ class AboutViewModel @Inject constructor(
 
     fun checkForUpdate() {
         if (_ui.value.checking || _ui.value.downloading) return
+        // v1.3.5：每次检查更新前清掉上次遗留的安装包（已在安装后自动删除，这里兜底进程被杀的情况）
+        runCatching { UpdateInstaller.cleanupOldApks(context) }
         viewModelScope.launch {
             _ui.update {
                 it.copy(

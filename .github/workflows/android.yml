@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.4)
+      - name: Static consistency tests (v1.3.5)
         shell: bash
-        run: python3 scripts/verify_v1_3_4.py
+        run: python3 scripts/verify_v1_3_5.py
 
       - name: Build debug APK
         shell: bash
@@ -141,21 +141,23 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.4-debug
-          name: 少花点儿 v1.3.4 (Debug APK)
+          tag_name: v1.3.5-debug
+          name: 少花点儿 v1.3.5 (Debug APK)
           body: |
-            # 少花点儿 v1.3.4
+            # 少花点儿 v1.3.5
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
-            ## 更新
-            - 识屏轻卡片改为奶油风：同款小猪存钱罐 IP 形象 + 暖心短句 + 草莓粉金额。
-            - 下载失败提示更具体（HTTP 码 + 域名），支持浏览器下载 / 本地 APK 安装兜底（v1.3.3）。
-
             ## 修复
-            - 修复识屏快速触发导致同一笔支付被提交多次、误弹「已记过」重复提醒：
-              成功页提交后进入静默期，再次进入收银台才解锁；重复提醒另加 8 秒节流。
-            - 修复 Clash / 代理环境下检查更新成功但下载失败的问题（v1.3.3）。
+            - 打开消费记录 / 账单详情时识别失败、必须用手势才能记：
+              扩展「交易单号 / 商户单号 / 支付时间 / 消费记录」等详情页特征，
+              没有成功词的凭据页也会兜底进入确认；静默期改为按金额判断，连续看两笔记录不再吞第二笔。
+            - 识屏失败自动弹出记账页后「取消不了 / 返回黑屏」：
+              失败不再自动顶起表单，改为轻卡片或点击才打开的通知；表单没有上一页时显式回首页。
+            - 检查更新安装完成后自动删除安装包，不再在私有目录留 90MB 垃圾。
+
+            ## 优化
+            - 弹窗更可爱：奶油渐变卡片、圆形小猪头像托、右上角小星星、轻柔入场动画。
 
             ## 隐私
             账单数据只存本机，不上传。检查更新只读取公开 Releases。

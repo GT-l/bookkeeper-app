@@ -202,7 +202,9 @@ class ShakeQuickAddService : Service() {
                 CaptureFailReason.UNKNOWN,
                 listOf(DiagnosticStep("依赖注入", false, "LightweightCapture 取不到"))
             )
-            openForm("识屏组件加载失败，已打开记一笔")
+            // v1.3.5：依赖异常也不自动把页面顶到前台，避免用户不操作后黑屏
+            Toast.makeText(applicationContext, "识屏组件加载失败，点通知手动记一笔", Toast.LENGTH_SHORT).show()
+            showTapFallbackNotification(QuickCaptureRequest(entry = QuickEntry.SYSTEM_GESTURE))
             return
         }
         if (capture.needsAuthorization()) {
@@ -410,7 +412,8 @@ class ShakeQuickAddService : Service() {
             )
             entryPoint.captureProgress().showNeedAuth(pi)
         }
-        openForm("识屏需要截屏授权，已打开记一笔")
+        // v1.3.5：无授权时不自动跳表单，只留一条点击才打开的通知
+        showTapFallbackNotification(QuickCaptureRequest(entry = QuickEntry.SYSTEM_GESTURE))
     }
 
     /** 统一记录诊断（自检页展示最近一次失败步骤）。 */
@@ -423,7 +426,14 @@ class ShakeQuickAddService : Service() {
         }
     }
 
-    /** 用轻量识屏器的预填 Intent 打开表单；失败走全屏通知兜底。 */
+    /**
+     * 识屏失败时的出口（v1.3.5 重做）。
+     *
+     * 旧行为：直接 startActivity 把记账表单顶到前台。表单若成为冷启动起始页，
+     * 用户点「取消」时 popBackStack 无栈可退（取消不了），按返回又直接退出（黑屏）。
+     * 现在不再自动跳转：只给 Toast + 底部轻卡片（用户点「手动记一笔」才进表单），
+     * 弹不出卡片时退化为一条点击才打开的普通通知。
+     */
     private fun openCaptureForm(
         capture: LightweightCapture,
         amountFen: Long?,
@@ -431,16 +441,63 @@ class ShakeQuickAddService : Service() {
         message: String
     ) {
         capture.toast(message)
+        val request = QuickCaptureRequest(
+            entry = QuickEntry.SYSTEM_GESTURE,
+            amountFen = amountFen,
+            merchant = remark
+        )
+        val shown = runCatching {
+            entryPoint.overlayVerify().showConfirm(
+                title = "没识别到这笔，要手动记吗？",
+                detail = if (amountFen != null && amountFen > 0L) {
+                    "${Money.format(amountFen)} ${remark}".trim()
+                } else {
+                    "点下面的按钮打开记账页"
+                },
+                confirmLabel = "手动记一笔",
+                editLabel = null,
+                onConfirm = { openCaptureFormNow(capture, amountFen, remark) },
+                onDiscard = {},
+                note = "不用着急，随时都能记"
+            )
+        }.getOrDefault(false)
+        if (!shown) showTapFallbackNotification(request)
+    }
+
+    /** 用户主动点了「手动记一笔」才真正打开表单。 */
+    private fun openCaptureFormNow(
+        capture: LightweightCapture,
+        amountFen: Long?,
+        remark: String
+    ) {
         val launched = runCatching {
             startActivity(capture.formIntent(amountFen, remark))
         }.isSuccess
         if (!launched) {
-            val request = QuickCaptureRequest(
-                entry = QuickEntry.SYSTEM_GESTURE,
-                amountFen = amountFen,
-                merchant = remark
+            showTapFallbackNotification(
+                QuickCaptureRequest(
+                    entry = QuickEntry.SYSTEM_GESTURE,
+                    amountFen = amountFen,
+                    merchant = remark
+                )
             )
-            showFullScreenFallback(request)
+        }
+    }
+
+    /** 点击才打开的普通通知（v1.3.5：去掉 fullScreenIntent，避免自动把页面顶到前台）。 */
+    private fun showTapFallbackNotification(request: QuickCaptureRequest) {
+        runCatching { ensureGestureChannel() }
+        runCatching {
+            val pending = QuickCaptureLauncher.pendingIntent(this, request, 2002)
+            val notification = NotificationCompat.Builder(this, GESTURE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_quick_add)
+                .setContentTitle("识屏没成功，点这里手动记")
+                .setContentText("不会自动打开页面")
+                .setAutoCancel(true)
+                .setContentIntent(pending)
+                .setTimeoutAfter(8_000L)
+                .build()
+            NotifyGuard.safeNotify(this, 2002, notification)
         }
     }
 
@@ -471,10 +528,11 @@ class ShakeQuickAddService : Service() {
             .setContentText("点这里记一笔")
             .setAutoCancel(true)
             .setContentIntent(pending)
-            // 高优先级渠道 + 全屏意图，可绕过后台启动 Activity 限制
-            .setFullScreenIntent(pending, true)
+            // v1.3.5：去掉 fullScreenIntent。它会绕过后台启动限制自动把页面顶到前台，
+            // 用户不操作时容易停在表单上，返回就是黑屏。改为高优先级普通通知，点击才进。
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setTimeoutAfter(8_000L)
             .build()
 
     private fun vibrate() {

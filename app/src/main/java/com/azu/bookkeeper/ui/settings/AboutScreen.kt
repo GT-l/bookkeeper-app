@@ -90,6 +90,15 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
+                            version = "v1.3.5 · 消费记录识别与黑屏修复",
+                            items = listOf(
+                                "修复：打开消费记录/账单详情时识别失败，必须用手势才能记",
+                                "修复：识屏失败自动弹出记账页后取消不了、返回黑屏",
+                                "修复：检查更新安装完成后自动删除安装包",
+                                "优化：弹窗换成奶油渐变卡片、圆形小猪头像与轻柔入场动画"
+                            )
+                        )
+                        ChangelogRow(
                             version = "v1.3.4 · 识屏静默与奶油风弹窗",
                             items = listOf(
                                 "修复：同一轮支付快速触发只提交一次，不再误弹「已记过」重复提醒",

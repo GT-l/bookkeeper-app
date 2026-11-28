@@ -59,6 +59,14 @@ import kotlinx.coroutines.launch
  */
 class QuickConfirmActivity : ComponentActivity() {
 
+    /**
+     * v1.3.5：透明确认页加 25 秒自毁 + 不透明兜底背景。
+     * 旧版没有超时，用户不操作时透明 Activity 一直停在最上层；部分 ROM 上
+     * Compose 首帧未绘制就只剩黑底，看起来像黑屏，返回也退不掉。
+     */
+    private val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val timeout = Runnable { finish() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val amountFen = intent.getLongExtra(EXTRA_AMOUNT, 0L)
@@ -70,6 +78,9 @@ class QuickConfirmActivity : ComponentActivity() {
             finish()
             return
         }
+        // 窗口背景显式透明，避免系统默认黑底在 Compose 首帧前闪一下
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        timeoutHandler.postDelayed(timeout, CONFIRM_TIMEOUT_MS)
         setContent {
             BookkeeperTheme {
                 ConfirmCard(
@@ -139,7 +150,14 @@ class QuickConfirmActivity : ComponentActivity() {
         finish()
     }
 
+    override fun onDestroy() {
+        runCatching { timeoutHandler.removeCallbacks(timeout) }
+        super.onDestroy()
+    }
+
     companion object {
+        /** 用户不操作时自动关闭，避免透明页长期挂在最上层。 */
+        private const val CONFIRM_TIMEOUT_MS = 25_000L
         private const val EXTRA_AMOUNT = "extra_amount_fen"
         private const val EXTRA_MERCHANT = "extra_merchant"
         private const val EXTRA_GOODS = "extra_goods"

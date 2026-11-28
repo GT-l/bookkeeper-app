@@ -11,6 +11,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -128,8 +129,7 @@ class OverlayVerifyView @Inject constructor(
                 val density = host.resources.displayMetrics.density
                 val dp = { value: Int -> (value * density).toInt() }
                 val dark = isDark(host)
-                // 奶油风：浅色用接近奶白的 #FFF9F5，深色保留深紫灰，确保对比度
-                val cardBg = if (dark) DarkSurface.toArgb() else Color.rgb(0xFF, 0xF9, 0xF5)
+                // 奶油风：浅色走「奶白 → 淡粉」渐变，深色保留深紫灰，确保对比度
                 val textColor = (if (dark) DarkOnSurface else LightOnSurface).toArgb()
                 val accent = (if (dark) PrimaryLight else Primary).toArgb()
                 val amountColor = (if (dark) PrimaryLight else PrimaryDark).toArgb()
@@ -145,25 +145,40 @@ class OverlayVerifyView @Inject constructor(
                 }
                 val card = LinearLayout(host).apply {
                     orientation = LinearLayout.VERTICAL
+                    // 奶油渐变：上浅下粉，比纯色更软更「可可爱爱」
                     background = GradientDrawable().apply {
-                        setColor(cardBg)
-                        cornerRadius = dp(28).toFloat()
+                        orientation = GradientDrawable.TOP_BOTTOM
+                        colors = if (dark) {
+                            intArrayOf(DarkSurface.toArgb(), Color.rgb(0x3A, 0x30, 0x42))
+                        } else {
+                            intArrayOf(Color.rgb(0xFF, 0xFC, 0xF8), Color.rgb(0xFF, 0xEF, 0xF3))
+                        }
+                        cornerRadius = dp(30).toFloat()
                         setStroke(dp(1), border)
                     }
-                    elevation = dp(14).toFloat()
+                    elevation = dp(16).toFloat()
                     setPadding(dp(18), dp(18), dp(18), dp(18))
                 }
 
-                // 头部：同款小猪存钱罐 IP + 标题/暖心短句
+                // 头部：圆形奶油粉托 + 同款小猪存钱罐 IP + 标题 / 暖心短句
                 val header = LinearLayout(host).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                 }
-                header.addView(ImageView(host).apply {
+                val avatar = FrameLayout(host).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(if (dark) Color.rgb(0x4A, 0x3A, 0x48) else Color.rgb(0xFF, 0xE4, 0xEC))
+                        setStroke(dp(1), if (dark) border else Color.rgb(0xF7, 0xC9, 0xD6))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(dp(62), dp(62))
+                }
+                avatar.addView(ImageView(host).apply {
                     setImageResource(R.drawable.ic_piggy_overlay)
-                    layoutParams = LinearLayout.LayoutParams(dp(52), dp(52))
+                    layoutParams = FrameLayout.LayoutParams(dp(50), dp(50), Gravity.CENTER)
                     contentDescription = "小猪存钱罐"
                 })
+                header.addView(avatar)
                 val textColumn = LinearLayout(host).apply {
                     orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -171,7 +186,7 @@ class OverlayVerifyView @Inject constructor(
                 }
                 textColumn.addView(TextView(host).apply {
                     text = title
-                    textSize = 16f
+                    textSize = 17f
                     typeface = Typeface.DEFAULT_BOLD
                     setTextColor(textColor)
                     maxLines = 2
@@ -181,20 +196,29 @@ class OverlayVerifyView @Inject constructor(
                         text = note
                         textSize = 12f
                         setTextColor(noteColor)
-                        setPadding(0, dp(3), 0, 0)
+                        setPadding(0, dp(4), 0, 0)
                         maxLines = 1
                     })
                 }
                 header.addView(textColumn)
+                // 右上角小装饰，纯文字图形，不额外占位
+                header.addView(TextView(host).apply {
+                    text = "✦"
+                    textSize = 14f
+                    setTextColor(accent)
+                    alpha = 0.75f
+                    setPadding(dp(4), 0, dp(2), 0)
+                })
                 card.addView(header)
 
                 if (detail.isNotBlank()) {
                     card.addView(TextView(host).apply {
                         text = detail
-                        textSize = 18f
+                        textSize = 21f
                         typeface = Typeface.DEFAULT_BOLD
                         setTextColor(amountColor)
                         setPadding(dp(4), dp(14), dp(4), dp(2))
+                        letterSpacing = 0.02f
                     })
                 }
                 if (confirmLabel.isNotBlank()) {
@@ -212,7 +236,11 @@ class OverlayVerifyView @Inject constructor(
                             setTextColor(if (primary) Color.WHITE else accent)
                             background = GradientDrawable().apply {
                                 cornerRadius = dp(999).toFloat()
-                                if (primary) setColor(accent) else {
+                                if (primary) {
+                                    // 主按钮也做一点渐变，比纯色更软
+                                    orientation = GradientDrawable.LEFT_RIGHT
+                                    colors = intArrayOf(accent, (if (dark) PrimaryLight else PrimaryDark).toArgb())
+                                } else {
                                     setColor(Color.TRANSPARENT)
                                     setStroke(dp(1), accent)
                                 }
@@ -253,6 +281,14 @@ class OverlayVerifyView @Inject constructor(
                     y = (12 * density).toInt()
                 }
                 wm.addView(container, params)
+                // 轻柔入场：从底部浮上来 + 淡入，比硬弹出来更可爱
+                container.alpha = 0f
+                container.translationY = dp(26).toFloat()
+                container.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(240L)
+                    .start()
                 currentView = container
                 result[0] = true
                 val runnable = Runnable { dismiss() }

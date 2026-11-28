@@ -107,6 +107,9 @@ class CaptureDiagnosticsViewModel @Inject constructor(
                     // 每项独立兜底：某一项读取系统状态失败，只让这一项变红，绝不拖垮整页
                     add(safeItem("通知权限") { notificationCheck() })
                     add(safeItem("无障碍服务开关") { accessibilitySwitchCheck() })
+                    // v1.3.13：放在通道检查之前 —— 「微信里完全没反应」时，
+                    // 最先要看的就是系统到底有没有把事件发给本服务。
+                    add(safeItem("无障碍事件到达") { eventArrivalCheck() })
                     add(safeItem("无障碍截屏通道") { accessibilityChannelCheck() })
                     add(safeItem("媒体投影通道") { projectionChannelCheck() })
                 }
@@ -205,9 +208,35 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         return CheckItem("无障碍服务开关", ok, detail, advice)
     }
 
+    /**
+     * v1.3.13：无障碍事件到达检查。
+     *
+     * 「微信里所有界面都没反应、连 log 都没有」有两种成因，靠这一项一眼分开：
+     * - 今天 0 条 → 系统没把事件投给本服务（服务没真正绑定 / ROM 限制 / 开关被关）；
+     * - 有事件但支付应用 0 条 → 包名被过滤；
+     * - 两条都有 → 问题在页面识别或字段抽取，不用再怀疑通道。
+     */
+    private fun eventArrivalCheck(): CheckItem {
+        val snap = com.azu.bookkeeper.core.AccessibilityEventStats.snapshot(context)
+        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        val lastText = if (snap.lastAt > 0L) fmt.format(java.util.Date(snap.lastAt)) else "从未"
+        val pkgText = snap.lastPackage.ifBlank { "—" }
+        val detail = "今天 ${snap.total} 条（支付应用 ${snap.paymentTotal} 条） · " +
+            "最后一条 $lastText · $pkgText"
+        val advice = when {
+            !snap.hasAny ->
+                "系统没有把任何界面变化事件发给本服务。请到 设置 → 无障碍 把「少花点儿」关掉再打开；" +
+                    "若开关显示已开启，说明服务实际没绑上，重装后必须重新授权一次"
+            !snap.hasPayment ->
+                "事件有到达，但没有一条来自微信/支付宝：请确认事件是在支付应用里产生的，" +
+                    "或把「复制 log」发给开发者"
+            else -> ""
+        }
+        return CheckItem("无障碍事件到达", snap.hasAny, detail, advice)
+    }
+
     /** 通道 1：无障碍截屏（API 30+，免录屏授权，首选）。 */
-    private fun accessibilityChannelCheck(): CheckItem {
-        val connected = channels.accessibilityServiceConnected()
+    private fun accessibilityChannelCheck(): CheckItem {        val connected = channels.accessibilityServiceConnected()
         val ready = channels.accessibilityReady()
         val disabled = channels.isChannelDisabled(CaptureChannel.ACCESSIBILITY)
         val optIn = channels.accessibilityEnabledByUser()

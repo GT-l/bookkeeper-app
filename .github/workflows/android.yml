@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.12)
+      - name: Static consistency tests (v1.3.13)
         shell: bash
-        run: python3 scripts/verify_v1_3_12.py
+        run: python3 scripts/verify_v1_3_13.py
 
       - name: Build debug APK
         shell: bash
@@ -141,12 +141,20 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.12-debug
-          name: 少花点儿 v1.3.12 (Debug APK)
+          tag_name: v1.3.13-debug
+          name: 少花点儿 v1.3.13 (Debug APK)
           body: |
-            # 少花点儿 v1.3.12
+            # 少花点儿 v1.3.13
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
+
+            ## 排查能力（本版重点）
+            - 自检页新增「无障碍事件到达」：今天收到多少条事件、其中多少条来自支付应用、
+              最后一条是什么包名。微信里完全没反应时，一眼区分「系统没投事件」和「事件被过滤」。
+            - 「存储排查」新增「安装包残留」分类，列出 files/updates 与 cache/incoming-apk 下的 APK；
+              识屏日志 capture_log.txt 单独标注。
+            - 识屏日志改为默认开启（只存本机，256KB 自滚动），出问题时不再没有现场。
+            - 每次回到 App 前台立即体检无障碍：有自动恢复权限就直接写回，没有就发通知提醒。
 
             ## 重要：识屏通道恢复
             - 恢复「无障碍截屏」能力（canTakeScreenshot）并默认开启。

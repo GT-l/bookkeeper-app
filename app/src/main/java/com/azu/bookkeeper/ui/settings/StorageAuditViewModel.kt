@@ -43,6 +43,8 @@ class StorageAuditViewModel @Inject constructor(
         DATABASE("数据库"),
         BACKUP("备份文件"),
         LOG("日志与诊断"),
+        /** v1.3.13：检查更新下载的安装包，安装后本应自动删除，残留可手动清。 */
+        APK("安装包残留"),
         PREF("偏好设置"),
         CACHE("缓存与临时文件"),
         OTHER("其他")
@@ -275,7 +277,45 @@ class StorageAuditViewModel @Inject constructor(
                 sizeBytes = file.length(),
                 lastModified = file.lastModified(),
                 kind = kind,
-                note = if (kind == Kind.DATABASE) "旧版本数据库副本" else "运行时日志，可安全删除"
+                note = when {
+                    kind == Kind.DATABASE -> "旧版本数据库副本"
+                    // v1.3.13：识屏日志单独说明，用户排查「为什么没有 log」时能对上号
+                    name == "capture_log.txt" -> "识屏日志（自检页「复制 log」的来源），删除后日志清空"
+                    else -> "运行时日志，可安全删除"
+                }
+            )
+        }
+
+        // 3b) 更新安装包残留（v1.3.13）
+        // 检查更新会把 APK 下到 files/updates 与 cache/incoming-apk，
+        // 安装完成后靠定时任务清理；进程被杀或用户没走完安装流程时就会留下来（每个 ~90MB）。
+        val apkDirs = listOf(
+            File(filesDir, "updates"),
+            File(context.cacheDir, "incoming-apk")
+        )
+        apkDirs.filter { it.exists() }.forEach { dir ->
+            dir.listFiles()?.forEach { file ->
+                if (!file.isFile || !file.name.endsWith(".apk", ignoreCase = true)) return@forEach
+                result += Item(
+                    path = file.absolutePath,
+                    name = "${dir.name}/${file.name}",
+                    sizeBytes = file.length(),
+                    lastModified = file.lastModified(),
+                    kind = Kind.APK,
+                    note = "检查更新下载的安装包，安装后应自动删除；这里是残留，可安全删除"
+                )
+            }
+        }
+        // cache 顶层也可能直接落 APK
+        context.cacheDir.listFiles()?.forEach { file ->
+            if (!file.isFile || !file.name.endsWith(".apk", ignoreCase = true)) return@forEach
+            result += Item(
+                path = file.absolutePath,
+                name = "cache/${file.name}",
+                sizeBytes = file.length(),
+                lastModified = file.lastModified(),
+                kind = Kind.APK,
+                note = "缓存的安装包残留，可安全删除"
             )
         }
 

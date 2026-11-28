@@ -90,11 +90,11 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
-                            version = "v1.3.12 · 最新",
+                            version = "v1.3.13 · 最新",
                             items = listOf(
-                                "重要：恢复无障碍截屏能力，节点读不到时自动截图 OCR",
-                                "修复：微信自绘页面两条识屏通道同时失效，摇一摇完全用不了",
-                                "优化：无通道时主动引导一次录屏授权，授权后自动继续识屏"
+                                "新增「无障碍事件到达」诊断：一眼看出系统有没有把事件发给 App",
+                                "存储排查新增「安装包残留」，日志文件单独标注",
+                                "识屏日志默认开启；回到 App 即体检并尝试恢复无障碍"
                             )
                         )
                         ChangelogRow(

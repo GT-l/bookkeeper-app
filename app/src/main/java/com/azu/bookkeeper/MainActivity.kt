@@ -215,6 +215,14 @@ class MainActivity : FragmentActivity() {
             runCatching {
                 AutoCaptureForegroundService.ensureRunning(this@MainActivity, automationSettings)
             }
+            // v1.3.13：每次回到前台都体检一次无障碍。
+            // 覆盖安装 APK 后系统会撤销无障碍授权（日志 source=com.android.packageinstaller），
+            // 以前只有自动记账前台服务在跑时才会被守护发现；没开自动化的用户
+            // 打开 App 也看不到任何提示，误以为「识屏坏了」。
+            // 这里主动检查：有 WRITE_SECURE_SETTINGS 就自动写回，没有就发一条通知。
+            runCatching {
+                com.azu.bookkeeper.automation.service.A11yWatchdogService.checkNow(this@MainActivity)
+            }
             // 摇一摇走独立前台服务：与悬浮层安全模式无关，回到前台时按设置恢复
             runCatching {
                 if (automationSettings.quickGesture.first() == QuickGestureCodes.SHAKE) {

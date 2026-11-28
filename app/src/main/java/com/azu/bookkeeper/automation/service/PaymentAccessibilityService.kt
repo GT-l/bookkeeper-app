@@ -206,7 +206,15 @@ class PaymentAccessibilityService : AccessibilityService() {
     private fun dispatchEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val rawPackage = runCatching { event.packageName?.toString().orEmpty() }.getOrDefault("")
-        if (!PaymentScreenRecognizer.isPaymentPackage(rawPackage)) return
+        // v1.3.13：在任何过滤之前记一条统计。
+        // 用户「微信里没有任何反应、log 也没有」时，靠它区分「事件没到」和「事件到了被过滤」。
+        val isPayment = PaymentScreenRecognizer.isPaymentPackage(rawPackage)
+        runCatching {
+            com.azu.bookkeeper.core.AccessibilityEventStats.onEvent(
+                applicationContext, rawPackage, event.eventType, isPayment
+            )
+        }
+        if (!isPayment) return
         val packageName = PaymentScreenRecognizer.normalizePackage(rawPackage)
         val className = runCatching { event.className?.toString().orEmpty() }.getOrDefault("")
 

@@ -36,9 +36,12 @@ object CaptureLog {
     private var enabled = false
 
     fun init(context: Context) {
+        // v1.3.13：默认开启。用户反馈「识屏完全没反应、log 里也什么都没有」时，
+        // 关闭状态的日志让排查只能靠猜；日志只存本机、上限 256KB 自滚动，
+        // 代价远小于「出了问题却没有现场」。
         enabled = runCatching {
-            prefs(context).getBoolean(KEY_ENABLED, false)
-        }.getOrDefault(false)
+            prefs(context).getBoolean(KEY_ENABLED, true)
+        }.getOrDefault(true)
     }
 
     fun isEnabled(): Boolean = enabled

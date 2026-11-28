@@ -81,9 +81,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.16)
+      - name: Static consistency tests (v1.3.17)
         shell: bash
-        run: python3 scripts/verify_v1_3_16.py
+        run: python3 scripts/verify_v1_3_17.py
 
       - name: Build debug APK
         shell: bash
@@ -147,39 +147,36 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.16-debug
-          name: 少花点儿 v1.3.16 (Debug APK)
+          tag_name: v1.3.17-debug
+          name: 少花点儿 v1.3.17 (Debug APK)
           body: |
-            # 少花点儿 v1.3.16
+            # 少花点儿 v1.3.17
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
-            ## 识屏（本版重点）
-            真机日志（realme RMX3888 / Android 37，15:56:13）：无障碍截屏「成功 1264x2780」→
-            OCR「识别完成 0 字 blocks=0」→ 报「没找到扣款金额」。说明系统给的是**空白帧**，
-            而旧的黑帧判定只看平均亮度 < 8，全白 / 全灰帧全漏过去，空图被丢给 OCR，
-            最后把原因显示成「当前页可能不是支付结果页」。
+            ## 识屏 OCR 修复（本版重点）
+            上版加的「OCR 异常可见」立刻抓到了真凶：
+            `IllegalStateException: MlKitContext has not been initialized`。
 
-            - 帧体检升级：采样 32×64 点算亮度均值 / 最暗 / 最亮 / 近黑近白占比，
-              亮暗跨度 < 12 即判定为单色帧（全黑、全白、全灰都算），统计直接写日志。
-            - 单色帧不再进 OCR，直接让给媒体投影通道；两条都空时明确报「空白帧」，
-              并主动引导一次录屏授权（以前 captureChannelReady() 为 true 就拒绝引导，用户无路可走）。
-            - OCR 引擎异常与「页面没有文字」彻底分开：跨进程回传 error，
-              日志显示「识别异常 原因=…」，不再统一变成 0 字。
-            - 0 字结果带帧体统计数据，下次贴 log 就能判断是图空还是模型没识别出来。
+            也就是说：ML Kit 自带的自动初始化（`MlKitInitProvider`）在 `:ocr` 独立进程里**没有生效**，
+            `TextRecognition.getClient()` 一调就抛异常。以前的代码把异常吞成「0 字」，
+            所以表现一直是「截图成功但没找到金额」——这台机器上的截图 OCR 从第一天起就没成功过。
 
-            ## 关于无障碍被系统关闭
-            log 里 `kind=closed ... source=com.android.packageinstaller revokeCount=8` 说明：
-            是**安装 APK 时系统（PackageInstaller / 权限管理）主动关掉了无障碍开关**，不是 App 自己关的。
-            每次覆盖安装后需要在「设置 → 无障碍」重新打开一次；App 侧已做守护检测 + 通知提醒。
+            - `OcrEngine` 在取识别器之前显式调用 `MlKit.initialize(context)`（幂等，主进程重复调用也安全），
+              初始化失败会写进识屏日志。
+            - 跨进程识别再遇到「未初始化」时，自动退回主进程直接识别，并把该通道标记为不可用，
+              后续不再每轮白等一次 IPC（省 1 秒以上）。
+            - 依赖层面补了 `com.google.mlkit:common`（初始化 API 所在），版本与 text-recognition 传递来的一致。
 
-            ## 下载（沿用 v1.3.15）
-            - 断点续传：代理抖动不再从 0 重下 88MB，重试接着下；进程被杀也保留进度。
-            - 进度显示「已下 / 总量 · 实时速率 · 剩余时间」，不再长时间停在 0%。
-            - 直链优先（少一跳），API asset 仅兜底；下载期间暂停识屏截图 OCR，不与下载抢 CPU。
+            ## 顺带保留（v1.3.16）
+            - 帧体检：亮暗跨度 < 12 判为单色帧，空白帧不再丢给 OCR，改走录屏通道并引导授权。
+            - OCR 引擎异常与「页面没有文字」分开报，日志能直接看出是哪一类。
+
+            ## 下载（v1.3.15）
+            - 断点续传：代理抖动不再从 0 重下 88MB；进度显示字节 / 速率 / 剩余时间；直链优先。
 
             ## 说明
-            - 体积仍是 88MB：未做 ABI 裁剪，四个架构全打包（保留多机型兼容）。
+            - 体积仍是 88MB：未做 ABI 裁剪，四个架构全打包。
 
             ## 隐私
             账单数据只存本机，不上传。检查更新只读取公开 Releases。

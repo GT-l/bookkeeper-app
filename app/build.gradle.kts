@@ -15,8 +15,8 @@ android {
         applicationId = "com.azu.bookkeeper"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.3.16"
+        versionCode = 24
+        versionName = "1.3.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -114,6 +114,8 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
     // 中文 OCR 模型：拉丁模型识别不了中文支付页（识屏失败根因之一），见 OcrEngine
     implementation(libs.mlkit.text.recognition.chinese)
+    // v1.3.17：显式初始化入口（com.google.mlkit.common.MlKit.initialize）
+    implementation(libs.mlkit.common)
     implementation(libs.mpandroidchart)
     implementation(libs.timber)
     coreLibraryDesugaring(libs.desugar.jdk.libs)

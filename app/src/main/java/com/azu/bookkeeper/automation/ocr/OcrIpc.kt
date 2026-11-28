@@ -44,10 +44,19 @@ data class OcrIpcResult(val payload: OcrIpcPayload?, val error: String?)
  */
 @Singleton
 class OcrIpcClient @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    /** v1.3.17：跨进程 OCR 做不到时，退回主进程直接识别（同一个引擎，不额外依赖）。 */
+    private val localEngine: OcrEngine
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * 跨进程 OCR 已被证实不可用（真机日志：`MlKitContext has not been initialized`）。
+     * 一旦命中就不再每轮白等一次 IPC，直接在本地识别，省 1 秒以上。
+     */
+    @Volatile
+    private var ipcUnusable = false
 
     /**
      * 直接识别内存位图：先编码成缓存 JPEG，再走跨进程识别，用完即删。
@@ -57,6 +66,7 @@ class OcrIpcClient @Inject constructor(
         bitmap: android.graphics.Bitmap,
         timeoutMs: Long = 12_000L
     ): OcrIpcResult {
+        if (ipcUnusable) return recognizeLocally(bitmap, "跨进程 OCR 已停用")
         val file = File(context.cacheDir, "ocr_in_${System.currentTimeMillis()}.jpg")
         val encoded = runCatching {
             java.io.FileOutputStream(file).use { out ->
@@ -65,10 +75,47 @@ class OcrIpcClient @Inject constructor(
         }.isSuccess
         if (!encoded) return OcrIpcResult(null, "图片编码失败（内存不足）")
         return try {
-            recognize(file.absolutePath, timeoutMs)
+            val result = recognize(file.absolutePath, timeoutMs)
+            if (isMlKitInitFailure(result)) {
+                ipcUnusable = true
+                com.azu.bookkeeper.core.CaptureLog.w(
+                    context, "OCR",
+                    "跨进程 OCR 未初始化（${result.payload?.error ?: result.error}），改为主进程识别"
+                )
+                recognizeLocally(bitmap, "跨进程未初始化")
+            } else {
+                result
+            }
         } finally {
             runCatching { file.delete() }
         }
+    }
+
+    /** 是否是「ML Kit 没初始化」这一类失败：只有这类才值得换进程重试。 */
+    private fun isMlKitInitFailure(result: OcrIpcResult): Boolean {
+        val text = result.payload?.error ?: result.error ?: return false
+        return text.contains("MlKitContext") || text.contains("not been initialized", ignoreCase = true)
+    }
+
+    /** 主进程兜底识别：不写临时文件、不跨进程，结果结构保持一致。 */
+    private suspend fun recognizeLocally(
+        bitmap: android.graphics.Bitmap,
+        why: String
+    ): OcrIpcResult = runCatching {
+        val r = localEngine.recognize(bitmap)
+        com.azu.bookkeeper.core.CaptureLog.i(
+            context, "OCR",
+            "本地识别完成 ${r.rawText.length} 字 blocks=${r.blockCount}（$why）"
+        )
+        OcrIpcResult(
+            OcrIpcPayload(r.rawText, r.confidence, r.blockCount, r.error),
+            r.error
+        )
+    }.getOrElse { e ->
+        com.azu.bookkeeper.core.CaptureLog.e(
+            context, "OCR", "本地识别失败 ${e.javaClass.simpleName}: ${e.message}"
+        )
+        OcrIpcResult(null, "本地 OCR 失败：${e.javaClass.simpleName}: ${e.message}")
     }
 
     /**

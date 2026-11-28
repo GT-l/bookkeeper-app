@@ -21,6 +21,10 @@ work = "2.9.1"
 coroutines = "1.8.1"
 serialization = "1.6.3"
 mlkit = "16.0.1"
+# v1.3.17：ML Kit 的初始化 API 在 common 里（MlKit.initialize）。
+# 真机日志出现「MlKitContext has not been initialized」，说明 ContentProvider 自动初始化没生效，
+# 必须显式初始化，所以把 common 声明成直接依赖（版本与 text-recognition 传递来的一致）。
+mlkitCommon = "18.11.0"
 mpandroidchart = "3.1.0"
 kotlinCsv = "1.9.3"
 poi = "5.2.5"
@@ -68,6 +72,7 @@ mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version
 # 中文识别模型：默认的 text-recognition 是拉丁模型，识别不了中文支付页面（识屏从未成功的根因之一）。
 # chinese 模型同时覆盖中文与数字/字母，离线可用。
 mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkit" }
+mlkit-common = { module = "com.google.mlkit:common", version.ref = "mlkitCommon" }
 mpandroidchart = { module = "com.github.PhilJay:MPAndroidChart", version.ref = "mpandroidchart" }
 kotlin-csv-jvm = { module = "com.github.doyaaaaaken:kotlin-csv-jvm", version.ref = "kotlinCsv" }
 # 完整 XSSF API（XSSFWorkbook / SXSSFWorkbook / OPCPackage / DataFormatter 等）只在

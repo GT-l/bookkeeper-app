@@ -34,8 +34,33 @@ class OcrEngine @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
+    /**
+     * v1.3.17：**必须显式初始化 ML Kit**。
+     *
+     * 真机日志（realme RMX3888 / Android 37）：`:ocr` 进程里 `TextRecognition.getClient()`
+     * 直接抛 `IllegalStateException: MlKitContext has not been initialized` ——
+     * 也就是说 ML Kit 自带的 `MlKitInitProvider`（ContentProvider 自动初始化）在这个进程里
+     * 没有生效，所有截图 OCR 从第一天起就是失败的，只是以前异常被吞成「0 字」看不出来。
+     *
+     * `MlKit.initialize(context)` 是幂等的：主进程里 provider 已初始化过时再调也不会报错，
+     * 未初始化时它就把 MlKitContext 建起来。
+     */
     private val recognizer by lazy {
+        initializeMlKit()
         TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+    }
+
+    private fun initializeMlKit() {
+        runCatching {
+            com.google.mlkit.common.MlKit.initialize(context)
+        }.onFailure { e ->
+            // 初始化失败也要留痕：上层拿到的是 MlKitContext 异常，需要能和这里对上
+            Timber.w(e, "MlKit.initialize failed")
+            com.azu.bookkeeper.core.CaptureLog.w(
+                context, "OCR",
+                "MlKit 显式初始化失败：${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     /** 识别内存中的 Bitmap；失败返回置信度 0 的空结果，由上层触发校对而非崩溃。 */

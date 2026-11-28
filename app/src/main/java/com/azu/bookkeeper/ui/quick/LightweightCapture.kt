@@ -50,7 +50,9 @@ data class CaptureOutcome(
      * 于是「微信收款」被记成支出、总额被撑大。现在按页面文本判定后再往下传。
      */
     val billType: com.azu.bookkeeper.domain.model.BillType =
-        com.azu.bookkeeper.domain.model.BillType.EXPENSE
+        com.azu.bookkeeper.domain.model.BillType.EXPENSE,
+    /** 受 [规则二] 约束：商品名疑似 OCR 误识别，上层据此弹固定提醒（不阻断记账）。 */
+    val goodsWarning: Boolean = false
 ) {
     val success: Boolean get() = reason == null
 
@@ -140,7 +142,8 @@ class LightweightCapture @Inject constructor(
                 goods: String,
                 confidence: Float,
                 rawText: String,
-                captureType: CaptureType
+                captureType: CaptureType,
+                goodsWarning: Boolean = false
             ) {
                 val remark = composeRemark(merchant, goods)
                 // v1.3.19：按页面文本判收入/支出（收款、到账类页面不再被记成支出）
@@ -160,6 +163,17 @@ class LightweightCapture @Inject constructor(
                         " goods=${goods.ifBlank { "-" }} conf=$confidence type=${billType.label}" +
                         " 原文=${ScreenTextCollector.preview(rawText)}"
                 )
+                // 受 [规则二] 约束：商品名疑似误识别 → 固定提醒 + 原始 OCR 各行写日志。
+                // 只提醒，不 return、不 fail，记账流程照常往下走（不阻断）。
+                if (goodsWarning) {
+                    com.azu.bookkeeper.core.CaptureLog.w(
+                        context, "OCR",
+                        "商品名可能被误识别｜原文各行=${rawText.lines().joinToString(" / ")}"
+                    )
+                    withContext(mainDispatcher) {
+                        toast(com.azu.bookkeeper.automation.ocr.GoodsOcrAnomaly.WARNING)
+                    }
+                }
                 record(null, rawText)
                 // v1.3.1：不再用「识屏完成 · 点击确认记账」常驻通知收尾，
                 // 结果统一由底部轻卡片呈现（自动入账成功 / 低置信度轻确认）
@@ -173,7 +187,8 @@ class LightweightCapture @Inject constructor(
                             captureType = captureType,
                             rawText = rawText,
                             goods = goods,
-                            billType = billType
+                            billType = billType,
+                            goodsWarning = goodsWarning
                         )
                     )
                 }
@@ -201,7 +216,7 @@ class LightweightCapture @Inject constructor(
                         if (amountFen != null) {
                             succeed(
                                 amountFen, fields.merchant, fields.goods, fields.confidence, rawText,
-                                CaptureType.ACCESSIBILITY_TEXT
+                                CaptureType.ACCESSIBILITY_TEXT, fields.goodsWarning
                             )
                             return@launch
                         }
@@ -272,7 +287,7 @@ class LightweightCapture @Inject constructor(
                         // 统一用抽取置信度做分流依据（OCR 引擎置信度只反映字符清晰度，不代表字段抽对）
                         succeed(
                             amountFen, ocrFields.merchant, ocrFields.goods, ocrFields.confidence, rawText,
-                            CaptureType.PROJECTION_IMAGE
+                            CaptureType.PROJECTION_IMAGE, ocrFields.goodsWarning
                         )
                         return@launch
                     }
@@ -315,7 +330,8 @@ class LightweightCapture @Inject constructor(
             merchant = analysis?.merchant?.takeIf { it.isNotBlank() }
                 ?: fallback?.merchant.orEmpty(),
             goods = analysis?.goods.orEmpty(),
-            confidence = analysis?.confidence ?: 0f
+            confidence = analysis?.confidence ?: 0f,
+            goodsWarning = analysis?.goodsWarning ?: false
         )
     }
 
@@ -362,5 +378,6 @@ private data class ScreenFields(
     val amountFen: Long? = null,
     val merchant: String = "",
     val goods: String = "",
-    val confidence: Float = 0f
+    val confidence: Float = 0f,
+    val goodsWarning: Boolean = false
 )

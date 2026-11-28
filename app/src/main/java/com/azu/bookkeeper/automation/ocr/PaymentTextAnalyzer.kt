@@ -33,7 +33,13 @@ class PaymentTextAnalyzer @Inject constructor() {
         val paymentRejected = lines.any { line -> PAID_BAD_KEYWORDS.any { it in line } }
 
         val amountFen = extractBestAmount(lines, paidConfirmed)
-        val merchant = extractBestMerchant(lines)
+        var merchant = extractBestMerchant(lines)
+        // 受 [规则一] 约束：常规抽取没拿到商户，且文本里有独占一行的「财付通」时，
+        // 向上回溯最近 3 行找真实商户（小程序名 / 店铺品牌 / 含 SKU 的商品行）。
+        // 放在最后一步：只在其它路径都失败时兜底，绝不覆盖已有的有效商户。
+        if (merchant.isBlank()) {
+            merchant = ChannelMerchantResolver.backtrack(lines).orEmpty()
+        }
         val goods = extractBestGoods(lines, merchant)
 
         var confidence = 0f
@@ -42,10 +48,20 @@ class PaymentTextAnalyzer @Inject constructor() {
         if (paidConfirmed) confidence += 0.2f
         if (paymentRejected) confidence -= 0.3f
 
+        // 受 [规则二] 约束：只对商品名字段做误识别检测；待支付 / 未支付等未完成态不弹窗。
+        // 只置标志、不阻断记账，也不修改 goods 本身。
+        // 注意：这里的未完成态词表只用于「要不要弹提醒」，与 PaymentScreenRecognizer 的
+        // 转账 / 红包判定词表、状态机完全无关，不修改也不复用它们（工单规则五冻结声明）。
+        val pendingPage = GOODS_WARNING_PENDING.any { hint ->
+            lines.any { it.contains(hint) }
+        }
+        val goodsWarning = !paymentRejected && !pendingPage && GoodsOcrAnomaly.detect(goods)
+
         return PaymentAnalysis(
             amountFen = amountFen,
             merchant = merchant,
             goods = goods,
+            goodsWarning = goodsWarning,
             paidConfirmed = paidConfirmed,
             confidence = confidence.coerceIn(0f, 1f)
         )
@@ -280,6 +296,11 @@ class PaymentTextAnalyzer @Inject constructor() {
         )
         private val PAID_BAD_KEYWORDS = listOf("待支付", "支付失败", "付款失败", "已退款", "已取消")
 
+        /** 受 [规则二] 约束：未完成态页面不弹商品名提醒（独立于冻结的转账 / 红包词表）。 */
+        private val GOODS_WARNING_PENDING = listOf(
+            "待支付", "未支付", "待付款", "支付中", "处理中", "待确认", "待收货"
+        )
+
         // 注意：字符类里**绝不能用 \s** ——「\s + 全角标点」这种混排，在 Android 17 的 ICU 上
         // 会被误判成 Unicode property，直接抛 PatternSyntaxException（真实崩溃点，见 SafeRegex）。
         // 这里字符类只保留「普通空格 + 中文标点」的否定，语义几乎等价且各版本都能编译。
@@ -356,6 +377,8 @@ data class PaymentAnalysis(
     val merchant: String,
     /** 购买内容 / 商品名；识别不出来时为 ""（不确认、不打扰）。 */
     val goods: String = "",
+    /** 受 [规则二] 约束：商品名疑似 OCR 误识别；只提醒，不阻断记账。 */
+    val goodsWarning: Boolean = false,
     val paidConfirmed: Boolean,
     val confidence: Float
 )

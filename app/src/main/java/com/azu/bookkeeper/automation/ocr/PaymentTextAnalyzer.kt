@@ -98,6 +98,7 @@ class PaymentTextAnalyzer @Inject constructor() {
         // 7 位以上整数部分且没有小数（或小数位全 0）：订单号/卡号特征
         if (intDigits >= 7 && (dot < 0 || cleaned.substring(dot + 1).all { it == '0' })) return false
         // v1.3.19：单笔 ≥ ¥100,000 一律不认——真机上把累计收款 ¥111,845.00 记成了一笔账
+        val fen = Money.parse(raw) ?: return false
         if (fen >= 10_000_000L) return false
         // 手机号
         if (PHONE_REGEX.containsMatchIn(line)) return false

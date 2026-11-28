@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.6)
+      - name: Static consistency tests (v1.3.7)
         shell: bash
-        run: python3 scripts/verify_v1_3_6.py
+        run: python3 scripts/verify_v1_3_7.py
 
       - name: Build debug APK
         shell: bash
@@ -141,14 +141,19 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.6-debug
-          name: 少花点儿 v1.3.6 (Debug APK)
+          tag_name: v1.3.7-debug
+          name: 少花点儿 v1.3.7 (Debug APK)
           body: |
-            # 少花点儿 v1.3.6
+            # 少花点儿 v1.3.7
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
-            ## 新增
+            ## 修复
+            - 检查更新下载 APK 失败：GitHub asset 接口的 Accept 头不是精确的
+              `application/octet-stream`，被返回成 JSON 元数据（约 1.6KB）→ 现在正确 302 到下载直链，
+              并能在拿到 JSON 时自动解析出直链继续下载。
+
+            ## 新增（v1.3.6 已含）
             - 微信 / 支付宝「转账成功」「接收转账成功」专门识别：收款记收入，转出记支出。
             - 支付前缓存：进收银台时先记住金额与商户，支付完成页读不全时自动补齐。
             - 场景化识别：微信转账 / 收款 / 红包 / 商户付款 / 账单详情，支付宝转账 / 收款 / 账单详情，抖音订单分别处理。

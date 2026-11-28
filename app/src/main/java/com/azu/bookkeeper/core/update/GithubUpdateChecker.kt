@@ -142,16 +142,46 @@ object GithubUpdateChecker {
             for (hop in 0..MAX_REDIRECTS) {
                 val conn = URL(current).openConnection() as HttpURLConnection
                 try {
+                    // v1.3.7 关键修复：GitHub asset API 只有在 Accept 精确为
+                    // application/octet-stream 时才 302 到 CDN。旧代码写成
+                    // "application/octet-stream, */*"，内容协商会退化成 JSON 元数据（约 1.6KB），
+                    // 用户看到的就是「api.github.com 返回的内容不是有效 APK (1668 字节)」。
+                    val isAssetApi = current.contains("api.github.com") &&
+                        current.contains("/releases/assets/")
                     conn.apply {
                         requestMethod = "GET"
                         connectTimeout = 15_000
                         readTimeout = 30_000
                         setRequestProperty("User-Agent", UA)
-                        setRequestProperty("Accept", "application/octet-stream, */*")
+                        setRequestProperty(
+                            "Accept",
+                            if (isAssetApi) "application/octet-stream" else "application/octet-stream, */*"
+                        )
                         instanceFollowRedirects = false // 自己跟，才能看到每一跳的 HTTP 码
                     }
                     when (val code = conn.responseCode) {
-                        in 200..299 -> return saveBody(conn, current, target, onProgress)
+                        in 200..299 -> {
+                            // 如果拿到的仍是 JSON 元数据（Accept 被代理改写等），解析出直链再下一跳
+                            val contentType = conn.contentType.orEmpty()
+                            if (contentType.contains("json", ignoreCase = true)) {
+                                val body = conn.inputStream.bufferedReader(Charsets.UTF_8)
+                                    .use { it.readText() }
+                                val asset = runCatching {
+                                    json.decodeFromString<GithubAsset>(body)
+                                }.getOrNull()
+                                val next = asset?.browserDownloadUrl.orEmpty()
+                                if (next.isNotBlank() && next != current) {
+                                    current = next
+                                    continue // 跳到 releases/download 直链继续下载
+                                }
+                                return DownloadOutcome(
+                                    null,
+                                    "api.github.com 返回的是 JSON 元数据而不是安装包；" +
+                                        "请稍后重试，或改用浏览器下载"
+                                )
+                            }
+                            return saveBody(conn, current, target, onProgress)
+                        }
                         301, 302, 303, 307, 308 -> {
                             val location = conn.getHeaderField("Location")
                             if (location.isNullOrBlank()) {

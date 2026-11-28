@@ -90,6 +90,14 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
+                            version = "v1.3.7 · 更新下载修复",
+                            items = listOf(
+                                "修复：检查更新下载 APK 时报「不是有效 APK (1668 字节)」",
+                                "原因：asset 接口的 Accept 头不精确，返回了 JSON 元数据",
+                                "增强：拿到 JSON 时自动解析出下载直链继续下载"
+                            )
+                        )
+                        ChangelogRow(
                             version = "v1.3.6 · 转账收款与支付前缓存",
                             items = listOf(
                                 "新增：微信/支付宝转账成功、接收转账成功专门识别，收款记收入",

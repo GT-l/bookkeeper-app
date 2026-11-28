@@ -1,28 +1,28 @@
 # v1.3.7 测试报告
 
-> 状态：CI 运行中，结论待回填。
-
 ## 自动验证
 
 | 项目 | 结果 |
 | --- | --- |
-| 静态一致性 `verify_v1_3_7.py` | 待回填 |
-| `assembleDebug` | 待回填 |
-| `testDebugUnitTest` | 待回填 |
-| CI run | 待回填 |
-| Release `v1.3.7-debug` | 待回填 |
+| 静态一致性 `verify_v1_3_7.py` | 205/205 全部 PASS |
+| `assembleDebug` | 成功 |
+| `testDebugUnitTest` | `T180-F0-E0-S0` |
+| CI run | `46101617766`（commit `1355ecd`）`completed success` |
+| Release `v1.3.7-debug` | 已发布，APK 92,544,603 字节 |
 
-## 本轮结论
-
-待 CI 回填。
-
-## 根因记录
+## 根因与修复
 
 用户真机报错：`通道1 (api.github.com): api.github.com 返回的内容不是有效 APK (1668 字节)`。
 1668 字节正是 GitHub asset 接口返回的 JSON 元数据。原因是请求头写成了
-`Accept: application/octet-stream, */*`，内容协商退化为 JSON。改为 asset 接口只发
-`application/octet-stream`；并在拿到 JSON 时解析 `browser_download_url` 继续下载。
+`Accept: application/octet-stream, */*`，内容协商退化为 JSON。
+
+修复：
+1. asset 接口（`api.github.com/.../releases/assets/{id}`）只发精确的 `Accept: application/octet-stream`，确保 302 到 CDN 直链；
+2. 若仍拿到 JSON（代理改写等），解析 `browser_download_url` 后继续下载，不直接失败；
+3. 错误提示保留具体 HTTP 码与域名。
 
 ## 边界
 
-- CDN 域名是否能通仍取决于用户代理配置，App 只保证请求方式正确并给出可操作提示。
+- CDN 域名（`release-assets.githubusercontent.com`）是否可通仍取决于用户代理配置；
+  App 只保证请求方式正确，并在失败时提示放行 `githubusercontent.com` 或改用浏览器下载 / 本地安装。
+- 真机 TC-01~TC-04 无设备未执行，不记通过。

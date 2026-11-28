@@ -95,7 +95,14 @@ class PaymentAccessibilityService : AccessibilityService() {
     // 现在：成功页提交后按包名进入静默期；再次进入付款界面（ENTRY）视为新一轮支付，解除静默。
     // v1.3.5：静默期带上「金额指纹」——同一包名但金额不同，说明是另一笔，必须放行，
     // 否则用户 12 秒内连看两笔消费记录时，第二笔会被静默吞掉（表现为「概率识别失败」）。
-    private data class SettledMark(val at: Long, val money: String)
+    /**
+     * 静默标记。
+     *
+     * v1.3.11 增加 [timeKey]：页面上的交易时间（支付时间 / 转账时间…）。
+     * 用户要求「转账记录按记录时间判断是否重复」——同一笔反复识屏时间一致，
+     * 不同笔即使金额相同时间也不同，靠这一项区分，不再只依赖 12 秒 + 金额。
+     */
+    private data class SettledMark(val at: Long, val money: String, val timeKey: String)
 
     private val settledPackages = mutableMapOf<String, SettledMark>()
 
@@ -308,18 +315,25 @@ class PaymentAccessibilityService : AccessibilityService() {
         // v1.3.4 核心：同一轮支付成功后，本包名进入静默期。期间成功页/详情页的
         // 所有重试链、事件潮一律不再提交，从源头消灭「同一笔被提交多次 → 命中去重弹重复」。
         // v1.3.5：静默期带金额指纹——金额不同说明是另一笔（用户连续查看消费记录），必须放行。
+        // v1.3.11：再加交易时间指纹。账单详情/转账记录页面上写着「支付时间 / 转账时间」，
+        // 同一笔反复识屏时间一致 → 继续静默；连续看两笔即使金额相同，时间不同 → 放行。
         // 用户再次进入付款界面（ENTRY）也会解除静默，下一笔照常识别。
         val mark = settledPackages[packageName]
         val money = firstMoneyKey(text)
-        if (mark != null && now - mark.at < SETTLED_QUIET_MS &&
+        val timeKey = PaymentScreenRecognizer.transactionTimeKey(text)
+        val differentBillByTime = mark != null &&
+            mark.timeKey.isNotBlank() && timeKey.isNotBlank() && mark.timeKey != timeKey
+        if (!differentBillByTime && mark != null && now - mark.at < SETTLED_QUIET_MS &&
             (money.isBlank() || mark.money.isBlank() || money == mark.money)
         ) {
-            logScreenThrottled("支付静默期跳过 pkg=$packageName 距上次提交=${now - mark.at}ms money=$money")
+            logScreenThrottled(
+                "支付静默期跳过 pkg=$packageName 距上次提交=${now - mark.at}ms money=$money time=$timeKey"
+            )
             return
         }
         lastSuccessFingerprint = fingerprint
         lastSuccessAt = now
-        settledPackages[packageName] = SettledMark(now, money)
+        settledPackages[packageName] = SettledMark(now, money, timeKey)
         val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
         com.azu.bookkeeper.core.CaptureLog.forceInfo(
             applicationContext, "SCREEN",

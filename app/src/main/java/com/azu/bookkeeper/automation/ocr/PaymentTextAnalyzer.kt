@@ -141,6 +141,11 @@ class PaymentTextAnalyzer @Inject constructor() {
                 val value = lines.getOrNull(index + offset)?.trim().orEmpty()
                 if (value.isEmpty()) continue
                 if (value.trim('：', ':') in MERCHANT_LABEL_FRAGMENTS) continue
+                // v1.3.11：英文公司名常被节点拆成两行
+                // （`Apple Distribution International` / `limited`），单行既不完整又超长。
+                // 先尝试把紧随的纯英文续行拼起来，拼不出来再用单行判断。
+                val merged = mergeLatinContinuation(lines, index + offset)
+                if (merged != value && isPlausibleMerchant(merged)) return merged
                 if (isPlausibleMerchant(value)) return value
                 break
             }
@@ -156,8 +161,33 @@ class PaymentTextAnalyzer @Inject constructor() {
         return ""
     }
 
+    /**
+     * v1.3.11：把被节点拆断的英文商户名拼回来。
+     *
+     * 微信账单详情里 `Apple Distribution International limited` 会被拆成
+     * `Apple Distribution International` + `limited` 两行，单行判断要么超长要么不完整。
+     * 只在「首行不含中文且下一行也是纯英文」时拼接，中文商户不受影响。
+     */
+    private fun mergeLatinContinuation(lines: List<String>, startIndex: Int): String {
+        val first = lines.getOrNull(startIndex)?.trim().orEmpty()
+        if (first.isEmpty() || !isLatinText(first)) return first
+        val second = lines.getOrNull(startIndex + 1)?.trim().orEmpty()
+        if (second.isEmpty() || !isLatinText(second)) return first
+        val merged = "$first $second"
+        return if (merged.length <= MAX_MERCHANT_LENGTH) merged else first
+    }
+
+    /** 不含中日韩文字、且至少有一个字母 —— 用于识别「英文公司名的续行」。 */
+    private fun isLatinText(value: String): Boolean {
+        if (value.isEmpty()) return false
+        if (value.any { it.code in 0x4E00..0x9FFF || it.code in 0x3040..0x30FF || it.code in 0xAC00..0xD7AF }) {
+            return false
+        }
+        return value.any { it.isLetter() }
+    }
+
     private fun isPlausibleMerchant(value: String): Boolean {
-        if (value.isBlank() || value.length !in 2..30) return false
+        if (value.isBlank() || value.length !in 2..MAX_MERCHANT_LENGTH) return false
         if (MERCHANT_EXCLUDES.any { it in value }) return false
         if (value.all { it.isDigit() }) return false
         // 纯标签词（「商户全称」本身就占一行时，下一行才是真正的值）
@@ -223,6 +253,9 @@ class PaymentTextAnalyzer @Inject constructor() {
     }
 
     companion object {
+        /** 商户名长度上限。中文店名很少超过 20，英文公司名（Apple Distribution International limited）会到 40+。 */
+        private const val MAX_MERCHANT_LENGTH = 60
+
         // 全部走 SafeRegex：任何一条正则在本机 ICU 上编译失败，都会让本类初始化失败，
         // 进而让「注入本类的 ViewModel」创建即闪退（真实事故见 SafeRegex 注释）。
         private val AMOUNT_SYMBOL = SafeRegex.of("(?:¥|￥)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
@@ -303,7 +336,10 @@ class PaymentTextAnalyzer @Inject constructor() {
             "支付成功", "付款成功", "扣款", "订单号", "交易号", "流水号", "时间", "状态",
             "成功", "失败", "退款", "余额", "卡号", "¥", "￥",
             "查看", "详情", "账单", "客服", "投诉", "评价", "完成", "返回", "确认", "取消",
-            "分享", "更多", "到账", "收款方", "商户", "商家"
+            "分享", "更多", "到账", "收款方", "商户", "商家",
+            // v1.3.11：微信「商品」字段常写成账单链接（apple.com/bill/xxx），
+            // 当购买内容会让备注变成一串看不懂的 URL。
+            "http", "www.", ".com/", ".cn/", "/bill/"
         )
 
         /** 一串 7 位以上连续数字基本是订单号/卡号，不可能出现在商品名里。 */

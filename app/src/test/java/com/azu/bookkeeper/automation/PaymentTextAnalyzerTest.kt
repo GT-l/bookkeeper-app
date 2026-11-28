@@ -255,6 +255,41 @@ class PaymentTextAnalyzerTest {
         assertEquals("", analyzer.analyze("支付成功\n¥9.90\n商户简称：").merchant)
     }
 
+    // ---------- v1.3.11：微信 Apple 账单详情 ----------
+
+    @Test
+    fun `账单详情 - 英文商户名被拆成两行时拼接完整`() {
+        val text = """
+            Apple
+            -16.00
+            当前状态
+            支付成功
+            支付时间
+            2026年11月15日 00:00:07
+            商品
+            apple.com/bill/MLF37524K0a0
+            商户全称
+            Apple Distribution International
+            limited
+            收单机构
+            财付通支付科技有限公司
+            支付方式
+            零钱
+            交易单号
+            4200003217202611151634196683
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(1600L, r.amountFen)
+        assertEquals("Apple Distribution International limited", r.merchant)
+        assertEquals("", r.goods)
+    }
+
+    @Test
+    fun `购买内容 - 账单链接不会被当成商品名`() {
+        val r = analyzer.analyze("支付成功\n¥9.90\n商品说明\napple.com/bill/MLF37524K0a0")
+        assertEquals("", r.goods)
+    }
+
     @Test
     fun `优惠金额不会被当成实付金额`() {
         val text = """

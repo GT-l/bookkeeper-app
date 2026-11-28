@@ -373,4 +373,50 @@ class PaymentScreenRecognizerTest {
         )
         assertFalse(refined.contains("商户："))
     }
+
+    // ---------- v1.3.11：交易时间与收款成功页 ----------
+
+    @Test
+    fun `收款成功页识别为收入`() {
+        val text = """
+            你已收款，资金已存入零钱
+            ¥100.00
+            零钱余额
+            转账时间    2026年11月28日 10:55:25
+            收款时间    2026年11月28日 10:55:38
+            账单详情
+        """.trimIndent()
+        val r = PaymentScreenRecognizer.classify(wechat, "com.tencent.mm.plugin.remittance.ui.RemittanceResultUI", text)
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.INCOME, r.direction)
+        assertEquals(PaymentScene.WECHAT_TRANSFER_IN, r.scene)
+    }
+
+    @Test
+    fun `交易时间优先取带标签的行`() {
+        val text = """
+            你已收款，资金已存入零钱
+            ¥100.00
+            转账时间    2026年11月28日 10:55:25
+            收款时间    2026年11月28日 10:55:38
+        """.trimIndent()
+        assertEquals("2026年11月28日 10:55:25", PaymentScreenRecognizer.transactionTimeKey(text))
+    }
+
+    @Test
+    fun `苹果账单详情能抽到支付时间`() {
+        val text = """
+            Apple
+            -16.00
+            当前状态    支付成功
+            支付时间    2026年11月15日 00:00:07
+            交易单号    4200003217202611151634196683
+        """.trimIndent()
+        assertEquals("2026年11月15日 00:00:07", PaymentScreenRecognizer.transactionTimeKey(text))
+    }
+
+    @Test
+    fun `没有时间字段时交易时间为空`() {
+        assertEquals("", PaymentScreenRecognizer.transactionTimeKey("支付成功\n¥9.90\n收款方：便利店"))
+    }
 }

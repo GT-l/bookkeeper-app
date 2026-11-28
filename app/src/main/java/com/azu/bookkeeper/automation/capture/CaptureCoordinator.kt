@@ -177,11 +177,22 @@ class CaptureCoordinator @Inject constructor(
         val ruleHit = if (smsAccountId > 0L) baseRuleHit.copy(accountId = smsAccountId) else baseRuleHit
 
         // 5) 六因子置信度：文本源（读屏/通知/短信）OCR 因子取 1.0
-        // v1.3.0：页面识别明确为「支付成功页」时给 0.05 加成——读屏链路已用 className /
+        // v1.3.0：页面识别明确为「支付成功页」时给加成——读屏链路已用 className /
         // 完成态文案确认了页面类型，比只看 OCR 六因子更可靠。加成不绕过 QA F-02 的
         // 分类/账户硬约束，只让字段齐全的支付结果更容易自动入账。
+        //
+        // v1.3.11：加成按页面类型分级，且只要求「金额有效」。
+        // 收款 / 转账页面天然没有商户名（钱就是转给某个人），旧逻辑商户因子 0 分、
+        // 加成只有 0.05 → 总分卡在 0.75 以下，每笔都进确认队列；用户不点就等于「识别不出来」。
+        // 现在：成功页 +0.20、账单详情页 +0.10，读屏已确认页面类型时不再要求商户名。
         val textSource = isSms || event.imagePath.isBlank()
-        val screenBonus = if (event.screenType == PaymentScreen.SUCCESS.name) 0.05f else 0f
+        val amountOk = (fields.amountFen ?: 0L) > 0L
+        val screenBonus = when {
+            !textSource || !amountOk -> 0f
+            event.screenType == PaymentScreen.SUCCESS.name -> 0.20f
+            event.screenType == PaymentScreen.DETAIL.name -> 0.10f
+            else -> 0f
+        }
         val score = (confidence.calculate(
             result = ocrResult,
             fields = fields,
@@ -190,6 +201,12 @@ class CaptureCoordinator @Inject constructor(
             timeSource = timeSource,
             businessTag = event.businessTag
         ) + screenBonus).coerceIn(0f, 1f)
+
+        // v1.3.11：读屏识别到金额但账户没映射上时（微信零钱、Apple 账单这类页面不写付款方式），
+        // 用账本第一个账户兜底。否则 invalidBillFields 恒为 true，每一笔都被丢进确认队列，
+        // 用户不操作就表现为「识别不出来」。
+        val resolvedAccountId: Long? = ruleHit.accountId.takeIf { it > 0L }
+            ?: if (!isSms && amountOk) accounts.firstOrNull()?.accountId?.takeIf { it > 0L } else null
 
         val candidate = CaptureCandidate(
             eventId = event.eventId,
@@ -206,7 +223,7 @@ class CaptureCoordinator @Inject constructor(
                     bookId,
                     if (billType == BillType.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
                 ).takeIf { it > 0L },
-            accountId = ruleHit.accountId.takeIf { it > 0L },
+            accountId = resolvedAccountId,
             imagePath = event.imagePath,
             ocrConfidence = ocrResult?.confidence ?: 1f,
             finalScore = score

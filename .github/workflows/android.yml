@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.10)
+      - name: Static consistency tests (v1.3.11)
         shell: bash
-        run: python3 scripts/verify_v1_3_10.py
+        run: python3 scripts/verify_v1_3_11.py
 
       - name: Build debug APK
         shell: bash
@@ -141,19 +141,28 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.10-debug
-          name: 少花点儿 v1.3.10 (Debug APK)
+          tag_name: v1.3.11-debug
+          name: 少花点儿 v1.3.11 (Debug APK)
           body: |
-            # 少花点儿 v1.3.10
+            # 少花点儿 v1.3.11
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
             ## 修复
-            - 商户名变成「全称」两个字：微信账单详情写的是「商户全称」，无障碍有时把这个
-              标签拆成「商户」「全称」两个节点，旧逻辑去掉「商户」前缀后把「全称」当成值
-              → 现在把「全称 / 简称 / 名称」列为标签残片，跳过并继续往下取值。
-            - 同一处还会让「商户全称」独占一行时被正则回溯成「商户」+「全称」→ 一并拦截。
-            - 沿用 v1.3.9：账单详情金额识别（整行「-23.00」）、商户不再取收单机构。
+            - 微信 Apple 账单详情识别不出商户：英文公司名被无障碍拆成
+              「Apple Distribution International」+「limited」两行 → 现在把纯英文续行拼接后再判断。
+            - 「商品」字段是账单链接（apple.com/bill/xxx）时不再当成购买内容，备注不会变成一串 URL。
+            - 收款成功页（「你已收款，资金已存入零钱」）和账单详情页此前每笔都进确认队列，
+              用户不点就等于没记上 → 读屏已确认页面类型且金额有效时，成功页加成 0.20、
+              账单详情页加成 0.10，不再要求必须有商户名。
+            - 读屏识别到金额但账户没映射上时（微信零钱、Apple 账单不写付款方式），
+              用账本第一个账户兜底，避免恒被判「字段不完整」。
+            - 转账 / 收款记录改为**按页面上的记录时间判重**：同一笔反复打开时间一致 → 判定重复；
+              不同笔即使金额相同，支付时间 / 转账时间不同 → 正常记账。
+
+            ## 说明
+            - 账单时间优先用页面上的「支付时间 / 转账时间 / 收款时间」，不再用识屏时刻。
+            - 沿用 v1.3.10：商户名不再变成「全称」；v1.3.9：整行纯数字金额识别。
 
             ## 优化
             - 沿用 v1.3.9：首页切页与滑动卡顿（分组改为预计算、列表行去掉阴影）。

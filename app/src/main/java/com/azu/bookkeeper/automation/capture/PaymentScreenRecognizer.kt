@@ -251,6 +251,17 @@ object PaymentScreenRecognizer {
         "全称", "简称", "名称", "商户全称", "商户简称", "商户名称"
     )
 
+    /** v1.3.11：交易时间标签。按记录时间判重的前提是能稳定读到它。 */
+    private val TIME_LABEL_TOKENS = listOf(
+        "支付时间", "付款时间", "转账时间", "收款时间", "交易时间",
+        "到账时间", "创建时间", "下单时间", "发生时间"
+    )
+
+    /** 日期时间子串（含可选秒），与 FieldExtractor 保持同一形态。 */
+    private val TIME_TOKEN = SafeRegex.of(
+        """20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?(?:[ \t\u00a0\u3000]+\d{1,2}:\d{2}(?::\d{2})?)?"""
+    )
+
     /**
      * v1.3.9：收单机构类字段。它是通道方（财付通 / 银联商务），不是商户。
      * 页面上出现它时不再「猜第一行文字」，否则商户名会变成「财付通支付科技有限公司」。
@@ -518,6 +529,33 @@ object PaymentScreenRecognizer {
         pkg == DOUYIN -> PaymentScene.DOUYIN_ORDER
         pkg.isBlank() -> PaymentScene.UNKNOWN
         else -> PaymentScene.BANK_TRANSFER
+    }
+
+    /**
+     * v1.3.11：抽取「这笔交易本身的时间」。
+     *
+     * 用户反馈：转账记录这类页面应该按**记录时间**判断是否重复。
+     * 同一笔账单反复打开，页面上的「支付时间 / 转账时间 / 收款时间」是固定的，
+     * 用它做账单时间和去重指纹，重复识屏会被判重；不同笔即使金额相同，时间也不同，不会被误挡。
+     *
+     * 页面没有时间字段时返回空串，调用方退回「识屏时刻」。
+     */
+    fun transactionTimeKey(text: String): String {
+        if (text.isBlank()) return ""
+        val rawLines = text.lines()
+        // 1) 优先带标签的行：支付时间 / 转账时间 / 收款时间 / 交易时间…
+        for (line in rawLines) {
+            val t = line.trim()
+            if (TIME_LABEL_TOKENS.none { t.contains(it) }) continue
+            val token = TIME_TOKEN.find(t)?.value?.trim().orEmpty()
+            if (token.isNotBlank()) return token
+        }
+        // 2) 退化为整页第一个日期时间：仍是页面上的真实时间，比识屏时刻可靠
+        for (line in rawLines) {
+            val token = TIME_TOKEN.find(line.trim())?.value?.trim().orEmpty()
+            if (token.isNotBlank()) return token
+        }
+        return ""
     }
 
     /**

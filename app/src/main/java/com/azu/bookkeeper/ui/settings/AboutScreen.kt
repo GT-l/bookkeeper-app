@@ -90,11 +90,11 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
-                            version = "v1.3.14 · 最新",
+                            version = "v1.3.15 · 最新",
                             items = listOf(
-                                "修复：抖音订单页重复记账（账单时间改用页面下单时间判重）",
-                                "新增「无障碍事件到达」诊断：一眼看出系统有没有把事件发给 App",
-                                "存储排查新增「安装包残留」；识屏日志默认开启"
+                                "下载支持断点续传：网络一断不再从 0 重下 88MB，重试会接着下",
+                                "下载进度显示已下/总量、实时速率与剩余时间，直链通道优先（少一跳）",
+                                "下载期间自动让出 CPU，不再和识屏截图 OCR 抢资源"
                             )
                         )
                         ChangelogRow(
@@ -207,7 +207,15 @@ private fun UpdateCard(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                 )
                 Text(
-                    text = "下载进度 ${state.progress}%",
+                    // v1.3.15：除了百分比，还给出已下/总量、实时速率和剩余时间——
+                    // 88MB 的包在 1% = 0.9MB 时只看百分比会误以为「卡住」。
+                    text = buildString {
+                        append("下载进度 ${state.progress}%")
+                        if (state.progressDetail.isNotBlank()) {
+                            append(" · ")
+                            append(state.progressDetail)
+                        }
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(top = 4.dp)
                 )

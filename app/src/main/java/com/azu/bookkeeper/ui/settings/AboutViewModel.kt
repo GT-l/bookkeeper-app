@@ -6,6 +6,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.azu.bookkeeper.BuildConfig
+import com.azu.bookkeeper.core.CaptureBudget
+import com.azu.bookkeeper.core.CaptureLog
 import com.azu.bookkeeper.core.update.GithubUpdateChecker
 import com.azu.bookkeeper.core.update.UpdateInfo
 import com.azu.bookkeeper.core.update.UpdateInstaller
@@ -31,6 +33,8 @@ class AboutViewModel @Inject constructor(
         val checking: Boolean = false,
         val downloading: Boolean = false,
         val progress: Int = 0,
+        /** v1.3.15：已下 / 总量 · 速率 · 剩余时间，让「慢」和「卡住」能区分。 */
+        val progressDetail: String = "",
         val message: String? = null,
         val messageIsError: Boolean = false,
         val update: UpdateInfo? = null
@@ -46,7 +50,7 @@ class AboutViewModel @Inject constructor(
         viewModelScope.launch {
             _ui.update {
                 it.copy(
-                    checking = true, downloading = false, progress = 0,
+                    checking = true, downloading = false, progress = 0, progressDetail = "",
                     update = null, message = "正在检查 GitHub 更新…", messageIsError = false
                 )
             }
@@ -77,6 +81,8 @@ class AboutViewModel @Inject constructor(
                 it.copy(
                     checking = false,
                     downloading = true,
+                    progress = 0,
+                    progressDetail = "",
                     update = update,
                     messageIsError = false,
                     message = "发现 v${update.version}（${GithubUpdateChecker.formatSize(update.sizeBytes)}），正在下载…"
@@ -84,18 +90,39 @@ class AboutViewModel @Inject constructor(
             }
             val dir = File(context.filesDir, "updates")
             val target = File(dir, "bookkeeper-${update.version}-debug.apk")
+            // v1.3.15：下载期间关掉识屏的截图 OCR 兜底。88MB 单线程下载最怕 CPU 被
+            // 「截图 + 中文 OCR」抢走，那正是「越下越慢」的一部分。
             val result = withContext(Dispatchers.IO) {
-                GithubUpdateChecker.download(update, target) { percent ->
-                    _ui.update { it.copy(progress = percent) }
+                CaptureBudget.runHeavy {
+                    GithubUpdateChecker.download(update, target) { p ->
+                        _ui.update { it.copy(progress = p.percent, progressDetail = p.detailText()) }
+                    }
                 }
+            }
+            if (result.ok) {
+                CaptureLog.forceInfo(
+                    context, "UPDATE",
+                    buildString {
+                        append("下载完成 ")
+                        append(GithubUpdateChecker.formatSize(result.bytes))
+                        append("，用时 ").append(result.elapsedMs / 1000).append(" 秒，平均 ")
+                        append(GithubUpdateChecker.formatSpeed(result.avgBytesPerSecond).ifBlank { "未知" })
+                        append("，通道=").append(result.channelHost)
+                        if (result.resumed) append("，已断点续传")
+                        if (result.reused) append("，复用上次已下载的文件")
+                    }
+                )
+            } else {
+                CaptureLog.w(context, "UPDATE", "下载失败：${result.error}")
             }
             val apk = result.file
             if (apk == null) {
                 _ui.update {
                     it.copy(
-                        downloading = false, messageIsError = true,
+                        downloading = false, progressDetail = "", messageIsError = true,
                         message = "下载失败：${result.error}\n" +
-                            "可点下方「用浏览器下载」或「选本地 APK 安装」。Clash 用户请放行 " +
+                            "已下载的部分会保留，重试会从断点接着下。" +
+                            "也可点下方「用浏览器下载」或「选本地 APK 安装」。Clash 用户请放行 " +
                             "githubusercontent.com，并使用 TUN / 全局模式。"
                     )
                 }
@@ -107,7 +134,9 @@ class AboutViewModel @Inject constructor(
                     downloading = false,
                     messageIsError = !opened,
                     message = if (opened) {
-                        "已下载完成，正在打开系统安装器。点系统页面的「安装」即可（同签名可直接覆盖）"
+                        "已下载完成（${GithubUpdateChecker.formatSize(result.bytes)}" +
+                            (result.elapsedMs / 1000).let { if (it > 0) "，用时 ${it} 秒" else "" } +
+                            "），正在打开系统安装器。点系统页面的「安装」即可（同签名可直接覆盖）"
                     } else {
                         "已下载完成，但系统未允许打开安装器。请检查「安装未知应用」权限后重试检查更新"
                     }

@@ -27,6 +27,7 @@ import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import kotlin.math.roundToLong
 import com.azu.bookkeeper.automation.classify.BusinessTag
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
+import com.azu.bookkeeper.core.CaptureBudget
 import com.azu.bookkeeper.core.Constants
 import com.azu.bookkeeper.core.NotifyGuard
 import com.azu.bookkeeper.core.QuickGestureCache
@@ -460,6 +461,12 @@ class PaymentAccessibilityService : AccessibilityService() {
     ) {
         val now = System.currentTimeMillis()
         if (now - lastShotFallbackAt < SHOT_FALLBACK_INTERVAL_MS) return
+        // v1.3.15：更新包下载期间关闸。截图 + 中文 OCR 会跟单线程下载抢 CPU / IO，
+        // 用户看到的「下载越下越慢」有这一份；此时只保留读节点这条零成本路径。
+        if (CaptureBudget.isBusy) {
+            logScreenThrottled("截图兜底跳过：正在下载更新，先让出 CPU pkg=$packageName")
+            return
+        }
         val channels = runCatching { deps.channels() }.getOrNull() ?: return
         if (!channels.anyChannelReady()) {
             logScreenThrottled("截图兜底跳过：两条通道都不可用 pkg=$packageName")
@@ -473,6 +480,12 @@ class PaymentAccessibilityService : AccessibilityService() {
         )
         scope.launch {
             runCatching {
+                // 派发到真正截图之间可能刚好开始下载更新，这里再判一次，避免抢资源
+                if (CaptureBudget.isBusy) {
+                    com.azu.bookkeeper.core.CaptureLog
+                        .forceInfo(applicationContext, "SCREEN", "截图兜底放弃：下载更新已开始")
+                    return@runCatching
+                }
                 val frame = withContext(dispatcher) { channels.capture() }
                 val bitmap = frame.bitmap
                 if (bitmap == null) {

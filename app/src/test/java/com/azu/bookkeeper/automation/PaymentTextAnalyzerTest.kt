@@ -158,4 +158,70 @@ class PaymentTextAnalyzerTest {
         assertEquals("地铁", r.merchant)
         assertEquals("", r.goods)
     }
+
+    // ---------- v1.3.9：微信账单详情 ----------
+
+    @Test
+    fun `账单详情 - 金额是独立纯数字行也能识别`() {
+        // 微信金额节点就是「-23.00」：没有 ¥、没有「元」、没有标签
+        val text = """
+            账单详情
+            -23.00
+            已支付
+            商户全称
+            星巴克咖啡有限公司
+            收单机构
+            财付通支付科技有限公司
+            支付方式
+            零钱
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(2300L, r.amountFen)
+        assertEquals("星巴克咖啡有限公司", r.merchant)
+    }
+
+    @Test
+    fun `账单详情 - 商户全称独占一行时取下一行而不是全称两字`() {
+        val text = """
+            账单详情
+            ¥15.00
+            商户全称
+            全家便利店
+            收单机构
+            财付通支付科技有限公司
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals("全家便利店", r.merchant)
+    }
+
+    @Test
+    fun `账单详情 - 收单机构不会被当成商户`() {
+        val text = """
+            账单详情
+            -12.50
+            已支付
+            收单机构
+            财付通支付科技有限公司
+            支付方式
+            零钱
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(1250L, r.amountFen)
+        assertEquals("", r.merchant)
+    }
+
+    @Test
+    fun `优惠金额不会被当成实付金额`() {
+        val text = """
+            账单详情
+            -30.00
+            已支付
+            优惠
+            -5.00
+            余额
+            88.00
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(3000L, r.amountFen)
+    }
 }

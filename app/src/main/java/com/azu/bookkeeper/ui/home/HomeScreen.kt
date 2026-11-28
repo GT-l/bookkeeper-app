@@ -79,9 +79,10 @@ fun HomeScreen(
     // 待删除账单 ID：滑动删除 / 长按删除都会先记录到这里，经确认对话框后再真正删除
     var pendingDelete by remember { mutableStateOf<Long?>(null) }
     val currentBook = state.books.firstOrNull { it.bookId == state.bookId }
+    // v1.3.9：dayGroups / 合计都已随状态算好，这里只取一次，不再每次重组重算
     val groups = state.dayGroups
-    val totalIncome = groups.sumOf { it.incomeFen }
-    val totalExpense = groups.sumOf { it.expenseFen }
+    val totalIncome = state.incomeFen
+    val totalExpense = state.expenseFen
 
     // 今日小结：直接从已加载的分组里取今天那一组，不额外查库
     val todayStart = DateTimeUtils.startOfDay(DateTimeUtils.nowMillis())
@@ -221,7 +222,7 @@ fun HomeScreen(
                 EmptyState(message = "还没有账单，点右下角 + 记第一笔")
             } else {
                 BillList(
-                    groups = state.dayGroups,
+                    groups = groups,
                     onBillClick = { id -> navController.navigate(Screen.billDetail(id)) },
                     onSwipeDelete = { id -> pendingDelete = id },
                     onLoadMore = { viewModel.loadMore() },

@@ -42,6 +42,13 @@ import com.azu.bookkeeper.core.AppError
 @Composable
 fun SoftCard(
     modifier: Modifier = Modifier,
+    /**
+     * v1.3.9：列表行传 true 去掉阴影层。
+     *
+     * 列表里每一行都是一张带 3dp elevation 的 Card，等于每行一条 RenderNode 阴影；
+     * 账单几百条时上下滑动会明显掉帧。行的层次本来就靠间距 + 描边区分，不需要阴影。
+     */
+    flat: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
@@ -51,7 +58,11 @@ fun SoftCard(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp, pressedElevation = 6.dp),
+        elevation = if (flat) {
+            CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 0.dp)
+        } else {
+            CardDefaults.cardElevation(defaultElevation = 3.dp, pressedElevation = 6.dp)
+        },
         border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
         content = content
     )

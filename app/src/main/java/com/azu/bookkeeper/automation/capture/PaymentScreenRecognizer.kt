@@ -229,6 +229,24 @@ object PaymentScreenRecognizer {
         "交易", "订单", "金额", "支付方式", "付款方式", "服务", "商品", "说明", "时间"
     )
 
+    /**
+     * v1.3.9：商户值标签。长标签在前，避免「商户」先匹配掉「商户全称」。
+     * 微信账单详情是「标签一行、值下一行」，两种版式都要能取到值。
+     */
+    private val MERCHANT_VALUE_LABELS = listOf(
+        "商户全称", "商户简称", "商户名称", "商户", "商家", "收款方", "收款人",
+        "交易对方", "付款给", "付款至"
+    )
+
+    /**
+     * v1.3.9：收单机构类字段。它是通道方（财付通 / 银联商务），不是商户。
+     * 页面上出现它时不再「猜第一行文字」，否则商户名会变成「财付通支付科技有限公司」。
+     */
+    private val ACQUIRER_LABELS = listOf("收单机构", "收单方", "支付机构", "清算机构", "特约商户")
+
+    /** 余额 / 优惠 / 积分 / 退款不是本次实付，不能当金额或商户。 */
+    private val NON_PAYMENT_LINE_HINTS = listOf("余额", "优惠", "积分", "退款", "返现", "可用", "剩余")
+
     /** 去掉微信子进程后缀：`com.tencent.mm:tools` → `com.tencent.mm`。 */
     fun normalizePackage(raw: String): String = raw.substringBefore(':').trim()
 
@@ -540,12 +558,18 @@ object PaymentScreenRecognizer {
         if (!isResult && !isDetailText(text)) return text
 
         val window = if (isResult) lines.drop(successIndex + 1).take(12) else lines.take(40)
-        val amountLine = window.firstOrNull { looksLikeAmount(it) }
-        val merchantLine = window.firstOrNull { line ->
-            line != amountLine && !NOISE_LINES.any { line.contains(it) } &&
-                !looksLikeAmount(line) && line.length in 2..20 &&
-                line.any { it.code > 0x7F || it.isLetter() }
+        // v1.3.9：金额行跳过余额 / 优惠 / 积分 / 退款等非实付行，
+        // 旧实现会把「优惠 -0.50」当成金额，导致账单金额错得离谱。
+        val amountLine = window.firstOrNull { line ->
+            looksLikeAmount(line) && NON_PAYMENT_LINE_HINTS.none { line.contains(it) }
         }
+        // v1.3.9：商户优先从明确标签取（同行值 或 标签下一行）。
+        // 微信账单详情里「商户全称」「收单机构」各占一行，旧实现猜「第一行文字」，
+        // 抽到的往往是收单机构「财付通支付科技有限公司」——这就是用户看到的错误商户名。
+        // 页面上存在收单机构字段时，干脆不猜：宁可这条不补，也不写错商户。
+        val hasAcquirerLine = lines.any { line -> ACQUIRER_LABELS.any { line.contains(it) } }
+        val merchantLine = extractLabelledMerchant(lines)
+            ?: if (hasAcquirerLine) null else guessMerchantLine(window, amountLine)
         val hasAmountLabel = lines.any {
             it.startsWith("金额：") || it.startsWith("实付") || it.startsWith("付款金额") ||
                 it.startsWith("支付金额") || it.startsWith("交易金额")
@@ -570,6 +594,36 @@ object PaymentScreenRecognizer {
             }
         }
     }
+
+    /** 从「标签：值」或「标签一行、值下一行」取商户；取不到返回 null。 */
+    private fun extractLabelledMerchant(lines: List<String>): String? {
+        for ((index, line) in lines.withIndex()) {
+            val label = MERCHANT_VALUE_LABELS.firstOrNull { line.startsWith(it) } ?: continue
+            val inline = line.removePrefix(label).trim().trim('：', ':', ' ')
+            if (isMerchantValue(inline)) return inline
+            val next = lines.getOrNull(index + 1)?.trim().orEmpty()
+            if (isMerchantValue(next)) return next
+        }
+        return null
+    }
+
+    private fun isMerchantValue(value: String): Boolean =
+        value.length in 2..24 &&
+            !looksLikeAmount(value) &&
+            value !in MERCHANT_VALUE_LABELS &&
+            value !in NOISE_LINES &&
+            ACQUIRER_LABELS.none { value.contains(it) } &&
+            NON_PAYMENT_LINE_HINTS.none { value.contains(it) }
+
+    /** 无标签时的兜底猜测（保留旧行为，但排除收单机构与非实付行）。 */
+    private fun guessMerchantLine(window: List<String>, amountLine: String?): String? =
+        window.firstOrNull { line ->
+            line != amountLine && !NOISE_LINES.any { line.contains(it) } &&
+                !looksLikeAmount(line) && line.length in 2..20 &&
+                ACQUIRER_LABELS.none { line.contains(it) } &&
+                NON_PAYMENT_LINE_HINTS.none { line.contains(it) } &&
+                line.any { it.code > 0x7F || it.isLetter() }
+        }
 
     private fun cleanAmount(line: String): String = line.trim()
         .removePrefix("¥").removePrefix("￥")

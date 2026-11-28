@@ -51,19 +51,21 @@ class HomeViewModel @Inject constructor(
         val visibleCount: Int = PAGE_SIZE,
         val message: String? = null
     ) {
-        val dayGroups: List<DayGroup>
-            get() = bills.take(visibleCount)
-                .groupBy { com.azu.bookkeeper.core.DateTimeUtils.startOfDay(it.billTime) }
-                .map { (day, items) ->
-                    DayGroup(
-                        dayStart = day,
-                        incomeFen = items.filter { it.billType == com.azu.bookkeeper.domain.model.BillType.INCOME }
-                            .sumOf { it.amountFen },
-                        expenseFen = items.filter { it.billType == com.azu.bookkeeper.domain.model.BillType.EXPENSE }
-                            .sumOf { it.amountFen },
-                        bills = items
-                    )
-                }
+        /**
+         * 分组结果（v1.3.9 性能修复）。
+         *
+         * 旧实现是 `get()` 派生属性：**每次访问**都会 `take + groupBy + 两次 filter + sumOf`，
+         * 而首页一次重组会访问 2~3 次（标题计数、概览卡、列表），账单几百条时每次切页
+         * 都要白白分配几十个临时 List —— 这是「上下滑动不流畅」的主要来源。
+         *
+         * 现在改为构造时算一次（单次遍历、无中间集合）。`copy()` 会走主构造器，
+         * 因此 bills / visibleCount 变化时仍会即时重算，语义不变。
+         */
+        val dayGroups: List<DayGroup> = buildDayGroups(bills, visibleCount)
+
+        /** 当前可见范围内的收支合计，同样只算一次。 */
+        val incomeFen: Long = dayGroups.sumOf { it.incomeFen }
+        val expenseFen: Long = dayGroups.sumOf { it.expenseFen }
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -179,4 +181,56 @@ class HomeViewModel @Inject constructor(
     private companion object {
         const val PAGE_SIZE = 30
     }
+}
+
+/**
+ * 按天分组（v1.3.9）：单次遍历完成分组与小计。
+ *
+ * 依赖 DAO 已按 billTime 倒序返回；同一笔账单只会进一个组。
+ * 刻意不用 `groupBy { }` + 两次 `filter` + `sumOf`：那会在每次访问时产生
+ * 1 个 Map + N 个 List + 2N 个过滤 List，滚动时反复分配正是卡顿来源。
+ */
+private fun buildDayGroups(
+    bills: List<Bill>,
+    visibleCount: Int
+): List<HomeViewModel.DayGroup> {
+    if (bills.isEmpty()) return emptyList()
+    val end = visibleCount.coerceIn(0, bills.size)
+    if (end == 0) return emptyList()
+    val groups = ArrayList<HomeViewModel.DayGroup>()
+    var currentDay = Long.MIN_VALUE
+    var income = 0L
+    var expense = 0L
+    val items = ArrayList<Bill>()
+    fun flush() {
+        if (items.isNotEmpty()) {
+            groups.add(
+                HomeViewModel.DayGroup(
+                    dayStart = currentDay,
+                    incomeFen = income,
+                    expenseFen = expense,
+                    bills = ArrayList(items)
+                )
+            )
+            items.clear()
+        }
+    }
+    for (index in 0 until end) {
+        val bill = bills[index]
+        val day = com.azu.bookkeeper.core.DateTimeUtils.startOfDay(bill.billTime)
+        if (day != currentDay) {
+            flush()
+            currentDay = day
+            income = 0L
+            expense = 0L
+        }
+        when (bill.billType) {
+            com.azu.bookkeeper.domain.model.BillType.INCOME -> income += bill.amountFen
+            com.azu.bookkeeper.domain.model.BillType.EXPENSE -> expense += bill.amountFen
+            else -> Unit
+        }
+        items.add(bill)
+    }
+    flush()
+    return groups
 }

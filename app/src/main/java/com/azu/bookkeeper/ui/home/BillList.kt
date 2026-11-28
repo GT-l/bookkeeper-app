@@ -185,6 +185,8 @@ fun BillRow(
         BillType.TRANSFER -> ""
     }
     SoftCard(
+        // v1.3.9：列表行不画阴影（每行一条 shadow 是滑动掉帧的主因）
+        flat = true,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)

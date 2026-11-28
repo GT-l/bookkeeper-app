@@ -81,6 +81,11 @@ class PaymentTextAnalyzer @Inject constructor() {
             AMOUNT_SYMBOL.find(line)?.groupValues?.get(1)?.let { consider(it, 0) }
             AMOUNT_LABELLED.find(line)?.groupValues?.get(1)?.let { consider(it, 25) }
             AMOUNT_YUAN.find(line)?.groupValues?.get(1)?.let { consider(it, 5) }
+            // v1.3.9：整行就是一个数字（可带正负号 / 货币符号）。
+            // 微信「账单详情」的金额节点就是独立的「-23.00」，既没有¥也没有「元」、更没有标签，
+            // 上面三条正则全部命中不到 → 表现为「识别到付款但识别不出金额」。
+            // 分值压到最低，有标签/符号的行永远优先。
+            AMOUNT_BARE.find(line)?.groupValues?.get(1)?.let { consider(it, 3) }
         }
         return best?.fen
     }
@@ -109,11 +114,25 @@ class PaymentTextAnalyzer @Inject constructor() {
     // ---------- 商户 ----------
 
     private fun extractBestMerchant(lines: List<String>): String {
-        // 第一优先：标签行
+        // 第一优先：标签与值在同一行（支付宝账单详情、多数收银台）
         for (line in lines) {
+            // 「商户全称」独占一行时，正则的 `商户` 备选会把 `全称` 当成值（恰好 2 个字），
+            // 于是商户名变成「全称」，真正的值在下一行却永远没机会读。
+            // 先排除纯标签行，交给下面的「取下一行」分支。
+            if (line.trim().trim('：', ':') in MERCHANT_BARE_LABELS) continue
             val match = MERCHANT_LABELLED.find(line) ?: continue
             val value = match.groupValues.getOrNull(1)?.trim().orEmpty()
             if (isPlausibleMerchant(value)) return value
+        }
+        // v1.3.9：标签独占一行、值在下一行 —— 微信「账单详情」就是这种版式
+        // （商户全称 / 商户简称 / 收单机构 各自一行，值在下面）。
+        //
+        // 旧实现只有「同行」这一条路，于是落到后缀兜底，第一个含「公司 / 科技」的行
+        // 恰好是「财付通支付科技有限公司」（收单机构），用户看到的商户就变成了收单机构。
+        for ((index, line) in lines.withIndex()) {
+            if (line !in MERCHANT_BARE_LABELS) continue
+            val next = lines.getOrNull(index + 1).orEmpty()
+            if (isPlausibleMerchant(next)) return next
         }
         // 兜底：带商户后缀词的独立行
         for (line in lines) {
@@ -130,6 +149,8 @@ class PaymentTextAnalyzer @Inject constructor() {
         if (value.isBlank() || value.length !in 2..30) return false
         if (MERCHANT_EXCLUDES.any { it in value }) return false
         if (value.all { it.isDigit() }) return false
+        // 纯标签词（「商户全称」本身就占一行时，下一行才是真正的值）
+        if (value in MERCHANT_BARE_LABELS) return false
         return true
     }
 
@@ -197,6 +218,8 @@ class PaymentTextAnalyzer @Inject constructor() {
             "(?:实付(?:款|金额)?|付款金额|支付金额|扣款金额|交易金额|订单金额|合计)[^0-9]{0,6}([0-9][0-9,]*(?:\\.\\d{1,2})?)"
         )
         private val AMOUNT_YUAN = SafeRegex.of("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
+        /** v1.3.9：整行纯数字（允许 -/+ 与货币符号），兼容微信账单详情的「-23.00」金额节点。 */
+        private val AMOUNT_BARE = SafeRegex.of("^[-+−]?(?:¥|￥)?([0-9][0-9,]*(?:\\.\\d{1,2})?)$")
 
         private val AMOUNT_STRONG_LABELS = listOf("实付", "付款金额", "支付金额", "扣款金额", "交易金额")
         private val NON_PAYMENT_AMOUNT_HINTS = listOf("余额", "剩余", "可用", "优惠", "红包", "积分", "退款", "返现")
@@ -216,9 +239,21 @@ class PaymentTextAnalyzer @Inject constructor() {
         private val MERCHANT_LABELLED = SafeRegex.of(
             """(?:收款方|收款人|收款单位|商户名称|商户全称|商户|商家|交易对方|付款给|付款至|向)\s*[:：]?\s*([^ ，。；;：:]{2,30})"""
         )
+        /**
+         * v1.3.9：标签独占一行的版式（微信账单详情）。
+         * 「收单机构」刻意不在此列——它是收单方（财付通/银联），不是商户。
+         */
+        private val MERCHANT_BARE_LABELS = setOf(
+            "商户全称", "商户名称", "商户简称", "商户", "商家",
+            "收款方", "收款人", "收款单位", "交易对方", "付款给", "付款至"
+        )
         private val MERCHANT_EXCLUDES = listOf(
             "付款方式", "支付方式", "零钱", "余额", "银行卡", "订单", "单号", "时间", "备注",
-            "状态", "优惠", "红包", "积分", "余额宝"
+            "状态", "优惠", "红包", "积分", "余额宝",
+            // v1.3.9：收单机构 / 支付机构 是通道方，不是商户。
+            // 微信账单详情里「财付通支付科技有限公司」就在商户下面，旧逻辑会把它当商户名。
+            "收单机构", "支付机构", "清算机构", "收单方", "特约商户",
+            "财付通", "银联", "支付科技", "支付有限"
         )
         private val MERCHANT_SUFFIXES = listOf(
             "店", "公司", "超市", "便利店", "餐饮", "银行", "科技", "商贸", "贸易", "旗舰店", "专营店", "咖啡", "茶"

@@ -277,7 +277,7 @@ class VerificationController @Inject constructor(
         val now = System.currentTimeMillis()
         val bill = Bill(
             bookId = bookId,
-            billType = BillType.EXPENSE,
+            billType = candidate.billType,
             amountFen = amountFen,
             categoryId = categoryId,
             accountFrom = decision.accountId ?: candidate.accountId ?: 0L,

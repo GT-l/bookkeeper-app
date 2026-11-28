@@ -90,6 +90,15 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
+                            version = "v1.3.6 · 转账收款与支付前缓存",
+                            items = listOf(
+                                "新增：微信/支付宝转账成功、接收转账成功专门识别，收款记收入",
+                                "新增：支付前缓存金额与商户，支付完成页读不全时自动补齐",
+                                "修复：微信「已收钱」被拆行或只写「已收钱」时识别不到",
+                                "修复：待确认收款中间态不再误记账"
+                            )
+                        )
+                        ChangelogRow(
                             version = "v1.3.5 · 消费记录识别与黑屏修复",
                             items = listOf(
                                 "修复：打开消费记录/账单详情时识别失败，必须用手势才能记",

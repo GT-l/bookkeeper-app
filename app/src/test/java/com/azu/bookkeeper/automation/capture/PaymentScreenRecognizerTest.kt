@@ -183,4 +183,62 @@ class PaymentScreenRecognizerTest {
         assertTrue(refined.contains("金额：23.00"))
         assertTrue(refined.contains("商户：星巴克"))
     }
+
+    // ---------- v1.3.6：转账 / 收款方向 ----------
+
+    @Test
+    fun `微信接收转账成功记收入`() {
+        // 微信收款成功后写的是「已收钱」，旧词表只有「已收款」，所以永远识别不到
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "微信转账\n¥100.00\n已收钱\n已存入零钱"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.INCOME, r.direction)
+        assertEquals(PaymentScene.WECHAT_TRANSFER_IN, r.scene)
+    }
+
+    @Test
+    fun `收款文案被拆成两行也能识别`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "转账\n¥88.00\n已\n收钱"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.INCOME, r.direction)
+    }
+
+    @Test
+    fun `微信转出成功记支出`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "转账成功\n¥100.00\n已存入对方零钱"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.EXPENSE, r.direction)
+        assertEquals(PaymentScene.WECHAT_TRANSFER_OUT, r.scene)
+    }
+
+    @Test
+    fun `待确认收款是中间态不能记账`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "", "微信转账\n¥100.00\n待确认收款\n1天内未确认，将退还给对方"
+        )
+        assertEquals(PaymentScreen.ENTRY, r.screen)
+        assertEquals(BillDirection.NEUTRAL, r.direction)
+    }
+
+    @Test
+    fun `支付宝转账成功记支出`() {
+        val r = PaymentScreenRecognizer.classify(
+            alipay, "", "转账成功\n¥66.00\n收款方：小李\n交易单号 20261128"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+        assertEquals(BillDirection.EXPENSE, r.direction)
+    }
+
+    @Test
+    fun `转账结果页类名可识别`() {
+        val r = PaymentScreenRecognizer.classify(
+            wechat, "com.tencent.mm.plugin.transfer.ui.TransferResultUI", ""
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
+    }
 }

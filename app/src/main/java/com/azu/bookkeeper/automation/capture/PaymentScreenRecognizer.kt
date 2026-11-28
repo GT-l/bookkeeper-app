@@ -7,6 +7,22 @@ enum class PaymentScreen {
     ENTRY, SUCCESS, DETAIL, UNKNOWN
 }
 
+/** 记账方向：转账/红包有来有回，收款必须记收入，不能一律当支出。 */
+enum class BillDirection { EXPENSE, INCOME, NEUTRAL }
+
+/**
+ * 支付场景（v1.3.6）。市面主链路最终都收敛到微信 / 支付宝 / 抖音 / 银行 App，
+ * 这里按「谁 + 什么动作 + 钱进还是出」分类，供日志、方向判定与后续规则细化使用。
+ */
+enum class PaymentScene {
+    WECHAT_TRANSFER_OUT, WECHAT_TRANSFER_IN,
+    WECHAT_RED_PACKET_OUT, WECHAT_RED_PACKET_IN,
+    WECHAT_MERCHANT_PAY, WECHAT_BILL_DETAIL,
+    ALIPAY_TRANSFER_OUT, ALIPAY_TRANSFER_IN,
+    ALIPAY_MERCHANT_PAY, ALIPAY_BILL_DETAIL,
+    DOUYIN_ORDER, BANK_TRANSFER, UNKNOWN
+}
+
 /**
  * 支付页面识别器（纯 Kotlin，不依赖 Android API，可直接跑 JVM 单测）。
  *
@@ -31,12 +47,17 @@ object PaymentScreenRecognizer {
     data class Recognition(
         val screen: PaymentScreen,
         val reason: String,
-        val confidence: Float
+        val confidence: Float,
+        val scene: PaymentScene = PaymentScene.UNKNOWN,
+        val direction: BillDirection = BillDirection.EXPENSE
     )
 
     /** 结果页 Activity 特征。微信的 WalletPayResultUI、支付宝的 PayResultActivity 都命中这一组。 */
     private val SUCCESS_CLASS_TOKENS = listOf(
-        "WalletPayResult", "PayResult", "PaySuccess", "PayComplete", "PayDone", "PayFinish"
+        "WalletPayResult", "PayResult", "PaySuccess", "PayComplete", "PayDone", "PayFinish",
+        // v1.3.6：微信/支付宝的转账、收款结果页（用户反馈「转账成功界面识别不了」）
+        "TransferResult", "TransferMoneyResult", "RemitResult", "ReceiptResult",
+        "TransferDetail", "WalletTransfer", "RedPacket", "Receipt"
     )
 
     /** 付款界面 Activity 特征：收银台、付款码、输密码、选支付方式。 */
@@ -54,14 +75,30 @@ object PaymentScreenRecognizer {
     /** 微信专属：结果页常常只写「已完成」，或把金额放在「微信支付」下面。 */
     private val WECHAT_SUCCESS = listOf(
         "微信支付", "已完成", "已存入对方零钱", "转账已发出", "红包已发送",
-        "支付成功通知", "已收款", "付款成功", "支付成功"
+        "支付成功通知", "已收款", "付款成功", "支付成功",
+        // v1.3.6：微信收款成功实际写的是「已收钱」（不是「已收款」），
+        // 转账页顶部还会写「转账成功 / 已到账」，旧词表全部漏掉。
+        "已收钱", "收款成功", "已到账", "转账成功", "对方已收款", "已领取"
     )
 
     /** 付款界面文案。命中即认为「用户打开了付款界面」，不触发记账。 */
     private val ENTRY_TEXT = listOf(
         "付款码", "向商家付款", "收付款", "确认支付", "请输入支付密码", "立即支付",
         "待支付", "收银台", "选择付款方式", "支付金额", "付款方式", "请付款", "确认付款",
-        "使用密码", "指纹支付", "向商家付款"
+        "使用密码", "指纹支付", "向商家付款",
+        // v1.3.6：转账中间态——收款方还没点确认，钱没真正到账，不能记账
+        "待确认收款", "确认收款", "等待对方确认收款", "立即退还"
+    )
+
+    /** 收款方向词（钱进账）：命中即记收入，优先级高于通用成功词。 */
+    private val TRANSFER_IN_HINTS = listOf(
+        "已收钱", "已收款", "收款成功", "收到转账", "对方已收款", "已存入零钱",
+        "红包已领取", "红包已收", "已领取红包", "已到账"
+    )
+
+    /** 转出方向词（钱出账）：防止把「转账成功」误判成收入。 */
+    private val TRANSFER_OUT_HINTS = listOf(
+        "已存入对方零钱", "转账已发出", "转账成功", "已转账", "红包已发送", "转账给"
     )
 
     private val NEGATIVE = listOf(
@@ -124,8 +161,8 @@ object PaymentScreenRecognizer {
     /** 供通知/短信等非读屏链路复用的纯文本完成态判定。 */
     fun isSuccessText(text: String): Boolean {
         if (text.isBlank()) return false
-        val t = text.trim()
-        return (COMMON_SUCCESS + WECHAT_SUCCESS).any { t.contains(it) }
+        val compact = text.trim().replace("\n", "").replace(" ", "")
+        return (COMMON_SUCCESS + WECHAT_SUCCESS).any { compact.contains(it) }
     }
 
     /** 是否账单详情页文案：详情页也要提交捕获，才能触发「同一笔已记过」的轻提醒。 */
@@ -158,61 +195,142 @@ object PaymentScreenRecognizer {
         val pkg = normalizePackage(packageName)
         val cls = className.trim()
         val t = text.trim()
+        // 微信/支付宝常把「已收钱」「转账成功」拆到不同节点，合并后中间是换行，
+        // 直接 contains("已收钱") 会失败 —— 同时准备一份去空白的紧凑文本。
+        val compact = t.replace("\n", "").replace("\r", "")
+            .replace(" ", "").replace("\u00A0", "").replace("\u3000", "")
 
-        // 1) 类名强信号优先：微信结果页常返回空根节点，此时文本判断完全失效
-        if (cls.isNotBlank() && looksLikeResultClass(cls)) {
-            return Recognition(PaymentScreen.SUCCESS, "className:$cls", 0.92f)
-        }
-        if (cls.isNotBlank() && ENTRY_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }) {
-            return Recognition(PaymentScreen.ENTRY, "className:$cls", 0.85f)
-        }
-
-        // 2) 完成态文案：微信有专属词表
-        val successWords = if (pkg == WECHAT) WECHAT_SUCCESS + COMMON_SUCCESS else COMMON_SUCCESS
-        val hit = successWords.firstOrNull { t.contains(it) }
-        if (hit != null) {
-            val hasNegative = NEGATIVE.any { t.contains(it) }
+        // 0) 转账中间态：收款方还没点「确认收款」，钱没真正到账，绝不能记账
+        val pendingHit = listOf("待确认收款", "确认收款", "等待对方确认收款", "立即退还")
+            .firstOrNull { compact.contains(it) }
+        if (pendingHit != null &&
+            TRANSFER_IN_HINTS.none { compact.contains(it) } &&
+            TRANSFER_OUT_HINTS.none { compact.contains(it) }
+        ) {
             return Recognition(
-                PaymentScreen.SUCCESS,
-                "keyword:$hit",
-                if (hasNegative) 0.72f else 0.88f
+                PaymentScreen.ENTRY, "transferPending:$pendingHit", 0.72f,
+                sceneFor(pkg, BillDirection.NEUTRAL, compact), BillDirection.NEUTRAL
             )
         }
 
-        // 2b) 抖音订单完成页：只有「实付 ¥xx + 订单详情」而没有通用成功词。
-        //     收银台也会被 ENTRY_CLASS_TOKENS 先在类名阶段拦截，这里不会误判。
+        // 1) 收款方向优先：微信收款成功写的是「已收钱」，不先判方向会落到
+        //    「转账成功 → 支出」，用户反馈「接收转账成功界面识别不了」主要卡在这。
+        val incomeHit = TRANSFER_IN_HINTS.firstOrNull { compact.contains(it) }
+        if (incomeHit != null && NEGATIVE.none { compact.contains(it) }) {
+            return Recognition(
+                PaymentScreen.SUCCESS, "income:$incomeHit", 0.90f,
+                sceneFor(pkg, BillDirection.INCOME, compact), BillDirection.INCOME
+            )
+        }
+
+        // 2) 类名强信号优先：微信结果页常返回空根节点，此时文本判断完全失效
+        if (cls.isNotBlank() && looksLikeResultClass(cls)) {
+            val dir = directionOf(compact)
+            return Recognition(
+                PaymentScreen.SUCCESS, "className:$cls", 0.92f,
+                sceneFor(pkg, dir, compact), dir
+            )
+        }
+        if (cls.isNotBlank() && ENTRY_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }) {
+            return Recognition(
+                PaymentScreen.ENTRY, "className:$cls", 0.85f,
+                sceneFor(pkg, BillDirection.NEUTRAL, compact), BillDirection.NEUTRAL
+            )
+        }
+
+        // 3) 完成态文案：微信有专属词表；统一用紧凑文本匹配跨行拆分
+        val successWords = if (pkg == WECHAT) WECHAT_SUCCESS + COMMON_SUCCESS else COMMON_SUCCESS
+        val hit = successWords.firstOrNull { compact.contains(it) }
+        if (hit != null) {
+            val hasNegative = NEGATIVE.any { compact.contains(it) }
+            val dir = directionOf(compact)
+            return Recognition(
+                PaymentScreen.SUCCESS, "keyword:$hit",
+                if (hasNegative) 0.72f else 0.88f,
+                sceneFor(pkg, dir, compact), dir
+            )
+        }
+
+        // 3b) 抖音订单完成页：只有「实付 ¥xx + 订单详情」而没有通用成功词。
         if (pkg == DOUYIN) {
             val hasResultClass = cls.isNotBlank() &&
                 DOUYIN_RESULT_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }
-            if (hasResultClass) return Recognition(PaymentScreen.SUCCESS, "douyinClass:$cls", 0.88f)
-            val hasOrderContext = DOUYIN_ORDER_CONTEXT.any { t.contains(it) }
-            val dHit = DOUYIN_SUCCESS_HINTS.firstOrNull { t.contains(it) }
-            if (dHit != null && hasOrderContext && NEGATIVE.none { t.contains(it) }) {
-                return Recognition(PaymentScreen.SUCCESS, "douyin:$dHit+订单上下文", 0.86f)
+            if (hasResultClass) {
+                return Recognition(
+                    PaymentScreen.SUCCESS, "douyinClass:$cls", 0.88f,
+                    PaymentScene.DOUYIN_ORDER, BillDirection.EXPENSE
+                )
+            }
+            val hasOrderContext = DOUYIN_ORDER_CONTEXT.any { compact.contains(it) }
+            val dHit = DOUYIN_SUCCESS_HINTS.firstOrNull { compact.contains(it) }
+            if (dHit != null && hasOrderContext && NEGATIVE.none { compact.contains(it) }) {
+                return Recognition(
+                    PaymentScreen.SUCCESS, "douyin:$dHit+订单上下文", 0.86f,
+                    PaymentScene.DOUYIN_ORDER, BillDirection.EXPENSE
+                )
             }
         }
 
-        // 3) 账单 / 消费记录详情：v1.3.1 起**提交捕获**（由 CaptureCoordinator 走去重 → 轻提醒），
+        // 4) 账单 / 消费记录详情：提交捕获（由 CaptureCoordinator 走去重 → 轻提醒），
         //    必须排在 ENTRY 前，否则「付款方式」会抢先命中。
-        //    v1.3.5：强字段（交易单号等）直接认；弱词（消费记录等）要求金额行少，避免把列表页当一笔。
-        val strongHit = DETAIL_STRONG.firstOrNull { t.contains(it) }
+        //    强字段（交易单号等）直接认；弱词（消费记录等）要求金额行少，避免把列表页当一笔。
+        val strongHit = DETAIL_STRONG.firstOrNull { compact.contains(it) }
         if (strongHit != null) {
-            return Recognition(PaymentScreen.DETAIL, "keyword:$strongHit", 0.66f)
+            return Recognition(
+                PaymentScreen.DETAIL, "keyword:$strongHit", 0.66f,
+                billDetailScene(pkg), BillDirection.EXPENSE
+            )
         }
-        val weakHit = DETAIL_WEAK.firstOrNull { t.contains(it) }
+        val weakHit = DETAIL_WEAK.firstOrNull { compact.contains(it) }
         if (weakHit != null) {
             val moneyLines = amountLineCount(t)
             if (moneyLines in 1..3) {
-                return Recognition(PaymentScreen.DETAIL, "keyword:$weakHit+金额行$moneyLines", 0.55f)
+                return Recognition(
+                    PaymentScreen.DETAIL, "keyword:$weakHit+金额行$moneyLines", 0.55f,
+                    billDetailScene(pkg), BillDirection.EXPENSE
+                )
             }
         }
 
-        // 4) 付款界面（中间态）：明确识别，但绝不触发记账
-        val entryHit = ENTRY_TEXT.firstOrNull { t.contains(it) }
+        // 5) 付款界面（中间态）：明确识别，但绝不触发记账
+        val entryHit = ENTRY_TEXT.firstOrNull { compact.contains(it) }
         if (entryHit != null) {
-            return Recognition(PaymentScreen.ENTRY, "keyword:$entryHit", 0.70f)
+            return Recognition(
+                PaymentScreen.ENTRY, "keyword:$entryHit", 0.70f,
+                sceneFor(pkg, BillDirection.NEUTRAL, compact), BillDirection.NEUTRAL
+            )
         }
         return Recognition(PaymentScreen.UNKNOWN, "none", 0f)
+    }
+
+    /** 收款词优先，其次转出词，都没有则按支出（绝大多数支付场景是支出）。 */
+    private fun directionOf(compact: String): BillDirection {
+        if (TRANSFER_IN_HINTS.any { compact.contains(it) }) return BillDirection.INCOME
+        if (TRANSFER_OUT_HINTS.any { compact.contains(it) }) return BillDirection.EXPENSE
+        return BillDirection.EXPENSE
+    }
+
+    private fun sceneFor(pkg: String, direction: BillDirection, compact: String): PaymentScene = when {
+        pkg == WECHAT && compact.contains("红包") ->
+            if (direction == BillDirection.INCOME) PaymentScene.WECHAT_RED_PACKET_IN
+            else PaymentScene.WECHAT_RED_PACKET_OUT
+        pkg == WECHAT && direction == BillDirection.INCOME -> PaymentScene.WECHAT_TRANSFER_IN
+        pkg == WECHAT && (compact.contains("转账") || compact.contains("对方零钱")) ->
+            PaymentScene.WECHAT_TRANSFER_OUT
+        pkg == WECHAT -> PaymentScene.WECHAT_MERCHANT_PAY
+        pkg == ALIPAY && direction == BillDirection.INCOME -> PaymentScene.ALIPAY_TRANSFER_IN
+        pkg == ALIPAY && compact.contains("转账") -> PaymentScene.ALIPAY_TRANSFER_OUT
+        pkg == ALIPAY -> PaymentScene.ALIPAY_MERCHANT_PAY
+        pkg == DOUYIN -> PaymentScene.DOUYIN_ORDER
+        pkg.isBlank() -> PaymentScene.UNKNOWN
+        else -> PaymentScene.BANK_TRANSFER
+    }
+
+    private fun billDetailScene(pkg: String): PaymentScene = when (pkg) {
+        WECHAT -> PaymentScene.WECHAT_BILL_DETAIL
+        ALIPAY -> PaymentScene.ALIPAY_BILL_DETAIL
+        DOUYIN -> PaymentScene.DOUYIN_ORDER
+        else -> PaymentScene.UNKNOWN
     }
 
     /**

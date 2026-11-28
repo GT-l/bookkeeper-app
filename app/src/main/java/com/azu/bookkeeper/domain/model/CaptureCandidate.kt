@@ -12,6 +12,8 @@ data class CaptureCandidate(
     val packageName: String = "",
     val rawText: String = "",
     val amountFen: Long? = null,
+    /** v1.3.6：记账方向。收款类转账 / 红包必须记收入，不能一律当支出。 */
+    val billType: BillType = BillType.EXPENSE,
     val merchant: String = "",
     val billTime: Long? = null,
     val categoryId: Long? = null,

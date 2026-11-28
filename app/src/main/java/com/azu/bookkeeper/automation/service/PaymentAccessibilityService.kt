@@ -16,9 +16,12 @@ import androidx.core.app.NotificationCompat
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.capture.AccessibilityCaptureParser
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
+import com.azu.bookkeeper.automation.capture.BillDirection
 import com.azu.bookkeeper.automation.capture.PaymentScreen
 import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
+import com.azu.bookkeeper.automation.capture.PendingPaymentCache
 import com.azu.bookkeeper.automation.capture.ScreenTextCollector
+import kotlin.math.roundToLong
 import com.azu.bookkeeper.automation.classify.BusinessTag
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
 import com.azu.bookkeeper.core.Constants
@@ -202,6 +205,8 @@ class PaymentAccessibilityService : AccessibilityService() {
             PaymentScreen.ENTRY -> {
                 // 重新进入收银台 = 新一轮支付，解除上一轮成功页的静默锁
                 settledPackages.remove(packageName)
+                // v1.3.6：收银台阶段金额/商户最清晰，先缓存；成功页字段缺失时补齐
+                rememberPendingPayment(packageName, text)
                 logScreenThrottled(
                     "付款界面 pkg=$packageName cls=$className reason=${recognition.reason} " +
                         "len=${text.length} sparse=$sparse preview=${ScreenTextCollector.preview(text)}"
@@ -365,6 +370,34 @@ class PaymentAccessibilityService : AccessibilityService() {
         return ""
     }
 
+    /**
+     * 收银台阶段把「即将支付的金额 / 商户」缓存 5 分钟。
+     * 成功页常因为动画节点读不到金额，靠这份缓存补齐，解决「付了却识别失败」。
+     */
+    private fun rememberPendingPayment(packageName: String, text: String) {
+        val money = firstMoneyKey(text)
+        val fen = money.toDoubleOrNull()?.let { (it * 100).roundToLong() } ?: 0L
+        val merchant = extractMerchantHint(text)
+        if (fen > 0L || merchant.isNotBlank()) {
+            PendingPaymentCache.remember(packageName, fen, merchant)
+            logScreenThrottled("收银台缓存 pkg=$packageName fen=$fen merchant=$merchant")
+        }
+    }
+
+    /** 从收银台文案里找「收款方 / 付款给 / 商户」后面的名字，找不到返回空。 */
+    private fun extractMerchantHint(text: String): String {
+        val labels = listOf("收款方名称", "收款方", "收款人", "商户名称", "付款给", "转账给", "商家", "商户")
+        for (line in text.lines().map { it.trim() }.filter { it.isNotEmpty() }) {
+            for (label in labels) {
+                val idx = line.indexOf(label)
+                if (idx < 0) continue
+                val value = line.substring(idx + label.length).trim().trim('：', ':', ' ')
+                if (value.length in 2..24 && value.none { it.isDigit() }) return value
+            }
+        }
+        return ""
+    }
+
     /** 微信空根节点有界重读：150 / 350 / 650ms，最多 3 次，用主线程 Handler 不阻塞回调。 */
     private fun scheduleResultRetry(
         parser: AccessibilityCaptureParser,
@@ -428,14 +461,21 @@ class PaymentAccessibilityService : AccessibilityService() {
         val tagger = runCatching { deps.tagger() }.getOrNull()
         val businessTag: BusinessTag = tagger?.let { runCatching { it.tag(packageName, text) }.getOrNull() }
             ?: BusinessTag.NONE
+        // v1.3.6：带上收银台缓存的金额/商户，成功页读不全时由协调器补齐
+        val pending = PendingPaymentCache.take(packageName)
         val captureEvent = parser.buildEvent(
             eventId = eventId,
             packageName = packageName,
             text = text,
             eventTime = eventTime,
             businessTag = businessTag,
-            screen = recognition.screen
+            screen = recognition.screen,
+            direction = recognition.direction,
+            pendingAmountFen = pending?.amountFen ?: 0L,
+            pendingMerchant = pending?.merchant.orEmpty()
         )
+        // 已带进事件，清掉缓存避免污染下一笔
+        if (pending != null) PendingPaymentCache.clear(packageName)
         val coordinator = runCatching { deps.coordinator() }.getOrNull() ?: return
         withContext(dispatcher) { coordinator.onCapture(captureEvent) }
     }

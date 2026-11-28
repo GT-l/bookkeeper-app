@@ -114,6 +114,20 @@ class CaptureCoordinator @Inject constructor(
             null
         }
 
+        // v1.3.6：成功页字段残缺时，用收银台阶段缓存的金额/商户补齐（「即将支付 → 支付完成」）
+        if (fields.amountFen == null && event.pendingAmountFen > 0L) {
+            fields = fields.copy(amountFen = event.pendingAmountFen)
+        }
+        if (fields.merchant.isBlank() && event.pendingMerchant.isNotBlank()) {
+            fields = fields.copy(merchant = event.pendingMerchant)
+        }
+        // 方向：收款类转账/红包记收入，其余记支出
+        val billType = if (event.direction == BillDirection.INCOME.name) {
+            BillType.INCOME
+        } else {
+            BillType.EXPENSE
+        }
+
         // v1.3.1 统一两条识别链路：自动识屏过去只用 FieldExtractor，摇一摇用
         // PaymentTextAnalyzer + FieldExtractor，同一页面两条路会抽到不同商户/备注。
         // 现在都用同一个 analyzer 择优，并把展示备注统一写成「商户 · 购买内容」——
@@ -166,10 +180,14 @@ class CaptureCoordinator @Inject constructor(
             packageName = event.packageName,
             rawText = event.rawText,
             amountFen = fields.amountFen,
+            billType = billType,
             merchant = displayRemark,
             billTime = fields.billTime,
             categoryId = ruleHit.categoryId.takeIf { it > 0L }
-                ?: fallbackCategoryId(bookId).takeIf { it > 0L },
+                ?: fallbackCategoryId(
+                    bookId,
+                    if (billType == BillType.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
+                ).takeIf { it > 0L },
             accountId = ruleHit.accountId.takeIf { it > 0L },
             imagePath = event.imagePath,
             ocrConfidence = ocrResult?.confidence ?: 1f,
@@ -271,15 +289,21 @@ class CaptureCoordinator @Inject constructor(
      * 否则低置信度轻卡片点「记一笔」会在 VerificationController.submitDecision 里
      * 因 categoryId<=0 被拒，表现为「点了没记录、也没有任何提示」。
      */
-    private suspend fun fallbackCategoryId(bookId: Long): Long {
-        val preferred = runCatching { settings.defaultExpenseCategoryId.first() }.getOrDefault(0L)
+    private suspend fun fallbackCategoryId(
+        bookId: Long,
+        kind: CategoryKind = CategoryKind.EXPENSE
+    ): Long {
+        val preferred = runCatching {
+            if (kind == CategoryKind.INCOME) settings.defaultIncomeCategoryId.first()
+            else settings.defaultExpenseCategoryId.first()
+        }.getOrDefault(0L)
         var categories = runCatching {
-            categoryRepository.observeByBook(bookId, CategoryKind.EXPENSE).first()
+            categoryRepository.observeByBook(bookId, kind).first()
         }.getOrDefault(emptyList())
         if (categories.isEmpty()) {
             runCatching { categoryRepository.ensureDefaults(bookId) }
             categories = runCatching {
-                categoryRepository.observeByBook(bookId, CategoryKind.EXPENSE).first()
+                categoryRepository.observeByBook(bookId, kind).first()
             }.getOrDefault(emptyList())
         }
         return categories.firstOrNull { it.categoryId == preferred }?.categoryId
@@ -320,7 +344,7 @@ class CaptureCoordinator @Inject constructor(
         val now = System.currentTimeMillis()
         return Bill(
             bookId = bookId,
-            billType = BillType.EXPENSE,
+            billType = candidate.billType,
             amountFen = candidate.amountFen ?: 0L,
             categoryId = candidate.categoryId ?: 0L,
             accountFrom = candidate.accountId ?: 0L,

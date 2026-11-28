@@ -134,7 +134,7 @@ class PaymentScreenRecognizerTest {
         val r = PaymentScreenRecognizer.classify(
             PaymentScreenRecognizer.DOUYIN,
             "com.ss.android.ugc.aweme.order.OrderDetailUI",
-            "订单详情\n实付 ¥23.00\n商家：麦当劳\n交易完成"
+            "订单详情\n订单号 692345678901\n实付 ¥23.00\n商家：麦当劳\n交易完成"
         )
         assertEquals(PaymentScreen.SUCCESS, r.screen)
         assertTrue(r.reason.startsWith("douyin"))
@@ -485,5 +485,37 @@ class PaymentScreenRecognizerTest {
     @Test
     fun `空白文本不算收入`() {
         assertFalse(PaymentScreenRecognizer.looksLikeIncome(""))
+    }
+
+    // ---------- v1.3.20：宁可漏记不可错记 ----------
+
+    @Test
+    fun `抖音订单列表页只有商家和金额时不判成功`() {
+        val r = PaymentScreenRecognizer.classify(
+            PaymentScreenRecognizer.DOUYIN,
+            "com.ss.android.ugc.aweme.order.OrderListActivity",
+            "我的订单\n麦当劳\n实付 ¥23.00\n麦当劳\n实付 ¥45.00\n待评价"
+        )
+        assertEquals(PaymentScreen.UNKNOWN, r.screen)
+    }
+
+    @Test
+    fun `微信聊天页结构特征不参与判定`() {
+        val r = PaymentScreenRecognizer.classify(
+            PaymentScreenRecognizer.WECHAT,
+            "",
+            "支付成功\n¥23.00\n按住说话\n发消息"
+        )
+        assertEquals(PaymentScreen.UNKNOWN, r.screen)
+    }
+
+    @Test
+    fun `中间态词与成功词共存时按成功页处理`() {
+        val r = PaymentScreenRecognizer.classify(
+            PaymentScreenRecognizer.DOUYIN,
+            "com.ss.android.ugc.aweme.order.OrderDetailUI",
+            "订单详情\n订单号 692345678901\n实付 ¥23.00\n交易完成\n待收货"
+        )
+        assertEquals(PaymentScreen.SUCCESS, r.screen)
     }
 }

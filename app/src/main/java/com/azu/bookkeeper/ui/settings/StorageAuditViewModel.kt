@@ -110,6 +110,30 @@ class StorageAuditViewModel @Inject constructor(
         state.copy(selected = state.items.filter { !it.locked }.map { it.path }.toSet())
     }
 
+    /**
+     * v1.3.20：一键选中「旧版本残留且当前没在用」的文件。
+     *
+     * 与 selectAllRemovable 的区别：**备份包（BACKUP）永不自动选中**——那是用户唯一的
+     * 恢复凭据，误删不可挽回。日志、缓存、安装包、旧数据库副本、未锁定的旧偏好文件
+     * 都是可再生的历史残留。选中后仍要走原有确认弹窗，不会直接删。
+     *
+     * 为什么覆盖安装后还会出现旧偏好文件：Android 的覆盖安装**不会清除 /data/data 下的数据**，
+     * shared_prefs 里的旧 XML 会一直留着，直到用户卸载 App 或手动删除。
+     */
+    fun selectObsolete() = _uiState.update { state ->
+        val obsolete = state.items.filter { item ->
+            !item.locked && when (item.kind) {
+                Kind.LOG, Kind.CACHE, Kind.APK, Kind.PREF, Kind.DATABASE, Kind.OTHER -> true
+                // 备份是用户数据，只能手动逐项勾选
+                Kind.BACKUP -> false
+            }
+        }
+        state.copy(
+            selected = obsolete.map { it.path }.toSet(),
+            message = "已选中 ${obsolete.size} 项旧版本残留（备份包未选）；确认后才会删除"
+        )
+    }
+
     /** 全部保留 = 清空选择，不删任何东西。 */
     fun keepAll() = _uiState.update { it.copy(selected = emptySet(), message = "已全部保留，没有删除任何文件") }
 

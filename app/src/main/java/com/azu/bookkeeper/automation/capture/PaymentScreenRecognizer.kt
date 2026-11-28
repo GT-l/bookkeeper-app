@@ -97,6 +97,12 @@ object PaymentScreenRecognizer {
         "ChattingUI", "Chatting", "LauncherUI", "ConversationUI", "ContactInfoUI"
     )
 
+    /** v1.3.20：聊天页的结构性提示（输入框/语音按钮），不是消息正文。 */
+    private val CHAT_UI_HINTS = listOf("按住说话", "发消息", "输入消息", "语音通话", "表情按钮")
+
+    /** v1.3.20：唯一订单凭据。列表页没有这些字段，不允许自动记账。 */
+    private val ORDER_ID_HINTS = listOf("订单号", "交易单号", "订单编号", "交易编号", "单号")
+
     /** 红包类名（只用于标注场景，不单独作为「成功」依据）。 */
     private val RED_PACKET_CLASS_TOKENS = listOf(
         "LuckyMoney", "RedPacket", "RedEnvelope", "Hongbao"
@@ -189,7 +195,10 @@ object PaymentScreenRecognizer {
 
     /** 转账中间态：收款方还没点「确认收款」，钱没真正到账。 */
     private val PENDING_TRANSFER = listOf(
-        "待确认收款", "确认收款", "等待对方确认收款", "立即退还", "待对方确认"
+        "待确认收款", "确认收款", "等待对方确认收款", "立即退还", "待对方确认",
+        // v1.3.20：交易未完成态。必须配合「没有成功词」才生效，
+        // 否则成功页里的「待收货 / 查看订单」会把已完成交易误判成中间态。
+        "待支付", "待付款", "支付中", "处理中", "待确认"
     )
 
     private val NEGATIVE = listOf(
@@ -349,6 +358,23 @@ object PaymentScreenRecognizer {
         return RECEIPT_CONTEXT.any { text.contains(it) }
     }
 
+    /**
+     * v1.3.20：是否有唯一订单号。
+     *
+     * 只认「标签 + 数字」同行或相邻行的形态，避免把标题里的「订单」二字当成单号。
+     * 抖音列表页只有商家名和金额，点进去的详情页才有订单号——这是用户规则里的硬闸。
+     */
+    fun hasOrderId(text: String): Boolean {
+        if (text.isBlank()) return false
+        return ORDER_ID_HINTS.any { hint ->
+            val idx = text.indexOf(hint)
+            if (idx < 0) false else {
+                val tail = text.substring(idx + hint.length, minOf(text.length, idx + hint.length + 48))
+                tail.any { it.isDigit() }
+            }
+        }
+    }
+
     /** 单笔详情页里的金额行数量：列表页会有很多行，借此避免把账单列表当成一笔。 */
     private fun amountLineCount(text: String): Int =
         text.lines().count { looksLikeAmount(it.trim()) }
@@ -370,12 +396,19 @@ object PaymentScreenRecognizer {
         if (cls.isNotBlank() && CHAT_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }) {
             return Recognition(PaymentScreen.UNKNOWN, "chatPage:$cls", 0f)
         }
+        // v1.3.20：没有类名的自绘聊天页也要挡住。聊天气泡文字一律不参与判定，
+        // 这里只用「输入框提示」这类结构特征，不读消息正文。
+        // 聊天页一律不参与判定：转账气泡里也会写「支付成功」，不能信。
+        if (CHAT_UI_HINTS.any { compact.contains(it) }) {
+            return Recognition(PaymentScreen.UNKNOWN, "chatUiHint", 0f)
+        }
 
         // 0b) 转账中间态：收款方还没点「确认收款」，钱没真正到账，绝不能记账
         val pendingHit = PENDING_TRANSFER.firstOrNull { compact.contains(it) }
         if (pendingHit != null &&
             TRANSFER_IN_HINTS.none { compact.contains(it) } &&
-            TRANSFER_OUT_HINTS.none { compact.contains(it) }
+            TRANSFER_OUT_HINTS.none { compact.contains(it) } &&
+            (COMMON_SUCCESS + WECHAT_SUCCESS).none { compact.contains(it) }
         ) {
             return Recognition(
                 PaymentScreen.ENTRY, "transferPending:$pendingHit", 0.72f,
@@ -433,7 +466,10 @@ object PaymentScreenRecognizer {
 
         // 3b) 抖音订单完成页：只有「实付 ¥xx + 订单详情」而没有通用成功词。
         if (pkg == DOUYIN) {
-            val hasResultClass = cls.isNotBlank() &&
+            // v1.3.20：列表页不许记账。只有订单号 / 交易单号才算唯一凭据，
+            // 「商家名 + 金额」在订单列表里也会出现，滑一下就会重复触发。
+            val hasOrderId = hasOrderId(compact)
+            val hasResultClass = hasOrderId && cls.isNotBlank() &&
                 DOUYIN_RESULT_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }
             if (hasResultClass) {
                 return Recognition(
@@ -443,7 +479,7 @@ object PaymentScreenRecognizer {
             }
             val hasOrderContext = DOUYIN_ORDER_CONTEXT.any { compact.contains(it) }
             val dHit = DOUYIN_SUCCESS_HINTS.firstOrNull { compact.contains(it) }
-            if (dHit != null && hasOrderContext && NEGATIVE.none { compact.contains(it) }) {
+            if (dHit != null && hasOrderId && hasOrderContext && NEGATIVE.none { compact.contains(it) }) {
                 return Recognition(
                     PaymentScreen.SUCCESS, "douyin:$dHit+订单上下文", 0.86f,
                     PaymentScene.DOUYIN_ORDER, BillDirection.EXPENSE

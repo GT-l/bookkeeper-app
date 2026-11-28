@@ -35,4 +35,12 @@ class FieldExtractorTest {
         assertNull(extractor.extract("银行卡尾号 ¥1234.56").amountFen)
         assertNull(extractor.extract("累计收款 ¥888.88").amountFen)
     }
+
+    @Test
+    fun `实付金额优先于小计与优惠`() {
+        val text = "商品小计 ¥100.00\n优惠 ¥5.00\n实付 ¥21.60"
+        assertEquals(2_160L, extractor.extract(text).amountFen)
+        val text2 = "原价 ¥99.00\n合计 ¥21.60"
+        assertEquals(2_160L, extractor.extract(text2).amountFen)
+    }
 }

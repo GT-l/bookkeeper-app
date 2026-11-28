@@ -16,6 +16,7 @@ class FieldExtractor @Inject constructor() {
     private val amountWithSymbol = SafeRegex.of("(?:¥|￥|RMB|人民币)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
     private val amountWithYuan = SafeRegex.of("([0-9][0-9,]*(?:\\.\\d{1,2})?)\\s*元")
     private val amountLabelled = SafeRegex.of("(?:金额|订单金额|付款金额|交易金额|扣款金额)\\s*[:：]?\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
+    private val amountFinal = SafeRegex.of("(?:实付金额?|实付款|应付金额|合计|支付金额)\\s*[:：]?\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)")
     private val merchantRegex = SafeRegex.of("""(?:商户名称|商户|收款方|交易对方|付款给|向)\s*[:：]?\s*([^ ，。；;：:\n]{2,20})""")
     private val accountRegex = SafeRegex.of("""(?:银行卡|储蓄卡|信用卡|微信零钱|支付宝余额|付款方式)\s*[:：]?\s*([^ ，。；;：:\n]{2,16})""")
 
@@ -35,6 +36,7 @@ class FieldExtractor @Inject constructor() {
      */
     private fun extractAmount(text: String): Long? {
         val candidates = sequenceOf(
+            amountFinal.findAll(text),
             amountWithSymbol.findAll(text),
             amountLabelled.findAll(text),
             amountWithYuan.findAll(text)
@@ -81,7 +83,9 @@ class FieldExtractor @Inject constructor() {
         /** 出现在这些词所在行时，数字几乎不可能是金额。 */
         val SERIAL_HINTS = listOf(
             "单号", "编号", "流水", "卡号", "尾号", "手机号", "累计", "余额", "额度",
-            "验证码", "总数", "合计", "笔数"
+            "验证码", "总数", "笔数",
+            // v1.3.20：这些是金额构成项，不是最终实付
+            "小计", "原价", "优惠", "运费", "商品总价"
         )
 
         /** 从带标签的行中抓取 ISO/中文日期时间子串（含可选秒）。 */

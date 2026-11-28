@@ -123,7 +123,7 @@ fun StorageAuditScreen(viewModel: StorageAuditViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item { SummaryCard(state) }
+                item { SummaryCard(state, viewModel::selectObsolete) }
                 item { TipCard() }
 
                 state.grouped.forEach { (kind, list) ->
@@ -195,7 +195,10 @@ fun StorageAuditScreen(viewModel: StorageAuditViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun SummaryCard(state: StorageAuditViewModel.UiState) {
+private fun SummaryCard(
+    state: StorageAuditViewModel.UiState,
+    onSelectObsolete: () -> Unit
+) {
     SoftCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
@@ -226,6 +229,13 @@ private fun SummaryCard(state: StorageAuditViewModel.UiState) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp)
                 )
+                // v1.3.20：一键选中旧版本残留。备份包不入候选，且仍需二次确认。
+                CuteOutlinedButton(
+                    onClick = onSelectObsolete,
+                    modifier = Modifier.padding(top = 10.dp).fillMaxWidth()
+                ) {
+                    Text("一键选中旧版本残留（不含备份）")
+                }
             }
         }
     }
@@ -244,7 +254,9 @@ private fun TipCard() {
                 text = "• 旧版本数据库：确认现在账本数据正常，就可以删；\n" +
                     "• 备份包：想留个兜底就保留，删了只是少一条恢复路径；\n" +
                     "• 日志 / 缓存 / 临时截图：随时可删，不影响账本；\n" +
-                    "• 锁定的项目（🔒）正在使用，删了会出问题，所以不让选。",
+                    "• 锁定的项目（🔒）正在使用，删了会出问题，所以不让选；\n" +
+                    "• 为什么覆盖安装后还有旧偏好文件：Android 覆盖安装不会清除应用私有数据，" +
+                    "旧版本写下的 shared_prefs/*.xml 会一直留着，只有卸载 App 才会清空。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)

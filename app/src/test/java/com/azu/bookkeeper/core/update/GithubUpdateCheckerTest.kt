@@ -45,7 +45,7 @@ class GithubUpdateCheckerTest {
         )
         assertEquals(info.downloadUrl, info.browserUrl)
         assertEquals(
-            "https://api.github.com/repos/x/assets/1",
+            "https://api.github.com/repos/GT-l/bookkeeper-app/releases/assets/1",
             info.copy(downloadUrl = "").browserUrl
         )
     }

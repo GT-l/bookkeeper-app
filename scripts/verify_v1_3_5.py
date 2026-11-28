@@ -293,7 +293,7 @@ check("T-135-08 安装后清理安装包",
       "scheduleCleanup" in installer and "cleanupOldApks" in installer
       and "cleanupOldApks(context)" in about_vm)
 check("T-135-09 弹窗渐变与入场动画",
-      "GradientDrawable.TOP_BOTTOM" in overlay and ".animate()" in overlay
+      "GradientDrawable.Orientation.TOP_BOTTOM" in overlay and ".animate()" in overlay
       and "圆形" in overlay)
 
 # ---------- 2. 迁移正确性 ----------

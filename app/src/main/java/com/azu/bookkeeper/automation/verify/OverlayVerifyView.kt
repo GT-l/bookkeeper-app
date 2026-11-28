@@ -147,7 +147,7 @@ class OverlayVerifyView @Inject constructor(
                     orientation = LinearLayout.VERTICAL
                     // 奶油渐变：上浅下粉，比纯色更软更「可可爱爱」
                     background = GradientDrawable().apply {
-                        orientation = GradientDrawable.TOP_BOTTOM
+                        orientation = GradientDrawable.Orientation.TOP_BOTTOM
                         colors = if (dark) {
                             intArrayOf(DarkSurface.toArgb(), Color.rgb(0x3A, 0x30, 0x42))
                         } else {
@@ -238,7 +238,7 @@ class OverlayVerifyView @Inject constructor(
                                 cornerRadius = dp(999).toFloat()
                                 if (primary) {
                                     // 主按钮也做一点渐变，比纯色更软
-                                    orientation = GradientDrawable.LEFT_RIGHT
+                                    orientation = GradientDrawable.Orientation.LEFT_RIGHT
                                     colors = intArrayOf(accent, (if (dark) PrimaryLight else PrimaryDark).toArgb())
                                 } else {
                                     setColor(Color.TRANSPARENT)

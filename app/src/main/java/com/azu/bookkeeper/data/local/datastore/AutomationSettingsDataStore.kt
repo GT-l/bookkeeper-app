@@ -51,6 +51,8 @@ class AutomationSettingsDataStore @Inject constructor(
         val SHAKE_ACTION = intPreferencesKey("shake_action")
         /** 摇一摇灵敏度：取值见 ShakeSensitivity（0 稳 / 1 标准 / 2 灵敏）。 */
         val SHAKE_SENSITIVITY = intPreferencesKey("shake_sensitivity")
+        /** v1.3.22 问题二方案 D：解析调试日志，默认关。 */
+        val PARSE_TRACE_ENABLED = booleanPreferencesKey("parse_trace_enabled")
     }
 
     private val store: DataStore<Preferences> get() = context.automationDataStore
@@ -197,6 +199,17 @@ class AutomationSettingsDataStore @Inject constructor(
     suspend fun setShakeSensitivity(value: Int) {
         store.edit { it[Keys.SHAKE_SENSITIVITY] = value }
         QuickGestureCache.shakeSensitivity = value
+    }
+
+    /**
+     * v1.3.22 问题二方案 D：开启后输出原始文本 / 字段候选 / 最终决策，
+     * 用于定位「OCR 有字但解析为空」的断链点。默认关闭，不影响日常日志体积。
+     */
+    val parseTraceEnabled: Flow<Boolean> =
+        store.data.map { it[Keys.PARSE_TRACE_ENABLED] ?: false }
+
+    suspend fun setParseTraceEnabled(value: Boolean) = store.edit {
+        it[Keys.PARSE_TRACE_ENABLED] = value
     }
 
     suspend fun setQuickGesture(value: Int) {

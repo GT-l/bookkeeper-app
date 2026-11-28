@@ -42,6 +42,13 @@ interface CaptureDao {
     @Query("DELETE FROM capture_events WHERE created_at < :beforeMillis")
     suspend fun deleteOlderThan(beforeMillis: Long)
 
+    /**
+     * v1.3.22 问题五方案 E：只清理**终态**事件（2=自动入账 / 3=用户改写 / 4=已丢弃）。
+     * 待处理(0) / 待校对(1) 事件绝不能删——用户还没确认，删了就等于丢账单。
+     */
+    @Query("DELETE FROM capture_events WHERE created_at < :beforeMillis AND status IN (2, 3, 4)")
+    suspend fun deleteTerminalOlderThan(beforeMillis: Long): Int
+
     @Query("DELETE FROM capture_events")
     suspend fun deleteAll()
 }

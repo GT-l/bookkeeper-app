@@ -10,6 +10,7 @@ import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.service.PaymentAccessibilityService
 import com.azu.bookkeeper.core.CaptureDiagnostics
 import com.azu.bookkeeper.core.composeRemark
+import com.azu.bookkeeper.data.local.datastore.AutomationSettingsDataStore
 import com.azu.bookkeeper.core.CaptureFailReason
 import com.azu.bookkeeper.core.CaptureReport
 import com.azu.bookkeeper.core.DiagnosticStep
@@ -21,6 +22,7 @@ import com.azu.bookkeeper.domain.model.QuickEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -87,6 +89,7 @@ class LightweightCapture @Inject constructor(
     private val ocrIpc: OcrIpcClient,
     private val analyzer: PaymentTextAnalyzer,
     private val extractor: FieldExtractor,
+    private val automationSettings: AutomationSettingsDataStore,
     private val progress: CaptureProgressNotifier,
     @MainDispatcher private val mainDispatcher: CoroutineDispatcher,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
@@ -114,6 +117,10 @@ class LightweightCapture @Inject constructor(
 
     fun captureIntoForm(scope: CoroutineScope, onResult: (CaptureOutcome) -> Unit) {
         scope.launch {
+            // v1.3.22 问题二方案 D：读取可选解析调试开关（默认关）
+            val parseTraceEnabled = runCatching {
+                automationSettings.parseTraceEnabled.first()
+            }.getOrDefault(false)
             val steps = mutableListOf<DiagnosticStep>()
             val startedAt = System.currentTimeMillis()
 
@@ -211,7 +218,7 @@ class LightweightCapture @Inject constructor(
                             "${snapshot.nodeCount} 个文本节点 / ${snapshot.text.length} 字 / ${snapshot.packageName}"
                         )
                         runCatching { progress.showStage(CaptureProgressNotifier.Stage.EXTRACT) }
-                        val fields = extract(rawText)
+                        val fields = extract(rawText, parseTraceEnabled)
                         val amountFen = fields.amountFen
                         if (amountFen != null) {
                             succeed(
@@ -281,7 +288,7 @@ class LightweightCapture @Inject constructor(
                         )
                     }
                     rawText = listOf(rawText, payload.text).filter { it.isNotBlank() }.joinToString("\n")
-                    val ocrFields = extract(rawText)
+                    val ocrFields = extract(rawText, parseTraceEnabled)
                     val amountFen = ocrFields.amountFen
                     if (amountFen != null) {
                         // 统一用抽取置信度做分流依据（OCR 引擎置信度只反映字符清晰度，不代表字段抽对）
@@ -319,9 +326,12 @@ class LightweightCapture @Inject constructor(
     }
 
     /** 一次分析同时拿到金额 / 商户 / 购买内容 / 置信度，避免同一段文本重复跑三遍正则。 */
-    private fun extract(text: String): ScreenFields {
+    private fun extract(text: String, includeTrace: Boolean = false): ScreenFields {
         if (text.isBlank()) return ScreenFields()
-        val analysis = runCatching { analyzer.analyze(text) }.getOrNull()
+        val analysis = runCatching { analyzer.analyze(text, includeTrace) }.getOrNull()
+        if (includeTrace && analysis?.trace?.isNotBlank() == true) {
+            com.azu.bookkeeper.core.CaptureLog.i(context, "OCR", "解析轨迹 ${analysis.trace}")
+        }
         val fallback = runCatching {
             extractor.extract(text, System.currentTimeMillis())
         }.getOrNull()

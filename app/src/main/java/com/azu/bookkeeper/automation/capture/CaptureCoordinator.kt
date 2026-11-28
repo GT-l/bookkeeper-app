@@ -1,8 +1,10 @@
 package com.azu.bookkeeper.automation.capture
 
 import com.azu.bookkeeper.automation.classify.ClassificationRuleEngine
+import com.azu.bookkeeper.automation.dedup.CaptureEventPruner
 import com.azu.bookkeeper.automation.dedup.DuplicateDetector
 import com.azu.bookkeeper.automation.dedup.DuplicateRules
+import com.azu.bookkeeper.automation.dedup.PruneCaptureEventsUseCase
 import com.azu.bookkeeper.automation.ocr.ConfidenceCalculator
 import com.azu.bookkeeper.automation.ocr.ExtractedFields
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
@@ -59,6 +61,7 @@ class CaptureCoordinator @Inject constructor(
     private val confidence: ConfidenceCalculator,
     private val classifier: ClassificationRuleEngine,
     private val dedup: DuplicateDetector,
+    private val pruneEvents: PruneCaptureEventsUseCase,
     private val verifier: VerificationController,
     private val billRepository: BillRepository,
     private val bookRepository: BookRepository,
@@ -75,12 +78,17 @@ class CaptureCoordinator @Inject constructor(
         // 1) eventId 幂等：同一捕获事件重复投递只处理一次
         if (captureDao.findByEventId(event.eventId) != null) return@withContext
 
+        // v1.3.22 问题五方案 E：新事件到来时按 24h 节流清理终态事件，防止事件表只增不减。
+        runCatching { pruneEvents() }
+
         // 2) 落库捕获事件（PENDING 非终态）
+        // v1.3.22 问题五方案 A：raw_text 全量落库是数据库膨胀主因，截断到与账单同一口径。
+        // 内存中 event.rawText 仍是完整值，字段抽取 / 去重不受影响。
         captureDao.insert(
             CaptureEventEntity(
                 eventId = event.eventId,
                 captureType = event.captureType.code,
-                rawText = event.rawText,
+                rawText = CaptureEventPruner.boundedRawText(event.rawText),
                 imagePath = event.imagePath,
                 billTime = event.billTime,
                 status = CaptureEventStatus.PENDING.code
@@ -168,7 +176,15 @@ class CaptureCoordinator @Inject constructor(
         // 加前缀后是「微信红包 · 张三」，既说清来源又保留对方昵称。
         val displayRemark: String = withScenePrefix(
             if (!isSms && event.rawText.isNotBlank()) {
-                val analysis = runCatching { analyzer.analyze(event.rawText) }.getOrNull()
+                val traceOn = runCatching {
+                    automationSettings.parseTraceEnabled.first()
+                }.getOrDefault(false)
+                val analysis = runCatching {
+                    analyzer.analyze(event.rawText, includeTrace = traceOn)
+                }.getOrNull()
+                if (analysis != null && analysis.trace.isNotBlank()) {
+                    Timber.i("parse trace: %s", analysis.trace)
+                }
                 if (analysis != null) {
                     val bestMerchant = analysis.merchant.takeIf { it.isNotBlank() } ?: fields.merchant
                     fields = fields.copy(

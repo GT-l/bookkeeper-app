@@ -71,4 +71,16 @@ class ChannelMerchantResolverTest {
         val r = PaymentTextAnalyzer().analyze(text)
         assertEquals("喜茶点单小程序", r.merchant)
     }
+
+    // ---------- v1.3.22 问题四方案 D：多通道回溯 ----------
+
+    @Test
+    fun `网联银联快钱易宝拉卡拉通道也能向上追溯`() {
+        listOf("网联", "银联", "快钱", "易宝", "拉卡拉").forEach { channel ->
+            assertEquals(
+                "喜茶点单小程序",
+                ChannelMerchantResolver.backtrack(listOf("喜茶点单小程序", channel))
+            )
+        }
+    }
 }

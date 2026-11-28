@@ -304,4 +304,49 @@ class PaymentTextAnalyzerTest {
         val r = analyzer.analyze(text)
         assertEquals(3000L, r.amountFen)
     }
+
+    // ---------- v1.3.22 问题四方案 A：收单机构黑名单 ----------
+
+    @Test
+    fun `收单机构不被识别为商户`() {
+        listOf("财付通", "网联", "银联", "快钱", "易宝", "拉卡拉", "微信支付").forEach { channel ->
+            val text = """
+                支付成功
+                商户 $channel
+                实付 ¥18.00
+            """.trimIndent()
+            assertNotEquals(channel, analyzer.analyze(text).merchant)
+        }
+    }
+
+    @Test
+    fun `真实商户优先于收单机构`() {
+        val text = """
+            喜茶点单小程序
+            支付成功
+            商户 拉卡拉支付股份有限公司
+            实付 ¥18.00
+        """.trimIndent()
+        // 黑名单命中后不会把通道名当商户；回溯拿到小程序名
+        val merchant = analyzer.analyze(text).merchant
+        assertFalse(merchant.contains("拉卡拉"))
+    }
+
+    // ---------- v1.3.22 问题二方案 D：可选解析轨迹 ----------
+
+    @Test
+    fun `默认不生成轨迹`() {
+        val text = "支付成功\n实付 ¥21.60\n收款方 喜茶"
+        assertTrue(analyzer.analyze(text).trace.isEmpty())
+    }
+
+    @Test
+    fun `开启后输出字段候选与最终决策`() {
+        val text = "支付成功\n实付 ¥21.60\n收款方 喜茶"
+        val r = analyzer.analyze(text, includeTrace = true)
+        assertTrue(r.trace.contains("行数="))
+        assertTrue(r.trace.contains("金额候选="))
+        assertTrue(r.trace.contains("商户候选="))
+        assertTrue(r.trace.contains("最终 金额=2160"))
+    }
 }

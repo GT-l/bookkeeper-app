@@ -4,8 +4,9 @@ import com.azu.bookkeeper.core.SafeRegex
 
 /**
  * 受 [规则一] 约束：财付通向上追溯真实商户。
+ * v1.3.22 问题四方案 D：通道 token 扩展到工单点名的 财付通 / 网联 / 银联 / 快钱 / 易宝 / 拉卡拉。
  *
- * 只做一件事：当 OCR 文本里出现**独占一行**的「财付通」（通道名、本行没有具体商户），
+ * 只做一件事：当 OCR 文本里出现**独占一行**的通道名（通道名、本行没有具体商户），
  * 且前面的常规抽取都没拿到有效商户时，向上回溯最近 3 行非空白文本，
  * 按「小程序名 > 店铺/品牌名 > 含 SKU 的商品描述行」优先级取 1 个作为商户名。
  *
@@ -28,8 +29,8 @@ object ChannelMerchantResolver {
      */
     fun backtrack(lines: List<String>): String? {
         val cleaned = lines.map { it.trim() }.filter { it.isNotEmpty() }
-        // 受 [规则一] 约束：只在「一行内容为财付通」时触发
-        val channelIndex = cleaned.indexOfFirst { it == CHANNEL_TOKEN }
+        // 受 [规则一] 约束 / v1.3.22 问题四方案 D：只在「一行内容为通道名」时触发
+        val channelIndex = cleaned.indexOfFirst { CHANNEL_TOKENS.contains(it) }
         if (channelIndex < 0) return null
         // 受 [规则一] 约束：未完成态不回填商户
         if (cleaned.any { line -> PENDING_STATUS.any { it in line } }) return null
@@ -75,7 +76,8 @@ object ChannelMerchantResolver {
     private fun clean(value: String): String =
         value.trim().trim('：', ':', '·', '-', '—', '|', '，', ',').trim()
 
-    private const val CHANNEL_TOKEN = "财付通"
+    /** 受 [规则一] 约束 / v1.3.22 问题四方案 D：工单点名的通道名全集。 */
+    private val CHANNEL_TOKENS = setOf("财付通", "网联", "银联", "快钱", "易宝", "拉卡拉")
     private const val MINI_PROGRAM_TOKEN = "小程序"
     private const val BANK_TOKEN = "银行"
     private const val SKU_LABEL = "SKU"

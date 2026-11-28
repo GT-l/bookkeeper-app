@@ -106,9 +106,8 @@ class PaymentAccessibilityService : AccessibilityService() {
      * 用户要求「转账记录按记录时间判断是否重复」——同一笔反复识屏时间一致，
      * 不同笔即使金额相同时间也不同，靠这一项区分，不再只依赖 12 秒 + 金额。
      */
-    private data class SettledMark(val at: Long, val money: String, val timeKey: String)
-
-    private val settledPackages = mutableMapOf<String, SettledMark>()
+    // v1.3.22 问题三方案 A：改用 SettledQuiet.Mark，静默期判定抽成纯函数可单测
+    private val settledPackages = mutableMapOf<String, com.azu.bookkeeper.automation.dedup.SettledQuiet.Mark>()
 
     /** 重试链代号：新的读屏事件让旧链失效，避免多条链并行各提交一次。 */
     private var retryGeneration = 0
@@ -246,14 +245,18 @@ class PaymentAccessibilityService : AccessibilityService() {
                 )
             }
             PaymentScreen.UNKNOWN -> {
+                // v1.3.22 问题一方案 D：事件已到达但未命中场景 → 显式标记「待完善场景」，
+                // 让用户复制 log 时一眼看出该补哪类原文；不改任何触发词表（冻结）。
+                val looksReceipt = PaymentScreenRecognizer.looksLikeReceipt(text)
                 logScreenThrottled(
-                    "未识别 pkg=$packageName cls=$className len=${text.length} sparse=$sparse " +
+                    "未识别【待完善场景】pkg=$packageName cls=$className len=${text.length} " +
+                        "sparse=$sparse hasReceipt=$looksReceipt " +
                         "preview=${ScreenTextCollector.preview(text)}"
                 )
                 // v1.3.5：打开「消费记录 / 账单」时页面既没有成功词也没有「账单详情」标题，
                 // 但有金额 + 交易单号/商户等凭据字段 → 兜底提交，让协调器决定自动入账或轻卡片确认。
                 // 这是「自动识别概率失败、必须用手势」的主要修复点之一。
-                if (PaymentScreenRecognizer.looksLikeReceipt(text)) {
+                if (looksReceipt) {
                     logScreenThrottled("凭证页兜底提交 pkg=$packageName len=${text.length}")
                     submitCapture(
                         parser, packageName, className, recognition,
@@ -352,26 +355,27 @@ class PaymentAccessibilityService : AccessibilityService() {
         val mark = settledPackages[packageName]
         val money = firstMoneyKey(text)
         val timeKey = PaymentScreenRecognizer.transactionTimeKey(text)
-        val differentBillByTime = mark != null &&
-            mark.timeKey.isNotBlank() && timeKey.isNotBlank() && mark.timeKey != timeKey
-        // v1.3.14：抖音订单页事件特别密集（图片懒加载、滚动都会触发），
-        // 且部分订单页不写下单时间，只能靠更长的静默窗口挡住同订单的重复提交。
-        val quietMs = if (recognition.scene == PaymentScene.DOUYIN_ORDER) {
-            DOUYIN_QUIET_MS
-        } else {
-            SETTLED_QUIET_MS
-        }
-        if (!differentBillByTime && mark != null && now - mark.at < quietMs &&
-            (money.isBlank() || mark.money.isBlank() || money == mark.money)
-        ) {
+        // v1.3.22 问题三方案 A：静默期判定抽成纯函数 SettledQuiet。
+        // 旧逻辑「时间串不等就放行」会让转账详情页的时间抖动绕过静默期 → 同一笔收入记两遍。
+        // 现在只有双方时间都能解析且确实不同才放行；转账/红包收入静默期与抖音同为 60s。
+        val blocked = com.azu.bookkeeper.automation.dedup.SettledQuiet.shouldBlock(
+            previous = mark,
+            nowMillis = now,
+            currentMoney = money,
+            currentTimeKey = timeKey,
+            scene = recognition.scene
+        )
+        if (blocked) {
             logScreenThrottled(
-                "支付静默期跳过 pkg=$packageName 距上次提交=${now - mark.at}ms money=$money time=$timeKey"
+                "支付静默期跳过 pkg=$packageName 距上次提交=${now - mark!!.at}ms " +
+                    "money=$money time=$timeKey scene=${recognition.scene}"
             )
             return
         }
         lastSuccessFingerprint = fingerprint
         lastSuccessAt = now
-        settledPackages[packageName] = SettledMark(now, money, timeKey)
+        settledPackages[packageName] =
+            com.azu.bookkeeper.automation.dedup.SettledQuiet.Mark(now, money, timeKey)
         val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
         com.azu.bookkeeper.core.CaptureLog.forceInfo(
             applicationContext, "SCREEN",
@@ -746,10 +750,12 @@ class PaymentAccessibilityService : AccessibilityService() {
         private const val GESTURE_COOLDOWN_MS = 2_500L
         /** v1.3.0 识屏：成功页内容指纹冷却、付款界面日志节流、空节点重读次数、文本上限。 */
         private const val SUCCESS_DEDUP_MS = 5_000L
-        /** v1.3.4：同一轮支付成功后同包名的静默时长；再次进入收银台（ENTRY）会提前解除。 */
+        /**
+         * v1.3.4 / v1.3.14：静默窗口的历史取值，保留作对照文档；
+         * v1.3.22 起**权威值在 `SettledQuiet.quietMsFor()`**（纯函数、可单测），
+         * 并把转账 / 红包收入也纳入 60s 窗口。
+         */
         private const val SETTLED_QUIET_MS = 12_000L
-
-        /** v1.3.14：抖音订单页的静默窗口。页面事件密集且常缺下单时间，窗口拉长到 60 秒。 */
         private const val DOUYIN_QUIET_MS = 60_000L
 
         /** v1.3.12：截图 OCR 兜底的最小间隔。 */

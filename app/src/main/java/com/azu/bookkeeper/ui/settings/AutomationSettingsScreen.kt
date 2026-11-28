@@ -441,6 +441,12 @@ fun AutomationSettingsScreen(
 
             SettingSwitch("启用去重", state.dedupEnabled) { viewModel.setDedupEnabled(it) }
 
+            // v1.3.22 问题二方案 D：可选解析调试日志，输出字段候选用于补原文样本
+            SettingSwitch(
+                "解析调试日志（输出字段候选，默认关）",
+                state.parseTraceEnabled
+            ) { viewModel.setParseTraceEnabled(it) }
+
             Text("短信识别（银行扣款）", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
             // 前置用途说明（PRD 23.3.2）：先讲清用途与隐私边界，再由用户主动触发运行时授权
             Text(

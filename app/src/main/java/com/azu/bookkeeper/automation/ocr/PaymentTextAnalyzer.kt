@@ -27,7 +27,7 @@ import javax.inject.Singleton
 @Singleton
 class PaymentTextAnalyzer @Inject constructor() {
 
-    fun analyze(rawText: String): PaymentAnalysis {
+    fun analyze(rawText: String, includeTrace: Boolean = false): PaymentAnalysis {
         val lines = rawText.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val paidConfirmed = lines.any { line -> PAID_OK_KEYWORDS.any { it in line } }
         val paymentRejected = lines.any { line -> PAID_BAD_KEYWORDS.any { it in line } }
@@ -57,14 +57,56 @@ class PaymentTextAnalyzer @Inject constructor() {
         }
         val goodsWarning = !paymentRejected && !pendingPage && GoodsOcrAnomaly.detect(goods)
 
+        // 受问题二方案 D 约束：可选调试轨迹，开关默认关；只输出、不参与任何判定
+        val trace = if (includeTrace) {
+            buildTrace(lines, amountFen, merchant, goods, paidConfirmed, paymentRejected, goodsWarning)
+        } else {
+            ""
+        }
+
         return PaymentAnalysis(
             amountFen = amountFen,
             merchant = merchant,
             goods = goods,
             goodsWarning = goodsWarning,
             paidConfirmed = paidConfirmed,
-            confidence = confidence.coerceIn(0f, 1f)
+            confidence = confidence.coerceIn(0f, 1f),
+            trace = trace
         )
+    }
+
+    /**
+     * v1.3.22 问题二方案 D：把每一步的中间结果拼成一行，供日志定位断链点。
+     * 纯函数、无副作用：不改任何字段取值，只在调用方要求时生成。
+     */
+    private fun buildTrace(
+        lines: List<String>,
+        amountFen: Long?,
+        merchant: String,
+        goods: String,
+        paidConfirmed: Boolean,
+        paymentRejected: Boolean,
+        goodsWarning: Boolean
+    ): String {
+        val amountCandidates = lines.mapIndexedNotNull { index, line ->
+            val raw = AMOUNT_SYMBOL.find(line)?.groupValues?.get(1)
+                ?: AMOUNT_LABELLED.find(line)?.groupValues?.get(1)
+                ?: AMOUNT_YUAN.find(line)?.groupValues?.get(1)
+                ?: AMOUNT_BARE.find(line)?.groupValues?.get(1)
+            raw?.let { "$index:${it}元" }
+        }
+        val merchantCandidates = lines.mapIndexedNotNull { index, line ->
+            MERCHANT_LABELLED.find(line)?.groupValues?.getOrNull(1)
+                ?.takeIf { it.isNotBlank() }?.let { "$index:$it" }
+        }
+        return buildString {
+            append("行数=${lines.size}")
+            append("｜金额候选=${amountCandidates.ifEmpty { listOf("无") }}")
+            append("｜商户候选=${merchantCandidates.ifEmpty { listOf("无") }}")
+            append("｜最终 金额=${amountFen ?: "无"} 商户=${merchant.ifBlank { "无" }}")
+            append(" 商品=${goods.ifBlank { "无" }}")
+            append(" 成功态=$paidConfirmed 否定态=$paymentRejected 商品提醒=$goodsWarning")
+        }
     }
 
     // ---------- 金额 ----------
@@ -334,7 +376,10 @@ class PaymentTextAnalyzer @Inject constructor() {
             // v1.3.9：收单机构 / 支付机构 是通道方，不是商户。
             // 微信账单详情里「财付通支付科技有限公司」就在商户下面，旧逻辑会把它当商户名。
             "收单机构", "支付机构", "清算机构", "收单方", "特约商户",
-            "财付通", "银联", "支付科技", "支付有限"
+            // v1.3.22 问题四方案 A：工单点名的收单机构 / 支付通道，一律不得当商户名。
+            // 这些是「钱走哪条通道」，不是「钱付给了谁」。
+            "财付通", "网联", "银联", "快钱", "易宝", "拉卡拉",
+            "微信支付", "支付宝", "支付科技", "支付有限", "清算中心", "银联商务"
         )
         private val MERCHANT_SUFFIXES = listOf(
             "店", "公司", "超市", "便利店", "餐饮", "银行", "科技", "商贸", "贸易", "旗舰店", "专营店", "咖啡", "茶"
@@ -380,5 +425,7 @@ data class PaymentAnalysis(
     /** 受 [规则二] 约束：商品名疑似 OCR 误识别；只提醒，不阻断记账。 */
     val goodsWarning: Boolean = false,
     val paidConfirmed: Boolean,
-    val confidence: Float
+    val confidence: Float,
+    /** v1.3.22 问题二方案 D：可选解析轨迹；默认空，不参与判定。 */
+    val trace: String = ""
 )

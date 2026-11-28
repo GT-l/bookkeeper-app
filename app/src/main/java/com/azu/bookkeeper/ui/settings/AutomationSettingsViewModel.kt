@@ -53,6 +53,8 @@ class AutomationSettingsViewModel @Inject constructor(
         val ocrThreshold: Float = Constants.DEFAULT_OCR_THRESHOLD,
         val verifyMode: Int = 0,
         val dedupEnabled: Boolean = true,
+        /** v1.3.22 问题二方案 D：解析调试日志开关（默认关）。 */
+        val parseTraceEnabled: Boolean = false,
         val smsDedupToleranceSec: Long = Constants.SMS_DEDUP_TOLERANCE_SEC,
         /** T7：悬浮球默认关闭（Q-DY-4），避免强打扰权限默认开启。 */
         val floatingBallEnabled: Boolean = false,
@@ -87,6 +89,11 @@ class AutomationSettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             automation.verifyMode.collect { v -> _uiState.update { it.copy(verifyMode = v) } }
+        }
+        viewModelScope.launch {
+            automation.parseTraceEnabled.collect { v ->
+                _uiState.update { it.copy(parseTraceEnabled = v) }
+            }
         }
         viewModelScope.launch {
             automation.dedupEnabled.collect { v -> _uiState.update { it.copy(dedupEnabled = v) } }
@@ -218,6 +225,11 @@ class AutomationSettingsViewModel @Inject constructor(
     fun setVerifyMode(mode: Int) = viewModelScope.launch { automation.setVerifyMode(mode.coerceIn(0, 3)) }
 
     fun setDedupEnabled(enabled: Boolean) = viewModelScope.launch { automation.setDedupEnabled(enabled) }
+
+    /** v1.3.22 问题二方案 D */
+    fun setParseTraceEnabled(enabled: Boolean) = viewModelScope.launch {
+        automation.setParseTraceEnabled(enabled)
+    }
 
     fun setSmsDedupTolerance(seconds: Long) = viewModelScope.launch {
         automation.setSmsDedupToleranceSec(seconds)

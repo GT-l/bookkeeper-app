@@ -2,6 +2,7 @@ package com.azu.bookkeeper.automation.ocr
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -208,6 +209,50 @@ class PaymentTextAnalyzerTest {
         val r = analyzer.analyze(text)
         assertEquals(1250L, r.amountFen)
         assertEquals("", r.merchant)
+    }
+
+    // ---------- v1.3.10：商户标签被拆成两个节点 ----------
+
+    @Test
+    fun `账单详情 - 商户与全称被拆成两个节点时跳过残片取真值`() {
+        // 微信无障碍把「商户全称」拆成「商户」「全称」两个节点（用户实际遇到的现场）
+        val text = """
+            账单详情
+            -18.60
+            已支付
+            商户
+            全称
+            瑞幸咖啡（北京）有限公司
+            收单机构
+            财付通支付科技有限公司
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(1860L, r.amountFen)
+        assertEquals("瑞幸咖啡（北京）有限公司", r.merchant)
+    }
+
+    @Test
+    fun `账单详情 - 只有标签残片时宁可留空也不写全称`() {
+        val text = """
+            账单详情
+            -7.00
+            已支付
+            商户
+            全称
+            收单机构
+            财付通支付科技有限公司
+        """.trimIndent()
+        val r = analyzer.analyze(text)
+        assertEquals(700L, r.amountFen)
+        assertNotEquals("全称", r.merchant)
+        assertEquals("", r.merchant)
+    }
+
+    @Test
+    fun `标签残片不会被同行正则当成商户值`() {
+        // MERCHANT_LABELLED 对「商户全称」独占一行会回溯成「商户」+「全称」
+        assertEquals("", analyzer.analyze("支付成功\n¥9.90\n商户全称").merchant)
+        assertEquals("", analyzer.analyze("支付成功\n¥9.90\n商户简称：").merchant)
     }
 
     @Test

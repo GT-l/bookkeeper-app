@@ -226,7 +226,9 @@ object PaymentScreenRecognizer {
         "微信支付", "付款成功", "查看明细", "再买一笔", "联系商家", "返回商家",
         // v1.3.1：这些短词常是页面标题/分区名，抽成商户会产生「只记到『支付』」的脏账单
         "支付", "付款", "账单", "详情", "零钱", "微信", "支付宝", "余额", "收款", "转账",
-        "交易", "订单", "金额", "支付方式", "付款方式", "服务", "商品", "说明", "时间"
+        "交易", "订单", "金额", "支付方式", "付款方式", "服务", "商品", "说明", "时间",
+        // v1.3.10：「商户全称」被拆成两个节点时的残片，兜底猜测也不能取
+        "全称", "简称", "名称"
     )
 
     /**
@@ -236,6 +238,17 @@ object PaymentScreenRecognizer {
     private val MERCHANT_VALUE_LABELS = listOf(
         "商户全称", "商户简称", "商户名称", "商户", "商家", "收款方", "收款人",
         "交易对方", "付款给", "付款至"
+    )
+
+    /**
+     * v1.3.10：标签残片，永远不能当商户值。
+     *
+     * 微信无障碍会把「商户全称」拆成「商户」+「全称」两个节点：
+     * `removePrefix("商户")` 后 inline = 「全称」，长度恰好 2，旧实现直接当成商户名。
+     * 用户反馈「识别到个全称而不是商户名」就是这个。
+     */
+    private val MERCHANT_LABEL_FRAGMENTS = setOf(
+        "全称", "简称", "名称", "商户全称", "商户简称", "商户名称"
     )
 
     /**
@@ -601,14 +614,23 @@ object PaymentScreenRecognizer {
             val label = MERCHANT_VALUE_LABELS.firstOrNull { line.startsWith(it) } ?: continue
             val inline = line.removePrefix(label).trim().trim('：', ':', ' ')
             if (isMerchantValue(inline)) return inline
-            val next = lines.getOrNull(index + 1)?.trim().orEmpty()
-            if (isMerchantValue(next)) return next
+            // v1.3.10：「商户全称」被拆成「商户」+「全称」时 inline 是残片，
+            // 旧实现会原样返回「全称」。现在继续向下找，最多看 3 行；
+            // 遇到非残片又不合法的行（如「收单机构」）立即停，避免越界取到通道方。
+            for (offset in 1..3) {
+                val value = lines.getOrNull(index + offset)?.trim().orEmpty()
+                if (value.isEmpty()) continue
+                if (value.trim('：', ':') in MERCHANT_LABEL_FRAGMENTS) continue
+                if (isMerchantValue(value)) return value
+                break
+            }
         }
         return null
     }
 
     private fun isMerchantValue(value: String): Boolean =
         value.length in 2..24 &&
+            value.trim('：', ':') !in MERCHANT_LABEL_FRAGMENTS &&
             !looksLikeAmount(value) &&
             value !in MERCHANT_VALUE_LABELS &&
             value !in NOISE_LINES &&

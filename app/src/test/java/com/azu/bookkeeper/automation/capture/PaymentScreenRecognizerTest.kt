@@ -354,4 +354,23 @@ class PaymentScreenRecognizerTest {
         assertEquals("微信红包", PaymentScreenRecognizer.remarkPrefix(PaymentScene.WECHAT_RED_PACKET_IN))
         assertEquals("", PaymentScreenRecognizer.remarkPrefix(PaymentScene.WECHAT_MERCHANT_PAY))
     }
+
+    // ---------- v1.3.10：商户标签被无障碍拆成两个节点 ----------
+
+    @Test
+    fun `账单详情补标签时不会把全称当商户`() {
+        val refined = PaymentScreenRecognizer.refineWeChatText(
+            "账单详情\n-18.60\n已支付\n商户\n全称\n瑞幸咖啡（北京）有限公司\n收单机构\n财付通支付科技有限公司"
+        )
+        assertTrue(refined.contains("商户：瑞幸咖啡（北京）有限公司"))
+        assertFalse(refined.contains("商户：全称"))
+    }
+
+    @Test
+    fun `只有残片且无真值时宁可不补商户`() {
+        val refined = PaymentScreenRecognizer.refineWeChatText(
+            "账单详情\n-7.00\n已支付\n商户\n全称\n收单机构\n财付通支付科技有限公司"
+        )
+        assertFalse(refined.contains("商户："))
+    }
 }

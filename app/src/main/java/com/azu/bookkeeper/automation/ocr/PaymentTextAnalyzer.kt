@@ -120,6 +120,7 @@ class PaymentTextAnalyzer @Inject constructor() {
             // 于是商户名变成「全称」，真正的值在下一行却永远没机会读。
             // 先排除纯标签行，交给下面的「取下一行」分支。
             if (line.trim().trim('：', ':') in MERCHANT_BARE_LABELS) continue
+            if (line.trim().trim('：', ':') in MERCHANT_LABEL_FRAGMENTS) continue
             val match = MERCHANT_LABELLED.find(line) ?: continue
             val value = match.groupValues.getOrNull(1)?.trim().orEmpty()
             if (isPlausibleMerchant(value)) return value
@@ -129,10 +130,20 @@ class PaymentTextAnalyzer @Inject constructor() {
         //
         // 旧实现只有「同行」这一条路，于是落到后缀兜底，第一个含「公司 / 科技」的行
         // 恰好是「财付通支付科技有限公司」（收单机构），用户看到的商户就变成了收单机构。
+        //
+        // v1.3.10：微信无障碍有时把「商户全称」拆成「商户」+「全称」两个节点，
+        // 于是下一行是标签残片「全称」，旧实现直接把它当商户名（用户反馈「识别到个全称」）。
+        // 现在遇到残片继续往下找，最多看 3 行；碰到别的字段就停，不越界取到收单机构。
         for ((index, line) in lines.withIndex()) {
-            if (line !in MERCHANT_BARE_LABELS) continue
-            val next = lines.getOrNull(index + 1).orEmpty()
-            if (isPlausibleMerchant(next)) return next
+            val normalized = line.trim().trim('：', ':')
+            if (normalized !in MERCHANT_BARE_LABELS) continue
+            for (offset in 1..3) {
+                val value = lines.getOrNull(index + offset)?.trim().orEmpty()
+                if (value.isEmpty()) continue
+                if (value.trim('：', ':') in MERCHANT_LABEL_FRAGMENTS) continue
+                if (isPlausibleMerchant(value)) return value
+                break
+            }
         }
         // 兜底：带商户后缀词的独立行
         for (line in lines) {
@@ -151,6 +162,7 @@ class PaymentTextAnalyzer @Inject constructor() {
         if (value.all { it.isDigit() }) return false
         // 纯标签词（「商户全称」本身就占一行时，下一行才是真正的值）
         if (value in MERCHANT_BARE_LABELS) return false
+        if (value.trim('：', ':') in MERCHANT_LABEL_FRAGMENTS) return false
         return true
     }
 
@@ -246,6 +258,18 @@ class PaymentTextAnalyzer @Inject constructor() {
         private val MERCHANT_BARE_LABELS = setOf(
             "商户全称", "商户名称", "商户简称", "商户", "商家",
             "收款方", "收款人", "收款单位", "交易对方", "付款给", "付款至"
+        )
+        /**
+         * v1.3.10：标签残片。
+         *
+         * 「商户全称」独占一行时，`MERCHANT_LABELLED` 会回溯成「商户」+「全称」，
+         * 把「全称」当成值；微信无障碍还会把这个标签拆成「商户」「全称」两个节点，
+         * 于是「取下一行」拿到的也是「全称」。用户看到的就是商户名 = 全称。
+         *
+         * 这些词只可能是标签的一部分，永远不能当商户值。
+         */
+        private val MERCHANT_LABEL_FRAGMENTS = setOf(
+            "全称", "简称", "名称", "商户全称", "商户简称", "商户名称"
         )
         private val MERCHANT_EXCLUDES = listOf(
             "付款方式", "支付方式", "零钱", "余额", "银行卡", "订单", "单号", "时间", "备注",

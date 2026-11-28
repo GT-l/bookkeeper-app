@@ -104,4 +104,22 @@ class GithubUpdateCheckerTest {
         assertEquals(771_488L, outcome.avgBytesPerSecond)
         assertEquals(0L, DownloadOutcome(null, null).avgBytesPerSecond)
     }
+
+    @Test
+    fun `进度百分比是 0 到 100 而不是千分位`() {
+        // 用整千总量做精确断言；88MB 那种不能被 100 整除的量会向下取整，属预期
+        val total = 1000L
+        assertEquals(0, GithubUpdateChecker.percentOf(0L, total))
+        assertEquals(10, GithubUpdateChecker.percentOf(100L, total))
+        assertEquals(50, GithubUpdateChecker.percentOf(500L, total))
+        assertEquals(99, GithubUpdateChecker.percentOf(999L, total))
+        assertEquals(100, GithubUpdateChecker.percentOf(total, total))
+        // 总量未知（chunked）时不瞎猜；超出总量也不允许大于 100
+        assertEquals(0, GithubUpdateChecker.percentOf(1024L, 0L))
+        assertEquals(100, GithubUpdateChecker.percentOf(2000L, total))
+        // 真实包大小：下到 10% 必须是 10，曾经这里返回 100
+        val apk = 92_578_651L
+        assertEquals(10, GithubUpdateChecker.percentOf(apk / 10 + 1, apk))
+        assertEquals(88, GithubUpdateChecker.percentOf(apk * 88 / 100 + 1, apk))
+    }
 }

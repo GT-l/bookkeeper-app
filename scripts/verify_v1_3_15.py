@@ -671,6 +671,12 @@ check("T-DL-26 状态含 progressDetail", "val progressDetail: String = \"\"" in
 check("T-DL-27 单测覆盖速率/剩余时间", "formatSpeed" in update_test and "formatEta" in update_test)
 check("T-DL-28 单测覆盖进度明细", "detailText()" in update_test)
 check("T-DL-29 Release 正文含续传说明", "断点续传" in workflow)
+# 进度百分比必须是 0..100（曾写成千分位，10% 就显示 100%）
+check("T-DL-30 百分比抽成可单测函数", "fun percentOf(bytes: Long, total: Long): Int" in checker
+      and "GithubUpdateChecker.percentOf(bytes, total)" in checker)
+check("T-DL-31 单测钉住百分比", "percentOf" in update_test)
+# 两次 run 抢同一个 tag 会互相覆盖资产
+check("T-DL-32 CI 并发取消旧构建", "concurrency:" in workflow and "cancel-in-progress: true" in workflow)
 
 kt_files = []
 for root, dirs, names in os.walk("app/src/main/java"):

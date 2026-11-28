@@ -496,6 +496,18 @@ object GithubUpdateChecker {
         seconds < 3600L -> "剩余 ${seconds / 60} 分 ${seconds % 60} 秒"
         else -> "剩余 ${seconds / 3600} 小时 ${(seconds % 3600) / 60} 分"
     }
+
+    /**
+     * 进度百分比（0..100）。
+     *
+     * 抽成独立函数是为了能被单测钉住：曾经写成「千分位再 coerce(0,100)」，
+     * 结果下到 10% 就显示 100%，进度条直接跳满。
+     */
+    fun percentOf(bytes: Long, total: Long): Int = when {
+        total <= 0L -> 0
+        bytes <= 0L -> 0
+        else -> ((bytes * 100L) / total).toInt().coerceIn(0, 100)
+    }
 }
 
 /**
@@ -516,7 +528,7 @@ private class ProgressEmitter(private val sink: (DownloadProgress) -> Unit) {
 
     fun emit(bytes: Long, total: Long, force: Boolean = false) {
         val now = System.currentTimeMillis()
-        val percent = if (total > 0L) ((bytes * 1000L) / total).toInt().coerceIn(0, 100) else 0
+        val percent = GithubUpdateChecker.percentOf(bytes, total)
         if (!force && now - lastEmitAt < PROGRESS_INTERVAL_MS && percent == lastPercent) return
         if (lastSampleAt > 0L && now > lastSampleAt) {
             val instant = (bytes - lastBytes) * 1000L / (now - lastSampleAt)

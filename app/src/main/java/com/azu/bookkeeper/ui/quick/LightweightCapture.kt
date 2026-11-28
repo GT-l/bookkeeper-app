@@ -88,6 +88,18 @@ class LightweightCapture @Inject constructor(
     fun needsAuthorization(): Boolean =
         !channels.accessibilityServiceConnected() && channels.needsAuthorization()
 
+    /**
+     * v1.3.12：截图兜底通道是否真的可用（无障碍截屏或媒体投影会话任一）。
+     *
+     * 摇一摇失败后用它判断要不要拉起一次录屏授权：
+     * 微信账单详情这类自绘页面节点为空，必须靠截图 OCR；而媒体投影会话
+     * 在 App 重启后必然失效，不主动引导就永远是「两条通道都不可用」。
+     */
+    fun captureChannelReady(): Boolean = channels.anyChannelReady()
+
+    /** 媒体投影是否已有会话（用于区分「没授权」和「授权了但截失败」）。 */
+    fun projectionSessionActive(): Boolean = channels.projectionReady()
+
     fun captureIntoForm(scope: CoroutineScope, onResult: (CaptureOutcome) -> Unit) {
         scope.launch {
             val steps = mutableListOf<DiagnosticStep>()

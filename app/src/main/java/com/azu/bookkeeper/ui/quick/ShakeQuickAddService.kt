@@ -72,6 +72,9 @@ class ShakeQuickAddService : Service() {
     @Volatile
     private var handling = false
 
+    /** v1.3.12：上次引导录屏授权的时间，避免取消授权后反复弹。 */
+    private var lastAuthGuideAt = 0L
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
@@ -217,6 +220,10 @@ class ShakeQuickAddService : Service() {
             val amount = outcome.amountFen
             if (outcome.success && amount != null && amount > 0L) {
                 handleRecognized(outcome, capture, amount)
+            } else if (shouldGuideToAuth(capture, outcome.reason)) {
+                // v1.3.12：节点读不到 + 无截图通道时，主动拉起一次录屏授权。
+                // 之前这里直接开表单，用户以为「识别不了」；授权后会自动重试识屏。
+                requestCaptureAuthorization(capture)
             } else {
                 val message = if (!outcome.success) {
                     "识屏失败：${outcome.reason?.title}，请手动输入"
@@ -226,6 +233,23 @@ class ShakeQuickAddService : Service() {
                 openCaptureForm(capture, amount, outcome.remark, message)
             }
         }
+    }
+
+    /**
+     * 是否应该引导用户授权录屏。
+     *
+     * 只在「两条截图通道都不可用」且「60 秒内没引导过」时触发一次，
+     * 避免用户取消授权后陷入「取消 → 再摇 → 又弹」的死循环。
+     */
+    private fun shouldGuideToAuth(capture: LightweightCapture, reason: CaptureFailReason?): Boolean {
+        if (reason != CaptureFailReason.NO_CHANNEL && reason != CaptureFailReason.CHANNEL_DISABLED) {
+            return false
+        }
+        if (capture.captureChannelReady() || capture.projectionSessionActive()) return false
+        val now = System.currentTimeMillis()
+        if (now - lastAuthGuideAt < AUTH_GUIDE_INTERVAL_MS) return false
+        lastAuthGuideAt = now
+        return true
     }
 
     /**
@@ -640,6 +664,12 @@ class ShakeQuickAddService : Service() {
         private const val GESTURE_CHANNEL_ID = "shake_gesture_high"
         /** 识屏链路的解锁兜底时间：识屏正常 25s 内必回调。 */
         private const val AUTO_CAPTURE_LOCK_TIMEOUT_MS = 25_000L
+
+        /**
+         * v1.3.12：无截图通道时，两次「引导录屏授权」之间的最小间隔。
+         * 防止用户取消授权后一摇就弹、变成死循环。
+         */
+        private const val AUTH_GUIDE_INTERVAL_MS = 60_000L
 
         @Volatile
         var isRunning: Boolean = false

@@ -1,27 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  最小权限声明（v1.2.3）。
+  无障碍服务能力声明。
 
-  真机 vivo V2505A / Android 17 上，侧载 APK 的无障碍授权会在服务连上 0.6~67 秒后
-  被系统撤销：pid 全程不变，进程没死，也不是 App 崩溃。为降低厂商支付风控与
-  Android 17 高级保护模式的触发面，移除两项对主链路没有价值的声明：
+  v1.3.12 重要变更：恢复 android:canTakeScreenshot="true"。
 
-  1) packageNames：原本直接列出微信 / 支付宝 / 银行包名，最容易被系统判定为
-     「监听支付页面」的高风险服务。事件过滤本来就在
-     PaymentAccessibilityService.dispatchEvent 里用 Constants.PAYMENT_PACKAGES 完成，
-     去掉这一行不影响识别能力，只是不再向系统明示「我要盯支付 App」。
-  2) canTakeScreenshot：无障碍截屏由 A11yShotOptIn 控制、默认关闭，兜底还有
-     MediaProjection 与独立进程 OCR。去掉后 canCaptureScreen() 返回 false 属预期，
-     不是服务异常。
+  v1.2.3 曾为了「降低侧载风控触发面」移除该能力，结果是：
+  微信账单详情这类自绘 / WebView 页面读不到任何节点文本时，
+  无障碍截屏与媒体投影**两条通道同时不可用**，摇一摇直接失败
+  （用户 realme RMX3888 / Android 37 的真实日志：
+   「读屏节点：当前页面没有可读文本」+「两条截屏通道都不可用」）。
 
-  保留 flagRetrieveInteractiveWindows / flagRequestFingerprintGestures，避免影响
-  读节点树与指纹手势记账。
+  现在恢复该能力：
+  - 无障碍截屏不需要录屏授权、不受 Android 14+ 「重启后会话失效」限制；
+  - 若某 ROM 上 takeScreenshot 触发 native 崩溃，CaptureBreakerStore 的
+    in-flight 标记会在下次启动自动熔断该通道，不会反复闪退（两层保护）。
+
+  仍然保留的最小权限取舍：
+  - 不声明 packageNames：事件过滤在 PaymentAccessibilityService.dispatchEvent 里
+    用 Constants.PAYMENT_PACKAGES 完成，避免向系统明示「监听支付 App」。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagRequestFingerprintGestures"
     android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="150"
     android:settingsActivity="com.azu.bookkeeper.MainActivity" />

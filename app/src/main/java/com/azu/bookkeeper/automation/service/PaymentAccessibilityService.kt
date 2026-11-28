@@ -15,12 +15,14 @@ import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
 import com.azu.bookkeeper.R
 import com.azu.bookkeeper.automation.capture.AccessibilityCaptureParser
+import com.azu.bookkeeper.automation.capture.CaptureChannels
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
 import com.azu.bookkeeper.automation.capture.BillDirection
 import com.azu.bookkeeper.automation.capture.PaymentScreen
 import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
 import com.azu.bookkeeper.automation.capture.PendingPaymentCache
 import com.azu.bookkeeper.automation.capture.ScreenTextCollector
+import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import kotlin.math.roundToLong
 import com.azu.bookkeeper.automation.classify.BusinessTag
 import com.azu.bookkeeper.automation.classify.DouyinBusinessTagger
@@ -108,6 +110,9 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     /** 重试链代号：新的读屏事件让旧链失效，避免多条链并行各提交一次。 */
     private var retryGeneration = 0
+
+    /** v1.3.12：上次截图兜底的时间，15 秒节流，避免在自绘页面上反复截图耗电。 */
+    private var lastShotFallbackAt = 0L
 
     // ---- 手势相关状态 ----
     private var fingerprintController: FingerprintGestureController? = null
@@ -250,6 +255,12 @@ class PaymentAccessibilityService : AccessibilityService() {
                 if (sparse || (className.isNotBlank() && PaymentScreenRecognizer.looksLikeResultClass(className))) {
                     retryGeneration++
                     scheduleResultRetry(parser, packageName, className, 1, retryGeneration)
+                }
+                // v1.3.12：节点完全读不到（微信账单详情这类自绘 / WebView 页面）时，
+                // 重读多少次都是空。退到截图 OCR —— 这是 realme 用户
+                // 「自动识别不到订单场景」的唯一可行兜底。
+                if (sparse || text.isBlank()) {
+                    scheduleScreenshotFallback(parser, packageName, className)
                 }
                 return
             }
@@ -412,6 +423,81 @@ class PaymentAccessibilityService : AccessibilityService() {
             }
         }
         return ""
+    }
+
+    /**
+     * v1.3.12：节点读不到时的截图 OCR 兜底。
+     *
+     * 背景（realme RMX3888 / Android 37 真实日志）：微信账单详情是自绘 / WebView 页面，
+     * `rootInActiveWindow` 读不到任何文本，重读 3 次依旧为空 —— 此时只有截图 OCR 能救。
+     *
+     * 约束，避免耗电与误记账：
+     * 1. 只在支付包名内、只在节点文本稀疏 / 为空时触发；
+     * 2. 15 秒节流，同一通道失败不重试；
+     * 3. 截图后仍走 `PaymentScreenRecognizer.classify`，页面不是支付页就丢弃；
+     * 4. 提交后进入常规静默期与去重，不会重复记账。
+     */
+    private fun scheduleScreenshotFallback(
+        parser: AccessibilityCaptureParser,
+        packageName: String,
+        className: String
+    ) {
+        val now = System.currentTimeMillis()
+        if (now - lastShotFallbackAt < SHOT_FALLBACK_INTERVAL_MS) return
+        val channels = runCatching { deps.channels() }.getOrNull() ?: return
+        if (!channels.anyChannelReady()) {
+            logScreenThrottled("截图兜底跳过：两条通道都不可用 pkg=$packageName")
+            return
+        }
+        val dispatcher = runCatching { deps.ioDispatcher() }.getOrNull() ?: return
+        lastShotFallbackAt = now
+        com.azu.bookkeeper.core.CaptureLog.forceInfo(
+            applicationContext, "SCREEN",
+            "节点为空，转截图 OCR pkg=$packageName cls=$className"
+        )
+        scope.launch {
+            runCatching {
+                val frame = withContext(dispatcher) { channels.capture() }
+                val bitmap = frame.bitmap
+                if (bitmap == null) {
+                    com.azu.bookkeeper.core.CaptureLog.w(
+                        applicationContext, "SCREEN",
+                        "截图兜底失败：${frame.attempts.joinToString("；").ifBlank { frame.detail }}"
+                    )
+                    return@runCatching
+                }
+                val ipc = withContext(dispatcher) { deps.ocrIpc().recognize(bitmap) }
+                runCatching { bitmap.recycle() }
+                val ocrText = ipc.payload?.text.orEmpty()
+                if (ocrText.isBlank()) {
+                    com.azu.bookkeeper.core.CaptureLog.w(
+                        applicationContext, "SCREEN",
+                        "截图 OCR 无文本：${ipc.error ?: "empty"}"
+                    )
+                    return@runCatching
+                }
+                val recognition = PaymentScreenRecognizer.classify(packageName, className, ocrText)
+                if (recognition.screen == PaymentScreen.UNKNOWN) {
+                    com.azu.bookkeeper.core.CaptureLog.forceInfo(
+                        applicationContext, "SCREEN",
+                        "截图 OCR 完成但仍未识别 len=${ocrText.length} " +
+                            "preview=${ScreenTextCollector.preview(ocrText)}"
+                    )
+                    return@runCatching
+                }
+                com.azu.bookkeeper.core.CaptureLog.forceInfo(
+                    applicationContext, "SCREEN",
+                    "截图 OCR 识别成功 screen=${recognition.screen} reason=${recognition.reason} " +
+                        "len=${ocrText.length}"
+                )
+                submitCapture(
+                    parser, packageName, className, recognition,
+                    ScreenTextCollector.refine(packageName, ocrText)
+                )
+            }.onFailure { t ->
+                timber.log.Timber.w(t, "screenshot fallback failed (service kept alive)")
+            }
+        }
     }
 
     /** 微信空根节点有界重读：150 / 350 / 650ms，最多 3 次，用主线程 Handler 不阻塞回调。 */
@@ -623,6 +709,9 @@ class PaymentAccessibilityService : AccessibilityService() {
         private const val SUCCESS_DEDUP_MS = 5_000L
         /** v1.3.4：同一轮支付成功后同包名的静默时长；再次进入收银台（ENTRY）会提前解除。 */
         private const val SETTLED_QUIET_MS = 12_000L
+
+        /** v1.3.12：截图 OCR 兜底的最小间隔。 */
+        private const val SHOT_FALLBACK_INTERVAL_MS = 15_000L
         private const val ENTRY_LOG_INTERVAL_MS = 5_000L
         private const val MAX_RETRY = 3
         private const val MAX_SCREEN_TEXT = 6000
@@ -723,5 +812,8 @@ interface AccessibilityDepsEntryPoint {
     fun parser(): AccessibilityCaptureParser
     fun tagger(): DouyinBusinessTagger
     fun coordinator(): CaptureCoordinator
+    /** v1.3.12：节点读不到时的截图 OCR 兜底。 */
+    fun channels(): CaptureChannels
+    fun ocrIpc(): OcrIpcClient
     @IoDispatcher fun ioDispatcher(): CoroutineDispatcher
 }

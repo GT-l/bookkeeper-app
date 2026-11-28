@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.11)
+      - name: Static consistency tests (v1.3.12)
         shell: bash
-        run: python3 scripts/verify_v1_3_11.py
+        run: python3 scripts/verify_v1_3_12.py
 
       - name: Build debug APK
         shell: bash
@@ -141,12 +141,20 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.11-debug
-          name: 少花点儿 v1.3.11 (Debug APK)
+          tag_name: v1.3.12-debug
+          name: 少花点儿 v1.3.12 (Debug APK)
           body: |
-            # 少花点儿 v1.3.11
+            # 少花点儿 v1.3.12
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
+
+            ## 重要：识屏通道恢复
+            - 恢复「无障碍截屏」能力（canTakeScreenshot）并默认开启。
+              v1.2.3 为了降低侧载风控把它关掉了，代价是：微信账单详情这类自绘 / WebView 页面
+              读不到任何节点文本时，无障碍截屏与媒体投影两条通道同时不可用，识屏彻底失效。
+            - 节点读不到时自动退到截图 OCR（仅支付包名内、15 秒节流），自动识屏与摇一摇都能用。
+            - 摇一摇发现两条截图通道都不可用时，主动拉起一次录屏授权；授权后自动继续识屏。
+            - 诊断页不再把「无截屏能力」当成预期行为，会明确指出需要重开一次无障碍服务。
 
             ## 修复
             - 微信 Apple 账单详情识别不出商户：英文公司名被无障碍拆成

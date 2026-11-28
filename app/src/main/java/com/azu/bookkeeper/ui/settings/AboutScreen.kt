@@ -90,11 +90,11 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
-                            version = "v1.3.11 · 最新",
+                            version = "v1.3.12 · 最新",
                             items = listOf(
-                                "修复：Apple 等英文商户名被拆两行时识别不出，现已拼接",
-                                "修复：收款成功页 / 账单详情页总进确认队列，不点就没记上",
-                                "修复：转账按页面记录时间判重，同金额不同时间不再误判"
+                                "重要：恢复无障碍截屏能力，节点读不到时自动截图 OCR",
+                                "修复：微信自绘页面两条识屏通道同时失效，摇一摇完全用不了",
+                                "优化：无通道时主动引导一次录屏授权，授权后自动继续识屏"
                             )
                         )
                         ChangelogRow(

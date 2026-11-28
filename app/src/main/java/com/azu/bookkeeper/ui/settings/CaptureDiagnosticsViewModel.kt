@@ -217,29 +217,28 @@ class CaptureDiagnosticsViewModel @Inject constructor(
         val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
         val connectedText = if (lastConnected > 0L) fmt.format(java.util.Date(lastConnected)) else "从未连上"
         val killedAfterConnect = lastDisconnected > lastConnected && lastConnected > 0L
-        // v1.2.3 起服务声明移除了 canTakeScreenshot（降低侧载风控触发面），
-        // 没有截屏能力是预期状态而不是故障：识屏主链路读节点，兜底走媒体投影 / OCR。
-        val capabilityRemovedByDesign = connected && !capable
+        // v1.3.12：服务声明恢复 canTakeScreenshot。如果这里显示「缺少截屏能力」，
+        // 说明服务还是按旧配置绑定的 → 关掉再打开一次无障碍服务即可重新注册。
+        val capabilityMissing = connected && !capable
 
         val detail = when {
             disabled -> "已自动停用（上次使用该通道时进程崩溃） · 最后连接 $connectedText"
-            !optIn && capable -> "服务已连且具备截屏能力，但「无障碍截屏（实验）」未开启，当前走媒体投影 · $connectedText"
-            ready -> "可用 · 最后连接 $connectedText"
+            !optIn && capable -> "服务已连且具备截屏能力，但开关被手动关闭，当前走媒体投影 · $connectedText"
+            ready -> "可用（免录屏授权，读不到节点时自动截图 OCR） · 最后连接 $connectedText"
             !connected && killedAfterConnect -> "服务未连接 · 上次 $connectedText 连上后被系统解绑"
             !connected -> "服务未连接 · 最后连接 $connectedText"
-            capabilityRemovedByDesign ->
-                "已按最小权限关闭无障碍截屏（v1.2.3 起预期行为） · 读节点与媒体投影不受影响 · $connectedText"
-            else -> "服务已连但缺少截屏能力（canTakeScreenshot 未生效） · $connectedText"
+            capabilityMissing -> "服务已连但缺少截屏能力（旧的绑定配置） · $connectedText"
+            else -> "服务已连但截屏能力未注册 · $connectedText"
         }
         val advice = when {
             disabled -> "点下方「恢复截屏通道」可重新启用（若再次崩溃会再次停用）"
-            !optIn && capable -> "如需免录屏授权截屏，可在自动化设置打开「无障碍截屏（实验）」；若本机曾闪退则不建议开启"
+            !optIn && capable -> "可在自动化设置重新打开「无障碍截屏」"
             ready -> ""
             !connected -> "设置 → 无障碍 → 少花点儿，打开服务；打开后回到本页应显示「可用」"
-            capabilityRemovedByDesign -> "无需处理：识屏主链路读节点不依赖截屏，兜底走媒体投影 / OCR"
-            else -> "关闭无障碍服务再重新打开一次，让截屏能力重新注册"
+            capabilityMissing -> "关闭无障碍服务再重新打开一次，让 canTakeScreenshot 能力重新注册"
+            else -> "点下方「恢复截屏通道」，仍不行就重开一次无障碍服务"
         }
-        return CheckItem("无障碍截屏通道", ready || capabilityRemovedByDesign, detail, advice)
+        return CheckItem("无障碍截屏通道", ready, detail, advice)
     }
 
     /** 通道 2：媒体投影（需系统录屏授权，覆盖 Android 8~10 与无障碍不可用场景）。 */

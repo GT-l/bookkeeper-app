@@ -53,7 +53,9 @@ class AutoRecordUseCase @Inject constructor(
         goods: String = "",
         confidence: Float = 1f,
         rawText: String = "",
-        captureType: CaptureType = CaptureType.ACCESSIBILITY_TEXT
+        captureType: CaptureType = CaptureType.ACCESSIBILITY_TEXT,
+        // v1.3.19：以前写死 EXPENSE，摇一摇识别到的「微信收款」也被记成支出
+        billType: BillType = BillType.EXPENSE
     ): Result<Long> {
         if (amountFen <= 0L) {
             return Result.Error(
@@ -71,7 +73,7 @@ class AutoRecordUseCase @Inject constructor(
 
         val bill = Bill(
             bookId = bookId,
-            billType = BillType.EXPENSE,
+            billType = billType,
             amountFen = amountFen,
             categoryId = categoryId,
             accountFrom = accountId,

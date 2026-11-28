@@ -27,13 +27,38 @@ class FieldExtractor @Inject constructor() {
         return ExtractedFields(amountFen, merchant, billTime, accountHint)
     }
 
+    /**
+     * v1.3.19：金额抽取必须做合理性校验。
+     *
+     * 真机事故：微信收款页被记成 **111845.00 元**（实际 21.60）。原因就是这里「第一个匹配直接返回」，
+     * 没有任何长度/上下文判断 —— 页面上任何带 ¥ 的累计额、流水号都能被当成金额。
+     */
     private fun extractAmount(text: String): Long? {
-        val raw = amountWithSymbol.find(text)?.groupValues?.get(1)
-            ?: amountLabelled.find(text)?.groupValues?.get(1)
-            ?: amountWithYuan.find(text)?.groupValues?.get(1)
-            ?: return null
-        val fen = Money.parse(raw) ?: return null
-        return fen.takeIf { it > 0L }
+        val candidates = sequenceOf(
+            amountWithSymbol.findAll(text),
+            amountLabelled.findAll(text),
+            amountWithYuan.findAll(text)
+        ).flatMap { matches -> matches.map { it.groupValues[1] } }
+        for (raw in candidates) {
+            val fen = Money.parse(raw) ?: continue
+            if (fen <= 0L) continue
+            if (!isPlausibleAmount(raw, fen, text)) continue
+            return fen
+        }
+        return null
+    }
+
+    private fun isPlausibleAmount(raw: String, fen: Long, text: String): Boolean {
+        val cleaned = raw.replace(",", "")
+        val dot = cleaned.indexOf('.')
+        val intDigits = if (dot >= 0) dot else cleaned.length
+        // 7 位以上整数：流水号 / 订单号 / 卡号
+        if (intDigits >= 7) return false
+        // 单笔 ≥ ¥100,000：几乎都是累计收款、额度、可用余额
+        if (fen >= MAX_SINGLE_BILL_FEN) return false
+        val line = text.lineSequence().firstOrNull { it.contains(raw) }.orEmpty()
+        if (SERIAL_HINTS.any { line.contains(it) }) return false
+        return true
     }
 
     /**
@@ -50,6 +75,15 @@ class FieldExtractor @Inject constructor() {
         }
 
     private companion object {
+        /** 单笔上限（分）：¥100,000。超过这个数只可能是累计/额度，不是一笔账。 */
+        const val MAX_SINGLE_BILL_FEN = 10_000_000L
+
+        /** 出现在这些词所在行时，数字几乎不可能是金额。 */
+        val SERIAL_HINTS = listOf(
+            "单号", "编号", "流水", "卡号", "尾号", "手机号", "累计", "余额", "额度",
+            "验证码", "总数", "合计", "笔数"
+        )
+
         /** 从带标签的行中抓取 ISO/中文日期时间子串（含可选秒）。 */
         val DATE_TIME_TOKEN = SafeRegex.of(
             """20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?(?:[ \t\u00a0\u3000]+\d{1,2}:\d{2}(?::\d{2})?)?"""

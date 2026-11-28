@@ -2,6 +2,8 @@ package com.azu.bookkeeper.ui.quick
 
 import android.content.Context
 import android.widget.Toast
+import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
+import com.azu.bookkeeper.automation.capture.ScreenTextCollector
 import com.azu.bookkeeper.automation.ocr.FieldExtractor
 import com.azu.bookkeeper.automation.ocr.OcrIpcClient
 import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
@@ -40,7 +42,15 @@ data class CaptureOutcome(
     val confidence: Float = 0f,
     val captureType: CaptureType = CaptureType.NONE,
     val rawText: String = "",
-    val goods: String = ""
+    val goods: String = "",
+    /**
+     * v1.3.19：收入还是支出。
+     *
+     * 以前摇一摇链路一路默认 EXPENSE（AutoRecordUseCase 里写死），
+     * 于是「微信收款」被记成支出、总额被撑大。现在按页面文本判定后再往下传。
+     */
+    val billType: com.azu.bookkeeper.domain.model.BillType =
+        com.azu.bookkeeper.domain.model.BillType.EXPENSE
 ) {
     val success: Boolean get() = reason == null
 
@@ -133,6 +143,12 @@ class LightweightCapture @Inject constructor(
                 captureType: CaptureType
             ) {
                 val remark = composeRemark(merchant, goods)
+                // v1.3.19：按页面文本判收入/支出（收款、到账类页面不再被记成支出）
+                val billType = if (PaymentScreenRecognizer.looksLikeIncome(rawText)) {
+                    com.azu.bookkeeper.domain.model.BillType.INCOME
+                } else {
+                    com.azu.bookkeeper.domain.model.BillType.EXPENSE
+                }
                 steps += DiagnosticStep(
                     "提取金额", merchant.isNotBlank(),
                     "¥${amountFen / 100.0} / 商户=${merchant.ifBlank { "未识别" }}" +
@@ -141,7 +157,8 @@ class LightweightCapture @Inject constructor(
                 com.azu.bookkeeper.core.CaptureLog.i(
                     context, "CAPTURE",
                     "识别成功 amount=$amountFen merchant=${merchant.ifBlank { "-" }}" +
-                        " goods=${goods.ifBlank { "-" }} conf=$confidence"
+                        " goods=${goods.ifBlank { "-" }} conf=$confidence type=${billType.label}" +
+                        " 原文=${ScreenTextCollector.preview(rawText)}"
                 )
                 record(null, rawText)
                 // v1.3.1：不再用「识屏完成 · 点击确认记账」常驻通知收尾，
@@ -155,7 +172,8 @@ class LightweightCapture @Inject constructor(
                             confidence = confidence,
                             captureType = captureType,
                             rawText = rawText,
-                            goods = goods
+                            goods = goods,
+                            billType = billType
                         )
                     )
                 }
@@ -258,9 +276,11 @@ class LightweightCapture @Inject constructor(
                         )
                         return@launch
                     }
+                    // v1.3.19：失败也要留原文，否则「为什么没抽到金额」只能靠猜
                     fail(
                         CaptureFailReason.EXTRACT_EMPTY,
-                        "截图 OCR 完成但没找到金额（当前页可能不是支付结果页）",
+                        "截图 OCR 完成但没找到金额（当前页可能不是支付结果页）" +
+                            "｜原文=${ScreenTextCollector.preview(rawText)}",
                         rawText
                     )
                     return@launch

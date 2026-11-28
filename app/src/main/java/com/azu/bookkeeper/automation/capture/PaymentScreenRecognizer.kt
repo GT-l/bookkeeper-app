@@ -159,6 +159,18 @@ object PaymentScreenRecognizer {
         "对方已收款", "对方已领取", "已转入对方"
     )
 
+    /** v1.3.19：收款 / 到账类页面（个人收款码、商户收款）的收入信号。 */
+    private val RECEIVE_HINTS = listOf(
+        "微信收款", "收款到账", "收款成功", "已收款", "已收钱", "到账金额", "到账通知",
+        "二维码收款", "收款码", "商户收款", "收到一笔", "已到账", "入账金额", "收款提醒"
+    )
+
+    /** v1.3.19：明确的支出信号，优先级高于一切收入词（「收款方」是支出页里也会出现的词）。 */
+    private val EXPENSE_STRONG_HINTS = listOf(
+        "已支付", "付款成功", "支付成功", "扣款成功", "已扣款", "消费成功", "支出",
+        "已存入对方零钱", "转账已发出", "向对方付款"
+    )
+
     /** 转账收款（收入）：微信写「已收钱」，支付宝写「收款成功」。 */
     private val TRANSFER_IN_HINTS = listOf(
         "已收钱", "已收款", "收款成功", "收到转账", "转账已接收", "已接收转账", "转账已收",
@@ -307,6 +319,19 @@ object PaymentScreenRecognizer {
             text.contains('¥') || text.contains('￥')
         if (!hasMoney) return false
         return RECEIPT_CONTEXT.any { text.contains(it) }
+    }
+
+    /**
+     * v1.3.19：这段文本像不像「收入」。
+     *
+     * 背景：摇一摇链路（LightweightCapture → AutoRecordUseCase）以前**写死 EXPENSE**，
+     * 把自己的微信收款记成了支出。这里给出与转账/红包一致口径的收入判定：
+     * 有明确支出信号时一律先否定，避免「收款方」这类词把支出页判成收入。
+     */
+    fun looksLikeIncome(text: String): Boolean {
+        if (text.isBlank()) return false
+        if (EXPENSE_STRONG_HINTS.any { text.contains(it) }) return false
+        return TRANSFER_IN_HINTS.any { text.contains(it) } || RECEIVE_HINTS.any { text.contains(it) }
     }
 
     /**

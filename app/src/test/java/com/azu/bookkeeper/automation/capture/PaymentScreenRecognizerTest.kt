@@ -464,4 +464,26 @@ class PaymentScreenRecognizerTest {
         assertTrue(PaymentScreenRecognizer.hasTransactionSignal("交易单号\n4200001234"))
         assertTrue(PaymentScreenRecognizer.hasTransactionSignal("账单详情\n商品说明"))
     }
+
+    // ---------- v1.3.19：收入判定（收款被记成支出的修复） ----------
+
+    @Test
+    fun `收款到账页面判为收入`() {
+        assertTrue(PaymentScreenRecognizer.looksLikeIncome("微信收款\n到账金额 21.60"))
+        assertTrue(PaymentScreenRecognizer.looksLikeIncome("收款到账通知\n¥21.60"))
+        assertTrue(PaymentScreenRecognizer.looksLikeIncome("二维码收款成功"))
+    }
+
+    @Test
+    fun `明确支出信号优先于收款词`() {
+        // 支出页里也会出现「收款方」，不能被判成收入
+        assertFalse(PaymentScreenRecognizer.looksLikeIncome("收款方 某某商店\n付款成功 ¥21.60"))
+        assertFalse(PaymentScreenRecognizer.looksLikeIncome("已支付 ¥21.60"))
+        assertFalse(PaymentScreenRecognizer.looksLikeIncome("转账已发出 已存入对方零钱"))
+    }
+
+    @Test
+    fun `空白文本不算收入`() {
+        assertFalse(PaymentScreenRecognizer.looksLikeIncome(""))
+    }
 }

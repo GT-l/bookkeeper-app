@@ -342,7 +342,9 @@ class ShakeQuickAddService : Service() {
                         goods = outcome.goods,
                         confidence = outcome.confidence,
                         rawText = outcome.rawText,
-                        captureType = outcome.captureType
+                        captureType = outcome.captureType,
+                        // v1.3.19：收款/到账类页面按收入入账，不再一律记成支出
+                        billType = outcome.billType
                     )
                 }.getOrNull()?.getOrNull()
             }
@@ -352,7 +354,8 @@ class ShakeQuickAddService : Service() {
                 runCatching { entryPoint.overlayVerify().showSuccess(amount, outcome.remark) }
                 com.azu.bookkeeper.core.CaptureLog.i(
                     applicationContext, "CAPTURE",
-                    "自动记账成功 billId=$billId amount=$amount conf=${outcome.confidence}"
+                    "自动记账成功 billId=$billId amount=$amount conf=${outcome.confidence}" +
+                        " type=${outcome.billType.label}"
                 )
             } else {
                 com.azu.bookkeeper.core.CaptureLog.w(
@@ -367,7 +370,8 @@ class ShakeQuickAddService : Service() {
     private fun showQuickConfirm(capture: LightweightCapture, amount: Long, outcome: CaptureOutcome) {
         val shown = runCatching {
             entryPoint.overlayVerify().showConfirm(
-                title = "识别到一笔支出",
+                // v1.3.19：标题跟着方向走，否则收款也提示「识别到一笔支出」，误导用户
+                title = "识别到一笔${outcome.billType.label}",
                 detail = "${Money.format(amount)} ${outcome.merchant}".trim(),
                 confirmLabel = "记账",
                 editLabel = "修改",
@@ -409,7 +413,8 @@ class ShakeQuickAddService : Service() {
             val notification = NotificationCompat.Builder(this, channelId)
                 .setSmallIcon(R.drawable.ic_quick_add)
                 .setContentTitle(
-                    if (duplicate.isBlank()) "识别到一笔支出，点此确认" else "这笔可能记过了，点此确认"
+                    if (duplicate.isBlank()) "识别到一笔${outcome.billType.label}，点此确认"
+                    else "这笔可能记过了，点此确认"
                 )
                 .setContentText("${Money.format(amount)} ${outcome.merchant}".trim())
                 .setContentIntent(pi)

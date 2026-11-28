@@ -1,6 +1,7 @@
 package com.azu.bookkeeper.automation.capture
 
 import com.azu.bookkeeper.core.Constants
+import com.azu.bookkeeper.core.SafeRegex
 
 /** 支付相关页面类型。ENTRY = 付款界面（收银台/付款码/输密码），SUCCESS = 支付结果页。 */
 enum class PaymentScreen {

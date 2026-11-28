@@ -7,10 +7,13 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 静态一致性 `scripts/verify_v1_3_8.py` | 待回填 |
-| JVM 单元测试 | 待回填 |
-| CI 构建 | 待回填 |
-| Release | 待回填 |
+| 静态一致性 `scripts/verify_v1_3_8.py` | **222 / 222 通过** |
+| JVM 单元测试 | **T192 / F0 / E0 / S0**（较 v1.3.7 新增 12 项） |
+| CI 构建 | run `46113782563`（commit `34f34ce`）**success** |
+| Release | `v1.3.8-debug`，`bookkeeper-debug.apk` 92,562,239 字节 |
+| 真机用例（D138-01 ~ 14） | 需在设备上执行，本次未覆盖 |
+
+单测报告 artifact：`unit-test-reports-T192-F0-E0-S0`。
 
 ## 二、本轮修复的四个真实问题
 

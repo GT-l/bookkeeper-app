@@ -419,4 +419,27 @@ class PaymentScreenRecognizerTest {
     fun `没有时间字段时交易时间为空`() {
         assertEquals("", PaymentScreenRecognizer.transactionTimeKey("支付成功\n¥9.90\n收款方：便利店"))
     }
+
+    // ---------- v1.3.14：抖音订单页按页面时间判重 ----------
+
+    @Test
+    fun `抖音订单页能抽到下单时间`() {
+        val text = """
+            订单详情
+            实付 ¥59.90
+            订单编号 6923456789012345678
+            下单时间 2026-11-28 10:55:00
+        """.trimIndent()
+        assertEquals("2026-11-28 10:55:00", PaymentScreenRecognizer.transactionTimeKey(text))
+    }
+
+    @Test
+    fun `抖音订单页缺时间时交易时间为空`() {
+        val text = """
+            订单详情
+            实付 ¥59.90
+            订单编号 6923456789012345678
+        """.trimIndent()
+        assertEquals("", PaymentScreenRecognizer.transactionTimeKey(text))
+    }
 }

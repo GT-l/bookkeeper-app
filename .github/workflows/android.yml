@@ -75,9 +75,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.13)
+      - name: Static consistency tests (v1.3.14)
         shell: bash
-        run: python3 scripts/verify_v1_3_13.py
+        run: python3 scripts/verify_v1_3_14.py
 
       - name: Build debug APK
         shell: bash
@@ -141,14 +141,19 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.13-debug
-          name: 少花点儿 v1.3.13 (Debug APK)
+          tag_name: v1.3.14-debug
+          name: 少花点儿 v1.3.14 (Debug APK)
           body: |
-            # 少花点儿 v1.3.13
+            # 少花点儿 v1.3.14
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
-            ## 排查能力（本版重点）
+            ## 修复
+            - 抖音订单页重复记账：账单时间原先落成「识屏时刻」，同一笔每刷一次时间都不同，
+              去重键（时间+金额+备注）跟着变，去重完全失效。现在优先用页面上的
+              下单时间 / 支付时间；抖音订单页静默窗口同时拉长到 60 秒。
+
+            ## 排查能力
             - 自检页新增「无障碍事件到达」：今天收到多少条事件、其中多少条来自支付应用、
               最后一条是什么包名。微信里完全没反应时，一眼区分「系统没投事件」和「事件被过滤」。
             - 「存储排查」新增「安装包残留」分类，列出 files/updates 与 cache/incoming-apk 下的 APK；

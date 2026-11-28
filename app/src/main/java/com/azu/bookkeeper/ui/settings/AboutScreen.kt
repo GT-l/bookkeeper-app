@@ -90,11 +90,11 @@ fun AboutScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         ChangelogRow(
-                            version = "v1.3.13 · 最新",
+                            version = "v1.3.14 · 最新",
                             items = listOf(
+                                "修复：抖音订单页重复记账（账单时间改用页面下单时间判重）",
                                 "新增「无障碍事件到达」诊断：一眼看出系统有没有把事件发给 App",
-                                "存储排查新增「安装包残留」，日志文件单独标注",
-                                "识屏日志默认开启；回到 App 即体检并尝试恢复无障碍"
+                                "存储排查新增「安装包残留」；识屏日志默认开启"
                             )
                         )
                         ChangelogRow(

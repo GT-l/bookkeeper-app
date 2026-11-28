@@ -11,6 +11,7 @@ import com.azu.bookkeeper.automation.ocr.PaymentTextAnalyzer
 import com.azu.bookkeeper.automation.receiver.SmsSummary
 import com.azu.bookkeeper.automation.receiver.TimeSource
 import com.azu.bookkeeper.automation.verify.VerificationController
+import com.azu.bookkeeper.core.DateTimeUtils
 import com.azu.bookkeeper.core.Result
 import com.azu.bookkeeper.core.di.IoDispatcher
 import com.azu.bookkeeper.core.getOrNull
@@ -132,6 +133,24 @@ class CaptureCoordinator @Inject constructor(
         }
         if (fields.merchant.isBlank() && event.pendingMerchant.isNotBlank()) {
             fields = fields.copy(merchant = event.pendingMerchant)
+        }
+
+        // v1.3.14：账单时间优先用页面上的交易时间（支付时间 / 转账时间 / 下单时间…）。
+        //
+        // 这是「抖音订单页重复记账」的根因：订单页会反复触发事件，
+        // 旧逻辑把 billTime 落成**识屏时刻**，同一笔每次识屏的时间都不同 →
+        // 去重键（时间 + 金额 + 备注）每次都不同 → 去重完全失效，同一订单记好几笔。
+        // 页面时间固定，同一笔反复识别会落到同一个去重键上。
+        val screenTime = runCatching {
+            PaymentScreenRecognizer.transactionTimeKey(event.rawText)
+        }.getOrNull().orEmpty()
+        val screenTimeMillis = if (screenTime.isNotBlank()) {
+            runCatching { DateTimeUtils.parseFlexible(screenTime) }.getOrNull()
+        } else {
+            null
+        }
+        if (screenTimeMillis != null) {
+            fields = fields.copy(billTime = screenTimeMillis)
         }
         // 方向：收款类转账/红包记收入，其余记支出
         val billType = if (event.direction == BillDirection.INCOME.name) {

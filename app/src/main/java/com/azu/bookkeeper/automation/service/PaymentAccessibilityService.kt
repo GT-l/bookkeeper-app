@@ -19,6 +19,7 @@ import com.azu.bookkeeper.automation.capture.CaptureChannels
 import com.azu.bookkeeper.automation.capture.CaptureCoordinator
 import com.azu.bookkeeper.automation.capture.BillDirection
 import com.azu.bookkeeper.automation.capture.PaymentScreen
+import com.azu.bookkeeper.automation.capture.PaymentScene
 import com.azu.bookkeeper.automation.capture.PaymentScreenRecognizer
 import com.azu.bookkeeper.automation.capture.PendingPaymentCache
 import com.azu.bookkeeper.automation.capture.ScreenTextCollector
@@ -342,7 +343,14 @@ class PaymentAccessibilityService : AccessibilityService() {
         val timeKey = PaymentScreenRecognizer.transactionTimeKey(text)
         val differentBillByTime = mark != null &&
             mark.timeKey.isNotBlank() && timeKey.isNotBlank() && mark.timeKey != timeKey
-        if (!differentBillByTime && mark != null && now - mark.at < SETTLED_QUIET_MS &&
+        // v1.3.14：抖音订单页事件特别密集（图片懒加载、滚动都会触发），
+        // 且部分订单页不写下单时间，只能靠更长的静默窗口挡住同订单的重复提交。
+        val quietMs = if (recognition.scene == PaymentScene.DOUYIN_ORDER) {
+            DOUYIN_QUIET_MS
+        } else {
+            SETTLED_QUIET_MS
+        }
+        if (!differentBillByTime && mark != null && now - mark.at < quietMs &&
             (money.isBlank() || mark.money.isBlank() || money == mark.money)
         ) {
             logScreenThrottled(
@@ -717,6 +725,9 @@ class PaymentAccessibilityService : AccessibilityService() {
         private const val SUCCESS_DEDUP_MS = 5_000L
         /** v1.3.4：同一轮支付成功后同包名的静默时长；再次进入收银台（ENTRY）会提前解除。 */
         private const val SETTLED_QUIET_MS = 12_000L
+
+        /** v1.3.14：抖音订单页的静默窗口。页面事件密集且常缺下单时间，窗口拉长到 60 秒。 */
+        private const val DOUYIN_QUIET_MS = 60_000L
 
         /** v1.3.12：截图 OCR 兜底的最小间隔。 */
         private const val SHOT_FALLBACK_INTERVAL_MS = 15_000L

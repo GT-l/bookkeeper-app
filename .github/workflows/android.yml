@@ -81,9 +81,9 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Static consistency tests (v1.3.15)
+      - name: Static consistency tests (v1.3.16)
         shell: bash
-        run: python3 scripts/verify_v1_3_15.py
+        run: python3 scripts/verify_v1_3_16.py
 
       - name: Build debug APK
         shell: bash
@@ -147,40 +147,39 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.15-debug
-          name: 少花点儿 v1.3.15 (Debug APK)
+          tag_name: v1.3.16-debug
+          name: 少花点儿 v1.3.16 (Debug APK)
           body: |
-            # 少花点儿 v1.3.15
+            # 少花点儿 v1.3.16
 
             下载 `bookkeeper-debug.apk`（Android 8.0+）覆盖安装即可，账单不丢。
 
-            ## 下载体验（本版重点）
-            - 断点续传：以前代理一抖动就从头重下 88MB，现在用 HTTP Range 从断点接着下，
-              已下载的字节不白费；进程被杀也保留进度，重试即续。
-            - 进度可读：除百分比外多显示「已下 / 总量 · 实时速率 · 剩余时间」。
-              88MB 的包 1% = 0.9MB，以前慢网下前几十秒一直显示 0%，看着像卡死。
-            - 直链优先：实测 api.github.com 的 asset 接口与 releases/download 直链最终都 302 到
-              同一个 release-assets.githubusercontent.com，API 通道只是多一次握手；
-              现在直链先走，API 只作兜底。
-            - 下载期间让出 CPU：暂停识屏的「截图 + 中文 OCR」兜底（读无障碍节点不受影响），
-              不再和单线程下载抢资源。
-            - 断点安全：服务器忽略 Range（回 200）就截断重下；416 视为断点文件已完整直接收尾；
-              落盘后 fsync，避免「看着下完其实少一截」。
-            - 下完却没装成的包会直接复用，不会因为差最后一步再下一次 88MB。
+            ## 识屏（本版重点）
+            真机日志（realme RMX3888 / Android 37，15:56:13）：无障碍截屏「成功 1264x2780」→
+            OCR「识别完成 0 字 blocks=0」→ 报「没找到扣款金额」。说明系统给的是**空白帧**，
+            而旧的黑帧判定只看平均亮度 < 8，全白 / 全灰帧全漏过去，空图被丢给 OCR，
+            最后把原因显示成「当前页可能不是支付结果页」。
 
-            ## 排查
-            - 下载耗时 / 平均速率 / 命中通道 / 是否续传写入识屏日志（tag=UPDATE），
-              以后判断「是网络慢还是 App 卡」有据可查。
+            - 帧体检升级：采样 32×64 点算亮度均值 / 最暗 / 最亮 / 近黑近白占比，
+              亮暗跨度 < 12 即判定为单色帧（全黑、全白、全灰都算），统计直接写日志。
+            - 单色帧不再进 OCR，直接让给媒体投影通道；两条都空时明确报「空白帧」，
+              并主动引导一次录屏授权（以前 captureChannelReady() 为 true 就拒绝引导，用户无路可走）。
+            - OCR 引擎异常与「页面没有文字」彻底分开：跨进程回传 error，
+              日志显示「识别异常 原因=…」，不再统一变成 0 字。
+            - 0 字结果带帧体统计数据，下次贴 log 就能判断是图空还是模型没识别出来。
+
+            ## 关于无障碍被系统关闭
+            log 里 `kind=closed ... source=com.android.packageinstaller revokeCount=8` 说明：
+            是**安装 APK 时系统（PackageInstaller / 权限管理）主动关掉了无障碍开关**，不是 App 自己关的。
+            每次覆盖安装后需要在「设置 → 无障碍」重新打开一次；App 侧已做守护检测 + 通知提醒。
+
+            ## 下载（沿用 v1.3.15）
+            - 断点续传：代理抖动不再从 0 重下 88MB，重试接着下；进程被杀也保留进度。
+            - 进度显示「已下 / 总量 · 实时速率 · 剩余时间」，不再长时间停在 0%。
+            - 直链优先（少一跳），API asset 仅兜底；下载期间暂停识屏截图 OCR，不与下载抢 CPU。
 
             ## 说明
-            - 体积仍是 88MB：本版没做 ABI 裁剪，四个架构仍全打进去（保留多机型兼容）。
-              若要更快，下一版可加 abiFilters 只保留 arm64。
-            - 沿用 v1.3.14：抖音订单按页面时间判重；v1.3.13：无障碍事件到达自证；
-              v1.3.12：无障碍截屏与截图 OCR 兜底恢复。
-            - 关于「恢复 canTakeScreenshot 会不会导致开不了无障碍」：该能力是 API 30+ 的可选能力位，
-              不影响服务在设置里的可见性与开关；Android 11 以下直接没有这个能力，会自动退回
-              录屏（MediaProjection）通道。真正的坑是 Android 13+ 侧载 App 的「受限设置」，
-              与本能力无关，仍需要在应用信息里允许一次。
+            - 体积仍是 88MB：未做 ABI 裁剪，四个架构全打包（保留多机型兼容）。
 
             ## 隐私
             账单数据只存本机，不上传。检查更新只读取公开 Releases。

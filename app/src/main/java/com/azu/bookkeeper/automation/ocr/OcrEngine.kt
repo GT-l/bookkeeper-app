@@ -43,8 +43,15 @@ class OcrEngine @Inject constructor(
         runCatching {
             process(InputImage.fromBitmap(bitmap, 0))
         }.getOrElse { e ->
+            // v1.3.16：异常不能再被吞成「0 字」——那和「页面真的没有文字」在日志里长得一模一样，
+            // 用户看到的只有「识别到文字但没找到扣款金额」，真正原因（模型/引擎报错）被抹掉。
             Timber.w(e, "ocr bitmap failed")
-            OcrResult(rawText = "", confidence = 0f, blockCount = 0)
+            OcrResult(
+                rawText = "",
+                confidence = 0f,
+                blockCount = 0,
+                error = "${e.javaClass.simpleName}: ${e.message ?: "无详细消息"}"
+            )
         }
     }
 

@@ -4,7 +4,9 @@ package com.azu.bookkeeper.automation.ocr
 data class OcrResult(
     val rawText: String,
     val confidence: Float,
-    val blockCount: Int = 0
+    val blockCount: Int = 0,
+    /** v1.3.16：识别器本身抛异常时的原因。空文本 + error 非空 = 引擎坏了，不是页面没字。 */
+    val error: String? = null
 )
 
 /** 正则抽取出的账单字段。 */

@@ -27,7 +27,9 @@ import javax.inject.Singleton
 data class OcrIpcPayload(
     val text: String = "",
     val confidence: Float = 0f,
-    val blocks: Int = 0
+    val blocks: Int = 0,
+    /** v1.3.16：识别失败原因。空文本 + error 非空 = 引擎异常；两者都空 = 图里确实没字。 */
+    val error: String? = null
 )
 
 data class OcrIpcResult(val payload: OcrIpcPayload?, val error: String?)
@@ -94,10 +96,17 @@ class OcrIpcClient @Inject constructor(
                     }.getOrNull()
                     out.delete()
                     if (payload != null) {
-                        com.azu.bookkeeper.core.CaptureLog.i(
-                            context, "OCR", "识别完成 ${payload.text.length} 字 conf=${payload.confidence} blocks=${payload.blocks}"
-                        )
-                        return@withContext OcrIpcResult(payload, null)
+                        if (payload.error != null) {
+                            com.azu.bookkeeper.core.CaptureLog.w(
+                                context, "OCR",
+                                "识别异常 0 字 blocks=${payload.blocks} 原因=${payload.error}"
+                            )
+                        } else {
+                            com.azu.bookkeeper.core.CaptureLog.i(
+                                context, "OCR", "识别完成 ${payload.text.length} 字 conf=${payload.confidence} blocks=${payload.blocks}"
+                            )
+                        }
+                        return@withContext OcrIpcResult(payload, payload.error)
                     }
                 }
                 delay(120)
@@ -133,12 +142,27 @@ class OcrWorkerService : Service() {
                 val bitmap = BitmapFactory.decodeFile(imagePath) ?: error("decode failed: $imagePath")
                 try {
                     val result = entryPoint.ocrEngine().recognize(bitmap)
-                    val payload = OcrIpcPayload(result.rawText, result.confidence, result.blockCount)
+                    val payload = OcrIpcPayload(
+                        text = result.rawText,
+                        confidence = result.confidence,
+                        blocks = result.blockCount,
+                        error = result.error
+                    )
                     File(outPath).writeText(Json.encodeToString(OcrIpcPayload.serializer(), payload))
                 } finally {
                     runCatching { bitmap.recycle() }
                 }
-            }.onFailure { Timber.w(it, "ocr worker failed") }
+            }.onFailure { t ->
+                Timber.w(t, "ocr worker failed")
+                // v1.3.16：进程内抛异常也要回传原因，否则主进程只能看到「12 秒无响应」
+                // 或一个 0 字结果，分不清是崩溃、解码失败还是引擎报错。
+                runCatching {
+                    val payload = OcrIpcPayload(
+                        error = "${t.javaClass.simpleName}: ${t.message ?: "无详细消息"}"
+                    )
+                    File(outPath).writeText(Json.encodeToString(OcrIpcPayload.serializer(), payload))
+                }
+            }
             stopSelf()
         }
         return START_NOT_STICKY

@@ -226,6 +226,27 @@ class LightweightCapture @Inject constructor(
                         fail(CaptureFailReason.OCR_PROCESS_FAILED, ipc.error ?: "unknown", rawText)
                         return@launch
                     }
+                    // v1.3.16：引擎异常必须单独报。以前它和「页面真的没字」都是 0 字结果，
+                    // 用户只能看到「识别到文字但没找到扣款金额」，真正原因被藏起来了。
+                    if (payload.error != null) {
+                        steps += DiagnosticStep("截图 OCR", false, "引擎异常：${payload.error}")
+                        fail(
+                            CaptureFailReason.OCR_PROCESS_FAILED,
+                            "OCR 引擎异常：${payload.error}（截图 ${frame.detail}）",
+                            rawText
+                        )
+                        return@launch
+                    }
+                    if (payload.text.isBlank()) {
+                        steps += DiagnosticStep(
+                            "截图 OCR", false,
+                            "0 字（帧体检：${frame.detail}）—— 图里没识别出任何文字"
+                        )
+                        com.azu.bookkeeper.core.CaptureLog.w(
+                            context, "CAPTURE",
+                            "截图 OCR 0 字，帧体检=${frame.detail}（判断图是否空白见 CHANNEL 日志）"
+                        )
+                    }
                     rawText = listOf(rawText, payload.text).filter { it.isNotBlank() }.joinToString("\n")
                     val ocrFields = extract(rawText)
                     val amountFen = ocrFields.amountFen

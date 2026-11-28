@@ -104,18 +104,35 @@ class CaptureChannels @Inject constructor(
                 "无障碍截屏返回 code=${shot.errorCode} bitmap=${shot.bitmap?.let { "${it.width}x${it.height}" } ?: "null"} detail=${shot.detail}"
             )
             val bitmap = shot.bitmap?.let { downscale(it) }
+            // v1.3.16：帧体检。真实日志里出现过「截屏成功 1264x2780 → OCR 0 字」，
+            // 说明系统给了张空白帧；旧的黑帧判定只看平均亮度，全白/全灰帧会漏过去。
+            val a11yStats = bitmap?.let { runCatching { FrameSanity.analyze(it) }.getOrNull() }
             when {
-                bitmap != null && !isBlackFrame(bitmap) -> {
+                bitmap != null && (a11yStats == null || !a11yStats.uniform) -> {
+                    if (a11yStats != null) {
+                        com.azu.bookkeeper.core.CaptureLog.i(
+                            context, "CHANNEL", "无障碍截屏帧体检 ${a11yStats.describe()}"
+                        )
+                    }
                     attempts += "无障碍截屏 ✓ ${shot.detail}"
-                    return ChannelCaptureResult(bitmap, "无障碍截屏", null, shot.detail, attempts)
+                    return ChannelCaptureResult(
+                        bitmap, "无障碍截屏", null,
+                        shot.detail + (a11yStats?.let { " · ${it.describe()}" } ?: ""),
+                        attempts
+                    )
                 }
                 bitmap != null -> {
-                    attempts += "无障碍截屏：截到黑帧"
-                    runCatching { bitmap.recycle() }
-                    return ChannelCaptureResult(
-                        null, "无障碍截屏", CaptureFailReason.BLACK_FRAME,
-                        "截到全黑画面（多半是页面禁止截屏）", attempts
+                    // 单色帧 = 系统没给到真实画面。别把空图丢给 OCR（那会报成「没找到金额」，
+                    // 把真正的原因藏起来），直接让给媒体投影通道。
+                    com.azu.bookkeeper.core.CaptureLog.w(
+                        context, "CHANNEL",
+                        "无障碍截屏整帧单色，按空白帧处理 ${a11yStats?.describe()}"
                     )
+                    attempts += "无障碍截屏：空白帧（${a11yStats?.describe() ?: "统计失败"}）"
+                    accessibilityReason = CaptureFailReason.BLACK_FRAME
+                    accessibilityDetail =
+                        "无障碍截屏返回空白帧（${a11yStats?.describe() ?: "无法统计"}）：系统没给到真实画面"
+                    runCatching { bitmap.recycle() }
                 }
                 else -> {
                     accessibilityReason = shot.reason
@@ -156,16 +173,25 @@ class CaptureChannels @Inject constructor(
             )
             val bitmap = frame.bitmap
             if (bitmap != null) {
-                if (isBlackFrame(bitmap)) {
+                val stats = runCatching { FrameSanity.analyze(bitmap) }.getOrNull()
+                if (stats != null) {
+                    com.azu.bookkeeper.core.CaptureLog.i(
+                        context, "CHANNEL", "媒体投影帧体检 ${stats.describe()}"
+                    )
+                }
+                if (stats == null || stats.uniform) {
                     runCatching { bitmap.recycle() }
-                    attempts += "媒体投影：截到黑帧"
+                    attempts += "媒体投影：空白帧（${stats?.describe() ?: "统计失败"}）"
                     return ChannelCaptureResult(
                         null, "媒体投影", CaptureFailReason.BLACK_FRAME,
-                        "截到全黑画面（多半是页面禁止截屏）", attempts
+                        "截到空白画面（${stats?.describe() ?: "无法统计"}）：多半是页面禁止截屏", attempts
                     )
                 }
                 attempts += "媒体投影 ✓ ${frame.detail}"
-                return ChannelCaptureResult(bitmap, "媒体投影", null, frame.detail, attempts)
+                return ChannelCaptureResult(
+                    bitmap, "媒体投影", null,
+                    frame.detail + " · ${stats.describe()}", attempts
+                )
             }
             attempts += "媒体投影：${frame.reason?.title ?: "失败"}（${frame.detail}）"
             Timber.w("projection capture failed: %s", frame.detail)
@@ -211,26 +237,8 @@ class CaptureChannels @Inject constructor(
     }.getOrDefault(bitmap)
 
     /**
-     * 黑帧检测：等距采样 32x64 个点算平均亮度，过低判定为全黑。
-     * 支付/银行页开 FLAG_SECURE 时就是这种结果。
+     * 黑帧 / 空白帧判定已升级为 [FrameSanity]（v1.3.16）：
+     * 旧实现只算平均亮度 < 8，全白、全灰、半黑半空的帧都会漏过，
+     * 结果把空白图丢给 OCR，最终报成「没找到金额」，掩盖了真正原因。
      */
-    private fun isBlackFrame(bitmap: Bitmap): Boolean = runCatching {
-        val stepX = (bitmap.width / 32).coerceAtLeast(1)
-        val stepY = (bitmap.height / 64).coerceAtLeast(1)
-        var sum = 0L
-        var count = 0
-        var y = 0
-        while (y < bitmap.height) {
-            var x = 0
-            while (x < bitmap.width) {
-                val px = bitmap.getPixel(x, y)
-                val luma = ((px shr 16 and 0xFF) * 299 + (px shr 8 and 0xFF) * 587 + (px and 0xFF) * 114) / 1000
-                sum += luma
-                count++
-                x += stepX
-            }
-            y += stepY
-        }
-        count > 0 && (sum / count) < 8
-    }.getOrDefault(false)
 }

@@ -242,10 +242,18 @@ class ShakeQuickAddService : Service() {
      * 避免用户取消授权后陷入「取消 → 再摇 → 又弹」的死循环。
      */
     private fun shouldGuideToAuth(capture: LightweightCapture, reason: CaptureFailReason?): Boolean {
-        if (reason != CaptureFailReason.NO_CHANNEL && reason != CaptureFailReason.CHANNEL_DISABLED) {
+        val blocked = reason == CaptureFailReason.NO_CHANNEL ||
+            reason == CaptureFailReason.CHANNEL_DISABLED ||
+            reason == CaptureFailReason.BLACK_FRAME
+        if (!blocked) return false
+        // v1.3.16：无障碍截屏「能调起来但截出空白帧」时，captureChannelReady() 仍为 true，
+        // 旧的判断会因此拒绝引导，用户就卡在「识屏失败」里没有任何出路。
+        // 空白帧场景只要录屏会话没开就值得引导一次（真·FLAG_SECURE 页面用户取消即可）。
+        if (reason == CaptureFailReason.BLACK_FRAME) {
+            if (capture.projectionSessionActive()) return false
+        } else if (capture.captureChannelReady() || capture.projectionSessionActive()) {
             return false
         }
-        if (capture.captureChannelReady() || capture.projectionSessionActive()) return false
         val now = System.currentTimeMillis()
         if (now - lastAuthGuideAt < AUTH_GUIDE_INTERVAL_MS) return false
         lastAuthGuideAt = now
